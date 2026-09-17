@@ -1,20 +1,13 @@
 const express = require('express');
 const router = express.Router();
-const { db } = require('../db');
-
-function getExpiryTier(days) {
-  if (days <= 0) return 'Expired';
-  if (days <= 30) return 'Critical';
-  if (days <= 90) return 'Warning';
-  if (days <= 180) return 'Monitor';
-  return 'Safe';
-}
+const { db, calculateDaysToExpiry, getExpiryTier, getLocalDateString, getSettingsMap } = require('../db');
 
 // GET all active alerts across inventory
 router.get('/', (req, res) => {
   try {
     const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
+    const settings = getSettingsMap();
 
     // Expiration alerts across active or expired batches
     const batches = db.prepare(`
@@ -39,24 +32,24 @@ router.get('/', (req, res) => {
     const safeBatches = [];
 
     for (const b of batches) {
-      const expDate = new Date(b.expiration_date);
-      const days = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
-      const enriched = { ...b, days_to_expiry: days };
+      const days = calculateDaysToExpiry(b.expiration_date, today);
+      const tier = getExpiryTier(days, settings);
+      const enriched = { ...b, days_to_expiry: days, expiry_tier: tier };
 
-      if (days <= 0) {
+      if (tier === 'Expired') {
         expiredBatches.push(enriched);
-      } else if (days <= 30) {
+      } else if (tier === 'Critical') {
         criticalBatches.push(enriched);
-      } else if (days <= 90) {
+      } else if (tier === 'Warning') {
         warningBatches.push(enriched);
-      } else if (days <= 180) {
+      } else if (tier === 'Monitor') {
         monitorBatches.push(enriched);
       } else {
         safeBatches.push(enriched);
       }
     }
 
-    // Stock alerts (Low stock & Out of stock)
+    // Stock alerts (Low stock & Out of stock) - strictly evaluates unexpired active units
     const stockStats = db.prepare(`
       SELECT 
         m.id,
@@ -70,12 +63,12 @@ router.get('/', (req, res) => {
         m.reorder_threshold,
         m.supplier_lead_time_days,
         m.buffer_days,
-        COALESCE(SUM(CASE WHEN b.status = 'active' AND b.current_quantity > 0 THEN b.current_quantity ELSE 0 END), 0) as total_stock
+        COALESCE(SUM(CASE WHEN b.status = 'active' AND b.current_quantity > 0 AND b.expiration_date > ? THEN b.current_quantity ELSE 0 END), 0) as total_stock
       FROM medicines m
       LEFT JOIN batches b ON m.id = b.medicine_id
       GROUP BY m.id
       ORDER BY m.brand_name ASC
-    `).all();
+    `).all(todayStr);
 
     const outOfStock = [];
     const lowStock = [];

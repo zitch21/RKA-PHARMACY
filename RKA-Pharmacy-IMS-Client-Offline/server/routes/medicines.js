@@ -1,39 +1,32 @@
 const express = require('express');
 const router = express.Router();
-const { db, logAudit } = require('../db');
+const { db, logAudit, calculateDaysToExpiry, getExpiryTier, getLocalDateString, getSettingsMap } = require('../db');
 
-// Helper to compute expiry tier based on days
-function getExpiryTier(days) {
-  if (days <= 0) return 'Expired';
-  if (days <= 30) return 'Critical';
-  if (days <= 90) return 'Warning';
-  if (days <= 180) return 'Monitor';
-  return 'Safe';
-}
-
-// GET all medicines with total stock, active batches, and earliest expiry
+// GET all medicines with total unexpired stock, active batches, and earliest expiry
 router.get('/', (req, res) => {
   try {
+    const todayStr = getLocalDateString();
+    const settings = getSettingsMap();
+    const today = new Date();
+
     const medicines = db.prepare(`
       SELECT 
         m.*,
-        COALESCE(SUM(CASE WHEN b.status = 'active' AND b.current_quantity > 0 THEN b.current_quantity ELSE 0 END), 0) as total_stock,
-        COUNT(CASE WHEN b.status = 'active' AND b.current_quantity > 0 THEN b.id END) as active_batches_count,
-        MIN(CASE WHEN b.status = 'active' AND b.current_quantity > 0 THEN b.expiration_date END) as earliest_expiration_date
+        COALESCE(SUM(CASE WHEN b.status = 'active' AND b.current_quantity > 0 AND b.expiration_date > ? THEN b.current_quantity ELSE 0 END), 0) as total_stock,
+        COUNT(CASE WHEN b.status = 'active' AND b.current_quantity > 0 AND b.expiration_date > ? THEN b.id END) as active_batches_count,
+        MIN(CASE WHEN b.status = 'active' AND b.current_quantity > 0 AND b.expiration_date > ? THEN b.expiration_date END) as earliest_expiration_date
       FROM medicines m
       LEFT JOIN batches b ON m.id = b.medicine_id
       GROUP BY m.id
       ORDER BY m.brand_name ASC
-    `).all();
+    `).all(todayStr, todayStr, todayStr);
 
-    const today = new Date();
     const result = medicines.map(m => {
       let daysToEarliestExpiry = null;
       let expiryTier = 'None';
       if (m.earliest_expiration_date) {
-        const expDate = new Date(m.earliest_expiration_date);
-        daysToEarliestExpiry = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
-        expiryTier = getExpiryTier(daysToEarliestExpiry);
+        daysToEarliestExpiry = calculateDaysToExpiry(m.earliest_expiration_date, today);
+        expiryTier = getExpiryTier(daysToEarliestExpiry, settings);
       }
 
       const isLowStock = m.total_stock <= m.reorder_threshold;
@@ -68,14 +61,14 @@ router.get('/:id', (req, res) => {
       ORDER BY expiration_date ASC
     `).all(req.params.id);
 
+    const settings = getSettingsMap();
     const today = new Date();
     const enrichedBatches = batches.map(b => {
-      const expDate = new Date(b.expiration_date);
-      const days = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
+      const days = calculateDaysToExpiry(b.expiration_date, today);
       return {
         ...b,
         days_to_expiry: days,
-        expiry_tier: getExpiryTier(days),
+        expiry_tier: getExpiryTier(days, settings),
         is_expired: days <= 0
       };
     });
@@ -105,14 +98,14 @@ router.get('/barcode/:barcode', (req, res) => {
       ORDER BY expiration_date ASC
     `).all(medicine.id);
 
+    const settings = getSettingsMap();
     const today = new Date();
     const enrichedBatches = batches.map(b => {
-      const expDate = new Date(b.expiration_date);
-      const days = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
+      const days = calculateDaysToExpiry(b.expiration_date, today);
       return {
         ...b,
         days_to_expiry: days,
-        expiry_tier: getExpiryTier(days),
+        expiry_tier: getExpiryTier(days, settings),
         is_expired: days <= 0
       };
     });
@@ -239,6 +232,14 @@ router.put('/:id', (req, res) => {
       barcode
     } = req.body;
 
+    // Validate barcode uniqueness across other medicines
+    if (barcode && barcode.trim() !== '') {
+      const conflict = db.prepare('SELECT id, brand_name FROM medicines WHERE barcode = ? AND id != ?').get(barcode.trim(), medId);
+      if (conflict) {
+        return res.status(400).json({ error: `Barcode "${barcode.trim()}" is already assigned to ${conflict.brand_name}.` });
+      }
+    }
+
     const stmt = db.prepare(`
       UPDATE medicines SET
         brand_name = ?,
@@ -269,7 +270,7 @@ router.put('/:id', (req, res) => {
       buffer_days !== undefined ? parseInt(buffer_days) : current.buffer_days,
       supplier_name ?? current.supplier_name,
       description ?? current.description,
-      barcode ?? current.barcode,
+      barcode !== undefined ? barcode.trim() : current.barcode,
       medId
     );
 
@@ -303,11 +304,11 @@ router.delete('/:id', (req, res) => {
       });
     }
 
-    // Check active batches with stock
-    const batchCheck = db.prepare("SELECT COALESCE(SUM(current_quantity), 0) as total FROM batches WHERE medicine_id = ? AND status = 'active'").get(medId);
+    // Check physical batches with remaining stock across any status
+    const batchCheck = db.prepare("SELECT COALESCE(SUM(current_quantity), 0) as total FROM batches WHERE medicine_id = ? AND current_quantity > 0").get(medId);
     if (batchCheck && batchCheck.total > 0) {
       return res.status(400).json({
-        error: `Cannot delete ${current.brand_name} because it still has ${batchCheck.total} units in stock across active batches.`
+        error: `Cannot delete ${current.brand_name} because it still has ${batchCheck.total} units in physical stock across batches. Please dispose or recount remaining inventory before deleting.`
       });
     }
 

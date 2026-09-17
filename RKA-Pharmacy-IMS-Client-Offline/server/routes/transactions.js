@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { db, logAudit } = require('../db');
+const { db, logAudit, getLocalDateString } = require('../db');
 
 // GET all transactions with filtering
 router.get('/', (req, res) => {
@@ -64,7 +64,7 @@ router.post('/stock-out', (req, res) => {
       return res.status(400).json({ error: 'Please provide at least one item to dispense.' });
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
     const today = new Date();
 
     const processStockOut = db.transaction((dispenseItems) => {
@@ -72,7 +72,7 @@ router.post('/stock-out', (req, res) => {
       const receiptNo = reference_no || `RCPT-${Date.now().toString().slice(-6)}`;
 
       for (const item of dispenseItems) {
-        const { medicine_id, batch_id, quantity, override_reason, custom_price } = item;
+        const { medicine_id, batch_id, quantity, override_reason } = item;
         const qtyToDispense = parseInt(quantity);
 
         if (!medicine_id || qtyToDispense <= 0) {
@@ -152,10 +152,13 @@ router.post('/stock-out', (req, res) => {
           WHERE id = ?
         `).run(remainingQty, newStatus, targetBatchId);
 
-        // Record transaction
+        // Record transaction - POS Price Lockdown: strictly enforce approved batch selling price
         const lastTx = db.prepare('SELECT id FROM transactions ORDER BY id DESC LIMIT 1').get();
-        const txCode = `TX-OUT-${Date.now().toString().slice(-6)}-${lastTx ? lastTx.id + 1 : 1}`;
-        const unitPrice = custom_price !== undefined ? parseFloat(custom_price) : targetBatch.selling_price;
+        const txCode = `TX-OUT-${Date.now()}-${Math.floor(Math.random() * 10000)}-${lastTx ? lastTx.id + 1 : 1}`;
+        const unitPrice = parseFloat(targetBatch.selling_price);
+        if (isNaN(unitPrice) || unitPrice <= 0) {
+          throw new Error(`Batch ${targetBatch.batch_number} does not have a valid selling price configured.`);
+        }
         const totalAmount = qtyToDispense * unitPrice;
 
         db.prepare(`
@@ -252,12 +255,16 @@ router.post('/adjustment', (req, res) => {
       return res.json({ message: 'No adjustment needed. Current quantity matches actual quantity.' });
     }
 
-    const newStatus = newQty === 0 ? 'consumed' : batch.status;
+    const todayStr = getLocalDateString();
+    const isExpired = batch.expiration_date <= todayStr;
+    const newStatus = newQty === 0 
+      ? 'consumed' 
+      : (isExpired ? 'expired' : (batch.status === 'consumed' ? 'active' : batch.status));
 
     db.prepare('UPDATE batches SET current_quantity = ?, status = ? WHERE id = ?').run(newQty, newStatus, batch_id);
 
     const lastTx = db.prepare('SELECT id FROM transactions ORDER BY id DESC LIMIT 1').get();
-    const txCode = `TX-ADJ-${Date.now().toString().slice(-6)}-${lastTx ? lastTx.id + 1 : 1}`;
+    const txCode = `TX-ADJ-${Date.now()}-${Math.floor(Math.random() * 10000)}-${lastTx ? lastTx.id + 1 : 1}`;
 
     db.prepare(`
       INSERT INTO transactions (

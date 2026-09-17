@@ -123,7 +123,14 @@ router.post('/run', (req, res) => {
             if (hasNegativeMargin) {
               demand = Math.round(demand * 1.35); // prioritized clearance of at-risk batches
             }
-            available.sort((a, b) => a.expiry_day - b.expiry_day);
+
+            // FEFO+ release ordering: batches with imminent wastage are prioritized first
+            available.sort((a, b) => {
+              const aRisk = (a.expiry_day - day) - (a.current_qty / Math.max(a.daily_demand, 0.1)) < 0;
+              const bRisk = (b.expiry_day - day) - (b.current_qty / Math.max(b.daily_demand, 0.1)) < 0;
+              if (aRisk !== bRisk) return aRisk ? -1 : 1;
+              return a.expiry_day - b.expiry_day;
+            });
           }
 
           // Deduct demand across sorted batches
@@ -151,7 +158,8 @@ router.post('/run', (req, res) => {
         }
       }
 
-      const expiredPercentage = totalReleased > 0 ? parseFloat(((totalExpired / totalReleased) * 100).toFixed(2)) : 0;
+      const totalHandled = totalReleased + totalExpired;
+      const expiredPercentage = totalHandled > 0 ? parseFloat(((totalExpired / totalHandled) * 100).toFixed(2)) : 0;
 
       return {
         policy,

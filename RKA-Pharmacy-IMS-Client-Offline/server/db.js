@@ -144,6 +144,62 @@ function initSchema() {
 
 initSchema();
 
+function getLocalDateString(d = new Date()) {
+  const year = d.getFullYear();
+  const month = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+function calculateDaysToExpiry(expiryDateStr, currentDate = new Date()) {
+  if (!expiryDateStr) return null;
+  const parts = String(expiryDateStr).split('-').map(Number);
+  const expDate = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0);
+  const curDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 0, 0, 0);
+  return Math.round((expDate - curDate) / (1000 * 60 * 60 * 24));
+}
+
+function getSettingsMap() {
+  try {
+    const rows = db.prepare('SELECT key, value FROM settings').all();
+    const map = {};
+    for (const r of rows) map[r.key] = r.value;
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+function getExpiryTier(days, settings = null) {
+  if (days === null || days === undefined) return 'None';
+  if (days <= 0) return 'Expired';
+  const s = settings || getSettingsMap();
+  const warnThreshold = parseInt(s.warning_threshold_days || '31', 10);
+  const monThreshold = parseInt(s.monitor_threshold_days || '91', 10);
+  const safeThreshold = parseInt(s.safe_threshold_days || '180', 10);
+
+  if (days < warnThreshold) return 'Critical';
+  if (days < monThreshold) return 'Warning';
+  if (days <= safeThreshold) return 'Monitor';
+  return 'Safe';
+}
+
+function updateExpiredBatchesStatus() {
+  try {
+    const todayStr = getLocalDateString();
+    const result = db.prepare(`
+      UPDATE batches 
+      SET status = 'expired'
+      WHERE expiration_date <= ? AND status = 'active'
+    `).run(todayStr);
+    if (result.changes > 0) {
+      console.log(`[FEFO+ Maintenance] Updated ${result.changes} batch(es) to 'expired' status.`);
+    }
+  } catch (err) {
+    console.error('Failed to update expired batches status:', err);
+  }
+}
+
 /**
  * Creates an automated local backup of the SQLite database
  * Rotates backups to preserve the latest 30 days
@@ -154,14 +210,14 @@ function createDatabaseBackup() {
     if (!fs.existsSync(backupDir)) {
       fs.mkdirSync(backupDir, { recursive: true });
     }
-    const today = new Date().toISOString().slice(0, 10);
+    const today = getLocalDateString();
     const backupFile = path.join(backupDir, `pharmacy_backup_${today}.db`);
 
     // Use better-sqlite3 native backup API to safely snapshot without locking
     db.backup(backupFile)
       .then(() => {
         // Clean up backups older than 30 days
-        const files = fs.readdirSync(backupDir);
+        const files = fs.readdirSync(backupDir).filter(f => f.startsWith('pharmacy_backup_') && f.endsWith('.db'));
         if (files.length > 30) {
           files.sort();
           while (files.length > 30) {
@@ -176,8 +232,13 @@ function createDatabaseBackup() {
   }
 }
 
-// Run initial backup
+// Run initial backup and schedule daily backup every 24 hours
 createDatabaseBackup();
+const backupInterval = setInterval(createDatabaseBackup, 24 * 60 * 60 * 1000);
+if (backupInterval.unref) backupInterval.unref();
+
+// Run initial status update
+updateExpiredBatchesStatus();
 
 function logAudit(action, entityType, entityId, details, operator = 'Lourdes Gincen L. Cesista') {
   try {
@@ -200,5 +261,10 @@ function logAudit(action, entityType, entityId, details, operator = 'Lourdes Gin
 module.exports = {
   db,
   logAudit,
-  createDatabaseBackup
+  createDatabaseBackup,
+  getLocalDateString,
+  calculateDaysToExpiry,
+  getSettingsMap,
+  getExpiryTier,
+  updateExpiredBatchesStatus
 };

@@ -1,14 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { db, logAudit } = require('../db');
-
-function getExpiryTier(days) {
-  if (days <= 0) return 'Expired';
-  if (days <= 30) return 'Critical';
-  if (days <= 90) return 'Warning';
-  if (days <= 180) return 'Monitor';
-  return 'Safe';
-}
+const { db, logAudit, calculateDaysToExpiry, getExpiryTier, getLocalDateString, getSettingsMap } = require('../db');
 
 // GET all batches with medicine details and expiry tiers
 router.get('/', (req, res) => {
@@ -42,15 +34,15 @@ router.get('/', (req, res) => {
     query += ` ORDER BY b.expiration_date ASC`;
 
     const batches = db.prepare(query).all(...params);
+    const settings = getSettingsMap();
     const today = new Date();
 
     const enriched = batches.map(b => {
-      const expDate = new Date(b.expiration_date);
-      const days = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
+      const days = calculateDaysToExpiry(b.expiration_date, today);
       return {
         ...b,
         days_to_expiry: days,
-        expiry_tier: getExpiryTier(days),
+        expiry_tier: getExpiryTier(days, settings),
         is_expired: days <= 0
       };
     });
@@ -91,7 +83,15 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'Quantity must be a positive number greater than zero.' });
     }
 
-    const mfg = manufacturing_date || new Date().toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
+    if (expiration_date <= todayStr) {
+      return res.status(400).json({ error: 'Expiration date must be in the future. Cannot receive already-expired batches into inventory.' });
+    }
+
+    const mfg = manufacturing_date || todayStr;
+    if (mfg > todayStr) {
+      return res.status(400).json({ error: 'Manufacturing date cannot be in the future.' });
+    }
     if (new Date(expiration_date) <= new Date(mfg)) {
       return res.status(400).json({ error: 'Expiration date must be later than manufacturing date.' });
     }
@@ -111,26 +111,27 @@ router.post('/', (req, res) => {
         medicine_id, batch_number, manufacturing_date, expiration_date,
         initial_quantity, current_quantity, unit_cost, selling_price,
         supplier_name, status, received_date
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', DATE('now'))
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
     `);
 
     const result = stmt.run(
       medicine_id,
       batch_number.trim(),
-      manufacturing_date || new Date().toISOString().split('T')[0],
+      mfg,
       expiration_date,
       qty,
       qty,
       cost,
       price,
-      supplier_name || med.supplier_name || 'Generic Supplier'
+      supplier_name || med.supplier_name || 'Generic Supplier',
+      todayStr
     );
 
     const batchId = result.lastInsertRowid;
 
     // Record in transactions ledger
     const lastTx = db.prepare('SELECT id FROM transactions ORDER BY id DESC LIMIT 1').get();
-    const txCode = `TX-IN-${Date.now()}-${lastTx ? lastTx.id + 1 : 1}`;
+    const txCode = `TX-IN-${Date.now()}-${Math.floor(Math.random() * 10000)}-${lastTx ? lastTx.id + 1 : 1}`;
 
     db.prepare(`
       INSERT INTO transactions (
@@ -263,6 +264,10 @@ router.patch('/:id', (req, res) => {
       return res.status(400).json({ error: 'Selling price must be a positive number greater than zero.' });
     }
 
+    if (!reason || reason.trim() === '') {
+      return res.status(400).json({ error: 'A mandatory justification reason is required to adjust batch pricing in the audit trail.' });
+    }
+
     const oldCost = batch.unit_cost;
     const oldPrice = batch.selling_price;
 
@@ -279,7 +284,7 @@ router.patch('/:id', (req, res) => {
       new_unit_cost: newCost,
       old_selling_price: oldPrice,
       new_selling_price: newPrice,
-      reason: reason || 'Price adjustment via Medicines & Batches management'
+      reason: reason.trim()
     }, operator_name || 'Lourdes Gincen L. Cesista');
 
     res.json({

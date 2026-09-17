@@ -1,24 +1,16 @@
 const express = require('express');
 const router = express.Router();
-const { db, logAudit } = require('../db');
-
-function getExpiryTier(days) {
-  if (days <= 0) return 'Expired';
-  if (days <= 30) return 'Critical';
-  if (days <= 90) return 'Warning';
-  if (days <= 180) return 'Monitor';
-  return 'Safe';
-}
+const { db, logAudit, calculateDaysToExpiry, getExpiryTier, getLocalDateString, getSettingsMap } = require('../db');
 
 // Comprehensive FEFO+ analysis handler
 const handleAnalysis = (req, res) => {
   try {
     const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
+    const todayStr = getLocalDateString();
+    const settings = getSettingsMap();
 
     // Read configured history window (default 30 days)
-    const historySetting = db.prepare("SELECT value FROM settings WHERE key = 'history_days_fefo_plus'").get();
-    const historyDays = parseInt(historySetting ? historySetting.value : '30') || 30;
+    const historyDays = parseInt(settings.history_days_fefo_plus || '30', 10) || 30;
 
     // Check how many days of stock-out history exist in system
     const historyStats = db.prepare(`
@@ -32,9 +24,8 @@ const handleAnalysis = (req, res) => {
 
     let totalHistorySpanDays = 0;
     if (historyStats && historyStats.oldest_tx) {
-      const oldest = new Date(historyStats.oldest_tx);
-      const span = Math.max(1, Math.ceil((today - oldest) / (1000 * 60 * 60 * 24)));
-      totalHistorySpanDays = span;
+      const oldestDays = calculateDaysToExpiry(historyStats.oldest_tx, today);
+      totalHistorySpanDays = Math.max(1, Math.abs(oldestDays));
     }
 
     const hasEnoughData = totalHistorySpanDays >= historyDays;
@@ -42,15 +33,16 @@ const handleAnalysis = (req, res) => {
     // Fetch all medicines
     const medicines = db.prepare('SELECT * FROM medicines ORDER BY brand_name ASC').all();
 
-    // For each medicine, calculate Average Daily Quantity Sold (ADQS)
-    // Note: We use max(days recorded, 1) or historyDays window
-    const analysisWindowDays = Math.max(totalHistorySpanDays, 1);
+    // Bound the analysis window by the configured historyDays setting
+    const analysisWindowDays = totalHistorySpanDays >= historyDays 
+      ? historyDays 
+      : Math.max(totalHistorySpanDays, 1);
 
     const medicineAnalysis = [];
     const atRiskBatches = [];
 
     for (const med of medicines) {
-      // Stock sold in window
+      // Stock sold in configured moving window
       const salesQuery = db.prepare(`
         SELECT COALESCE(SUM(quantity), 0) as total_sold
         FROM transactions
@@ -64,29 +56,31 @@ const handleAnalysis = (req, res) => {
       // Calculate suggested reorder level
       // Suggested = ADQS * (Lead Time + Buffer Days)
       const leadTime = med.supplier_lead_time_days || 5;
-      const bufferDays = med.buffer_days || 3;
+      const bufferDays = med.buffer_days || parseInt(settings.default_buffer_days || '3', 10) || 3;
       const suggestedReorder = Math.ceil(adqs * (leadTime + bufferDays));
 
-      // Fetch active unexpired batches
+      // Fetch active unexpired batches in FEFO order
       const batches = db.prepare(`
         SELECT * FROM batches
-        WHERE medicine_id = ? AND status = 'active' AND current_quantity > 0
+        WHERE medicine_id = ? AND status = 'active' AND current_quantity > 0 AND expiration_date > ?
         ORDER BY expiration_date ASC
-      `).all(med.id);
+      `).all(med.id, todayStr);
 
       const totalCurrentStock = batches.reduce((sum, b) => sum + b.current_quantity, 0);
 
+      // Evaluate batches cumulatively along the FEFO dispatch queue
+      let cumulativeStock = 0;
       const evaluatedBatches = batches.map(b => {
-        const expDate = new Date(b.expiration_date);
-        const daysToExpiry = Math.ceil((expDate - today) / (1000 * 60 * 60 * 24));
-        const tier = getExpiryTier(daysToExpiry);
+        cumulativeStock += b.current_quantity;
+        const daysToExpiry = calculateDaysToExpiry(b.expiration_date, today);
+        const tier = getExpiryTier(daysToExpiry, settings);
 
         let daysToConsume = null;
         let expiryRiskMargin = null;
         let isAtWasteRisk = false;
 
         if (adqs > 0) {
-          daysToConsume = parseFloat((b.current_quantity / adqs).toFixed(1));
+          daysToConsume = parseFloat((cumulativeStock / adqs).toFixed(1));
           expiryRiskMargin = parseFloat((daysToExpiry - daysToConsume).toFixed(1));
           // Negative margin = unlikely to be consumed before expiry!
           isAtWasteRisk = expiryRiskMargin < 0;

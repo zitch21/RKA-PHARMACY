@@ -22,6 +22,7 @@ app.use('/api/alerts', require('./routes/alerts'));
 app.use('/api/simulation', require('./routes/simulation'));
 app.use('/api/audit', require('./routes/audit'));
 app.use('/api/settings', require('./routes/settings'));
+app.use('/api/evaluations', require('./routes/evaluations'));
 
 // Serve frontend static build in production
 const clientBuildPath = path.join(__dirname, '../client/dist');
@@ -44,6 +45,12 @@ app.use((req, res, next) => {
     return res.sendFile(path.join(clientBuildPath, 'index.html'));
   }
   res.status(404).json({ error: 'Endpoint not found' });
+});
+
+// Global Error Handler
+app.use((err, req, res, next) => {
+  console.error('Unhandled server error:', err);
+  res.status(500).json({ error: err.message || 'Internal Server Error' });
 });
 
 // Start Server

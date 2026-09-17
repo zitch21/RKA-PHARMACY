@@ -8,7 +8,7 @@
 ## Table of Contents
 1. [System Architecture & Design Philosophy](#1-system-architecture--design-philosophy)
 2. [Prerequisites & Development Setup](#2-prerequisites--development-setup)
-3. [Running the Application (Dev vs. Production)](#3-running-the-application-dev-vs-production)
+3. [Running the Application & Development Workflows](#3-running-the-application--development-workflows)
 4. [Client Deployment: Portable Standalone Workstation](#4-client-deployment-portable-standalone-workstation)
 5. [USB Barcode Scanner Integration Guide](#5-usb-barcode-scanner-integration-guide)
 6. [Offline Database Strategy & Long-Term Performance](#6-offline-database-strategy--long-term-performance)
@@ -61,79 +61,82 @@ The R.K.A Pharmacy Inventory Management System is an **offline-first, standalone
 * **Storage:** At least 500 MB free disk space for runtime and database.
 * **Ports:** At least 1 available USB Type-A port for the barcode scanner.
 
-### Required Developer Software
+### Developer Software (Optional for running portable build)
 1. **Node.js (LTS Version 18.x, 20.x, or 22.x)**
-   * Download the official Windows `.msi` installer from [https://nodejs.org](https://nodejs.org).
-   * Verify installation in PowerShell or Command Prompt:
-     ```bash
-     node -v
-     npm -v
-     ```
+   * *Note:* Not required for running the application, as a portable Node.js v24.14.0 binary is pre-bundled in `runtime/node.exe`.
+   * If modifying server scripts, install from [https://nodejs.org](https://nodejs.org).
 2. **Visual Studio Code (Recommended Code Editor)**
    * Download from [https://code.visualstudio.com](https://code.visualstudio.com).
 3. **C++ Build Tools (Only if compiling native modules from scratch)**
-   * `better-sqlite3` includes precompiled Windows binaries. If you ever compile native Node addons from source on Windows, install Visual Studio C++ Build Tools.
+   * `better-sqlite3` includes precompiled Windows x64 binaries. If you ever compile native Node addons from source on Windows, install Visual Studio C++ Build Tools.
 
 ---
 
-## 3. Running the Application (Dev vs. Production)
+## 3. Running the Application & Development Workflows
 
-### Step 1: Install Dependencies
-Open PowerShell in the project root directory (`rka-pharmacy-ims`):
+The repository provides the complete, pre-bundled distribution in `RKA-Pharmacy-IMS-Client-Offline/`. Developers and operators can launch, inspect, or manage the backend through multiple workflows:
 
-```powershell
-# 1. Install root backend dependencies (Express, better-sqlite3, cors)
-npm install
-
-# 2. Install client frontend dependencies (React, Vite, Lucide-React, Tailwind CSS)
-cd client
-npm install
-cd ..
-```
-
-### Step 2: Seed the Clinic Database (First-Time Setup)
-To populate the database with initial clinic medicines, batches across all expiration tiers, and 35 days of transaction history:
+### Method A: Running with Bundled Runtime (Zero Node.js Installation)
+Even on a clean PC without Node.js installed, you can launch the backend and database using the bundled portable runtime in `RKA-Pharmacy-IMS-Client-Offline\runtime\node.exe`:
 
 ```powershell
-npm run seed
+# Navigate into the client directory
+cd RKA-Pharmacy-IMS-Client-Offline
+
+# Start the Express server and frontend static host
+.\runtime\node.exe server\index.js
 ```
-This initializes `server/data/pharmacy_inventory.db` with clinic medicines (Amoxicillin, Cefalexin, Paracetamol, Metformin, etc.).
+The server will start and display:
+```text
+=======================================================
+ R.K.A PHARMACY INVENTORY MANAGEMENT SYSTEM (FEFO+) 
+ San Antonio, Agoo, La Union                           
+ Server active on http://localhost:5000             
+ Client dev proxy: http://localhost:3000              
+=======================================================
+```
+Open **http://localhost:5000** in your browser.
 
 ---
 
-### Step 3A: Running in Development Mode
-In development mode, Vite runs a hot-reloading development server on port `3000`, while Express runs on port `5000`.
+### Method B: Running with Globally Installed Node.js
+If you have Node.js installed globally:
 
-Open **two terminal windows**:
+```powershell
+cd RKA-Pharmacy-IMS-Client-Offline
 
-* **Terminal 1 (Backend Server):**
-  ```powershell
-  npm run dev:server
-  ```
-  *Outputs: `Server active on http://localhost:5000`*
-
-* **Terminal 2 (Frontend Client):**
-  ```powershell
-  npm run dev:client
-  ```
-  *Outputs: `Local: http://localhost:3000`*
-
-Open `http://localhost:3000` in your browser. Any edits to React code update instantly.
+# Start the Express server
+node server\index.js
+```
 
 ---
 
-### Step 3B: Running in Production Mode (Unified Single Server)
-In production, the React frontend is compiled into static HTML, JavaScript, and CSS files stored in `client/dist`. The Node.js Express server serves both the REST API and the frontend from port `5000`.
+### Method C: Database Seeding & Maintenance
+The application auto-seeds initial data on first launch if the database is empty. To manually re-seed or verify database integrity:
 
 ```powershell
-# 1. Build the optimized client bundle
-npm run build
+cd RKA-Pharmacy-IMS-Client-Offline
 
-# 2. Start the unified production server
-npm start
+# Run the seeding script
+.\runtime\node.exe server\seed.js
 ```
+*(Or `node server\seed.js` using global Node).* This populates `server/data/pharmacy_inventory.db` with standard clinic medicines, multi-tier batches, and 35 days of sales records.
 
-Now open `http://localhost:5000`. The entire application is served from a single port with no separate frontend build process needed.
+---
+
+### Method D: Application Launchers
+* **Native GUI App:** Double-click `RKA-Pharmacy-IMS.exe` (starts the Node backend silently and opens Microsoft Edge in standalone App Mode).
+* **Console Batch Script:** Double-click `start-app.bat` (launches backend with visible terminal logs).
+
+---
+
+### Frontend Architecture Note (React 19 + Vite)
+The production UI in `client/dist/` is precompiled using Vite into an optimized production bundle with Tailwind CSS styles. `server/index.js` serves these static assets directly from port 5000:
+```javascript
+const clientBuildPath = path.join(__dirname, '../client/dist');
+app.use(express.static(clientBuildPath));
+```
+Any non-API GET request falls back to `client/dist/index.html` for single-page client routing.
 
 ---
 
@@ -180,17 +183,24 @@ RKA-Pharmacy-IMS-Client-Offline/
 
 ---
 
-### Preparing a USB Flash Drive Distribution
+### Distribution Methods
 
-When sharing the project with teammates or deploying to the clinic:
+#### Method 1: Distributing via GitHub ZIP Download
+When sharing the repository with external evaluators, panel members, or colleagues:
+1. Direct the recipient to the repository: **https://github.com/zitch21/RKA-PHARMACY**
+2. Instruct them to click **Code** -> **Download ZIP** to get `RKA-PHARMACY-main.zip`.
+3. Inform them to **Extract All...** to a permanent local path (e.g. `C:\RKA-PHARMACY` or `Documents\RKA-PHARMACY`).
+4. Double-click **`Setup-Desktop-Shortcut.bat`** and launch.
 
+#### Method 2: Distributing via USB Flash Drive
+When deploying to the clinic counter or offline computers:
 1. **Checkpoint the SQLite Database (Flush WAL logs):**
    In the client offline folder, execute:
    ```powershell
    .\runtime\node.exe -e "const db = require('better-sqlite3')('server/data/pharmacy_inventory.db'); db.pragma('wal_checkpoint(TRUNCATE)'); db.close();"
    ```
 2. **Create the ZIP Archive:**
-   Compress the entire `RKA-Pharmacy-IMS-Client-Offline` folder into `RKA-Pharmacy-IMS-Client-Offline.zip`.
+   Compress the `RKA-Pharmacy-IMS-Client-Offline` folder into `RKA-Pharmacy-IMS-Client-Offline.zip`.
 3. **Copy to USB Flash Drive:**
    Copy the `.zip` file to the flash drive.
 
@@ -198,17 +208,17 @@ When sharing the project with teammates or deploying to the clinic:
 
 ### Installation on the Recipient's PC
 
-Provide these 3 instructions to your teammate or clinic staff:
+Provide these 3 simple instructions to clinic staff or evaluators:
 
 1. **Extract the ZIP file first (Crucial):**
-   - Right-click `RKA-Pharmacy-IMS-Client-Offline.zip` -> select **"Extract All..."**.
-   - Choose a permanent location (e.g. `Documents` or `C:\`).
-   - *Do not run the files directly inside the zip folder.*
+   - Right-click the `.zip` file -> select **"Extract All..."**.
+   - Choose a permanent location (e.g., `C:\`, `Documents`, or your personal workspace).
+   - *⚠️ Do not run files directly inside the `.zip` archive preview.*
 2. **Create the Desktop Shortcut:**
-   - Open the extracted folder and double-click `Setup-Desktop-Shortcut.bat`.
+   - Open the extracted folder and double-click **`Setup-Desktop-Shortcut.bat`**.
    - A success message will confirm the shortcut has been added to their desktop.
 3. **Launch the System:**
-   - Double-click the new shortcut on the desktop (or `RKA-Pharmacy-IMS.exe`).
+   - Double-click the new shortcut on the desktop (or `RKA-Pharmacy-IMS.exe` / `start-app.bat`).
    - If Windows SmartScreen appears (*"Windows protected your PC"*), click **More info** -> **Run anyway**.
 
 ---
@@ -302,6 +312,17 @@ db.pragma('foreign_keys = ON');
 ```
 * In **WAL mode**, new writes are appended to an auxiliary `pharmacy_inventory.db-wal` file before being merged back into the database file.
 * If power cuts mid-transaction, uncommitted writes are safely discarded, and committed writes are preserved with **0% risk of database file corruption**.
+
+---
+
+### Database Relational Schema
+The database schema (`server/db.js`) is organized into 6 core tables:
+1. **`medicines`**: Master catalog of pharmaceutical items (brand/generic names, dosages, barcodes, lead time, and reorder levels).
+2. **`batches`**: Physical inventory batches linked to medicines (batch numbers, manufacturing/expiration dates, remaining quantities, unit cost, and selling prices).
+3. **`transactions`**: Transaction ledger tracking stock-in, stock-out (dispensing), inventory recounts, safe disposals, and FEFO override reasons.
+4. **`audit_logs`**: Immutable, tamper-evident audit ledger capturing administrative actions, batch price alterations, and operator names.
+5. **`settings`**: Configuration key-value store for expiration countdown tiers (Safe, Monitor, Warning, Critical), buffer days, and pharmacy info.
+6. **`usability_evaluations`**: Usability testing ledger storing System Usability Scale (SUS) 10-item questionnaire responses and calculated SUS scores.
 
 ---
 
@@ -416,6 +437,13 @@ npm rebuild better-sqlite3
 
 ### Q7: Can the pharmacy operate multiple counters on the same local network?
 **Answer:** Yes. Because the server listens on `http://0.0.0.0:5000`, other computers connected to the same clinic Wi-Fi or router can access the system by opening `http://<SERVER-LOCAL-IP>:5000` in their browser (e.g., `http://192.168.1.100:5000`).
+
+---
+
+### Q8: "Destination path too long" error during ZIP extraction
+**Symptom:** Windows displays an error stating the file name(s) would be too long for the destination folder during extraction.  
+**Cause:** Windows has a default `MAX_PATH` limit (260 characters). Deep folder hierarchies (such as extracting inside nested Downloads folders) can exceed this limit for pre-bundled packages.  
+**Solution:** Extract the archive directly into a shorter root directory, such as `C:\RKA-PHARMACY` or `Documents\RKA-PHARMACY`.
 
 ---
 

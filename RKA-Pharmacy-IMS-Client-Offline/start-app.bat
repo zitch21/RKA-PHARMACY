@@ -6,6 +6,12 @@ echo  San Antonio, Agoo, La Union
 echo =======================================================
 echo.
 
+if exist "%~dp0RKA-Pharmacy-IMS-Client-Offline\start-app.bat" (
+    cd /d "%~dp0RKA-Pharmacy-IMS-Client-Offline"
+    call start-app.bat
+    exit /b
+)
+
 cd /d "%~dp0"
 start /B runtime\node.exe server\index.js
 timeout /t 2 /nobreak >nul

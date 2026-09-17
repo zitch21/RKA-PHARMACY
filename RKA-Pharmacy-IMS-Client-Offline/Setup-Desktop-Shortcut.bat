@@ -6,9 +6,14 @@ echo   Desktop Shortcut Installer
 echo ========================================================
 echo.
 
-set "TARGET_EXE=%~dp0RKA-Pharmacy-IMS.exe"
-set "WORKING_DIR=%~dp0"
-set "ICON_FILE=%~dp0app-icon.ico"
+set "APP_DIR=%~dp0"
+if exist "%~dp0RKA-Pharmacy-IMS-Client-Offline\RKA-Pharmacy-IMS.exe" (
+    set "APP_DIR=%~dp0RKA-Pharmacy-IMS-Client-Offline\"
+)
+
+set "TARGET_EXE=%APP_DIR%RKA-Pharmacy-IMS.exe"
+set "WORKING_DIR=%APP_DIR%"
+set "ICON_FILE=%APP_DIR%app-icon.ico"
 
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$ws = New-Object -ComObject WScript.Shell; $desktop = $ws.SpecialFolders.Item('Desktop'); if (-not $desktop -or -not (Test-Path $desktop)) { $desktop = [Environment]::GetFolderPath([Environment+SpecialFolder]::Desktop) }; if (-not (Test-Path $desktop)) { Write-Error ('Desktop folder not found: ' + $desktop); exit 1 }; $shortcut = Join-Path $desktop 'R.K.A Pharmacy IMS.lnk'; $s = $ws.CreateShortcut($shortcut); $s.TargetPath = '%TARGET_EXE%'; $s.WorkingDirectory = '%WORKING_DIR%'; if (Test-Path '%ICON_FILE%') { $s.IconLocation = '%ICON_FILE%,0' }; $s.Description = 'R.K.A Pharmacy Inventory System'; $s.Save(); Write-Host '[SUCCESS] Desktop shortcut created successfully on your Desktop!'; Write-Host ('File: ' + $shortcut);"
 

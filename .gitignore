@@ -1,0 +1,14 @@
+# Frontend development build dependencies
+RKA-Pharmacy-IMS-Client-Offline/client/node_modules/
+**/client/node_modules/
+
+# SQLite WAL and SHM temporary files
+*.db-wal
+*.db-shm
+
+# Log files and caches
+*.log
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/

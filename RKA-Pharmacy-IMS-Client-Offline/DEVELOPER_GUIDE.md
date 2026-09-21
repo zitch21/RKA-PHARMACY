@@ -1,492 +1,581 @@
-# Developer Guide: Build, Package, and Deploy
+# Developer Guide: Architecture, Codebase Walkthrough, & Onboarding Manual
 ### R.K.A Pharmacy Inventory Management System (FEFO+)
-**Clinic Location:** San Antonio, Agoo, La Union  
-**Architecture:** Offline-First, Single-Operator Workstation (React + Node.js + Embedded SQLite)
+**Academic Context:** DMMMSU-SLUC Computer Science Undergraduate Thesis (August 2026)  
+**Client Partner:** R.K.A Pharmacy, San Antonio, Agoo, La Union  
+**Architecture:** Offline-First, Single-Operator Workstation (React 19 + Node.js Express + Embedded SQLite WAL)
+
+---
+
+## 🌟 Welcome to the R.K.A Pharmacy IMS Codebase!
+
+If you are a beginner or a junior developer opening this project for the first time, **welcome!** 
+
+This guide is designed specifically for you. It explains how this system works, why it was designed this way, where every file lives, and how you can comfortably read, modify, and extend the code with confidence.
 
 ---
 
 ## Table of Contents
-1. [System Architecture & Design Philosophy](#1-system-architecture--design-philosophy)
-2. [Prerequisites & Development Setup](#2-prerequisites--development-setup)
-3. [Running the Application & Development Workflows](#3-running-the-application--development-workflows)
-4. [Client Deployment: Portable Standalone Workstation](#4-client-deployment-portable-standalone-workstation)
-5. [USB Barcode Scanner Integration Guide](#5-usb-barcode-scanner-integration-guide)
-6. [Offline Database Strategy & Long-Term Performance](#6-offline-database-strategy--long-term-performance)
-7. [Automated Backups & Disaster Recovery](#7-automated-backups--disaster-recovery)
-8. [Troubleshooting & Beginner FAQ](#8-troubleshooting--beginner-faq)
-9. [Operational Governance & Pharmacy Safeguards](#9-operational-governance--pharmacy-safeguards)
+1. [The 30-Second Mental Model (How Everything Connects)](#1-the-30-second-mental-model-how-everything-connects)
+2. [Beginner's Day 1: Running the App in 5 Minutes](#2-beginners-day-1-running-the-app-in-5-minutes)
+3. [The Complete Codebase Tour (Where Does Everything Live?)](#3-the-complete-codebase-tour-where-does-everything-live)
+4. [Follow the Data: 4 Step-by-Step Request Traces](#4-follow-the-data-4-step-by-step-request-traces)
+   - [Trace 1: User Authentication & Workstation Lock](#trace-1-user-authentication--workstation-lock)
+   - [Trace 2: Barcode Scanning & FEFO Dispensing](#trace-2-barcode-scanning--fefo-dispensing)
+   - [Trace 3: FEFO+ Expiry Risk Calculation](#trace-3-fefo-expiry-risk-calculation)
+   - [Trace 4: End-of-Day USB Removable Storage Backup](#trace-4-end-of-day-usb-removable-storage-backup)
+5. [The 5 Core Architectural Concepts Explained Simply](#5-the-5-core-architectural-concepts-explained-simply)
+   - [Concept 1: The FEFO+ Mathematical Formulas](#concept-1-the-fefo-mathematical-formulas)
+   - [Concept 2: 5-Tier Expiration Countdown & Confirmation Gate](#concept-2-5-tier-expiration-countdown--confirmation-gate)
+   - [Concept 3: Crash-Proof Offline SQLite in WAL Mode](#concept-3-crash-proof-offline-sqlite-in-wal-mode)
+   - [Concept 4: Scrypt Cryptographic Password Security](#concept-4-scrypt-cryptographic-password-security)
+   - [Concept 5: The Immutable Audit Trail Ledger](#concept-5-the-immutable-audit-trail-ledger)
+6. [Beginner Developer Playbook: "How Do I Make Changes?"](#6-beginner-developer-playbook-how-do-i-make-changes)
+   - [Recipe 1: Adding a New Backend REST Endpoint](#recipe-1-adding-a-new-backend-rest-endpoint)
+   - [Recipe 2: Modifying the Database Schema](#recipe-2-modifying-the-database-schema)
+   - [Recipe 3: Adding or Editing a React View](#recipe-3-adding-or-editing-a-react-view)
+   - [Recipe 4: Recompiling the Production Frontend](#recipe-4-recompiling-the-production-frontend)
+   - [Recipe 5: Writing an Automated Verification Test](#recipe-5-writing-an-automated-verification-test)
+7. [Working with Barcode Scanners (Hardware Guide)](#7-working-with-barcode-scanners-hardware-guide)
+8. [Common Beginner Pitfalls & Traps to Avoid](#8-common-beginner-pitfalls--traps-to-avoid)
+9. [Glossary for Non-Pharmacist Developers](#9-glossary-for-non-pharmacist-developers)
 
 ---
 
-## 1. System Architecture & Design Philosophy
+## 1. The 30-Second Mental Model (How Everything Connects)
 
-The R.K.A Pharmacy Inventory Management System is an **offline-first, standalone clinic workstation application**. It was designed specifically for single-operator community and clinic pharmacies (such as R.K.A Pharmacy in San Antonio, Agoo, La Union).
+Before diving into code, here is what this system actually is in plain English:
+
+> **R.K.A Pharmacy IMS** is a local, desktop-based web application that runs inside the clinic on a single laptop. When the clinic opens in the morning, the owner launches the app, logs in, and uses a handheld USB barcode scanner to dispense medicines. The system makes sure that medicines expiring earliest are dispensed first, prevents expired medicines from ever leaving the pharmacy, alerts the owner before medicines expire, calculates when to reorder stock, and backs up everything to a USB flash drive at the end of the day.
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                      LOCAL CLINIC LAPTOP / PC                           │
-│                                                                         │
-│  ┌───────────────────────┐              ┌────────────────────────────┐  │
-│  │     Client UI         │  HTTP / REST │   Node.js Express Server   │  │
-│  │   (React 19 + Vite)   │ ───────────> │        (Port 5000)         │  │
-│  │  Tailwind CSS Styles  │ <─────────── │  • FEFO+ Batch Dispatch    │  │
-│  │  Barcode Auto-Focus   │              │  • Reorder Level Engine    │  │
-│  └───────────────────────┘              │  • Audit Trail Logger      │  │
-│              ▲                          └─────────────┬──────────────┘  │
-│              │ Keystroke Events                       │ Direct C++ API  │
-│              │ (HID Keyboard Wedge)                   ▼                 │
-│  ┌───────────┴───────────┐              ┌────────────────────────────┐  │
-│  │   USB Barcode Scanner │              │    SQLite 3 (Embedded)     │  │
-│  │   (Plug-and-Play HID) │              │  pharmacy_inventory.db     │  │
-│  └───────────────────────┘              │  • WAL Mode (Crash-proof)  │  │
-│                                         │  • High-Speed B-Tree Index │  │
-│                                         └────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│                           CLINIC WORKSTATION PC / LAPTOP                        │
+│                                                                                 │
+│   ┌────────────────────────┐                   ┌────────────────────────────┐   │
+│   │    Frontend UI         │   HTTP / JSON     │   Node.js Express Server   │   │
+│   │  (React 19 + Tailwind) │ <───────────────> │        (Port 5000)         │   │
+│   │  Runs inside browser   │                   │  • FEFO+ Allocation Logic  │   │
+│   │  or Edge App Window    │                   │  • Scrypt Password Hashing │   │
+│   └────────────────────────┘                   │  • USB Backup Manager      │   │
+│                ▲                               └─────────────┬──────────────┘   │
+│                │ Keystroke Events                            │ In-Process C++   │
+│                │ (<20ms + Enter)                             ▼                  │
+│   ┌────────────┴───────────┐                   ┌────────────────────────────┐   │
+│   │  USB Barcode Scanner   │                   │    SQLite 3 (Embedded)     │   │
+│   │  (Acts like a keyboard)│                   │  pharmacy_inventory.db     │   │
+│   └────────────────────────┘                   │  • WAL Mode (Crash-proof)  │   │
+│                                                │  • 100% Offline & Local    │   │
+│                                                └────────────────────────────┘   │
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Why Offline-First?
-* **Zero Cloud Dependency:** Clinic operations in provincial locations cannot halt during internet service provider outages or weather disturbances.
-* **No Recurring Monthly SaaS Costs:** The clinic owns the software and data outright with zero server subscription fees.
-* **Ultra-Low Latency:** Every scan, inventory lookup, and transaction commit completes in under **5 milliseconds**.
-* **Data Sovereignty & Privacy:** Sensitive inventory costs and prescription dispense logs never leave the clinic's premises.
+### Why is this Offline-First?
+1. **Zero Cloud Dependency:** Provincial clinics frequently face internet disruptions or bad weather. The clinic counter must never freeze during a sale.
+2. **Zero SaaS Subscription Fees:** Small community clinics cannot afford ₱3,000–₱8,000 monthly cloud database fees.
+3. **Sub-5-Millisecond Latency:** Every barcode scan and inventory lookup is instantaneous because the database is right on the local SSD.
+4. **Patient Privacy:** Medicine sales and prescription references never leave the clinic computer.
 
 ---
 
-## 2. Prerequisites & Development Setup
+## 2. Beginner's Day 1: Running the App in 5 Minutes
 
-### Hardware Requirements
-* **Operating System:** Windows 10 or Windows 11 (64-bit recommended).
-* **Processor:** Intel Core i3 / AMD Ryzen 3 or higher.
-* **RAM:** 4 GB minimum (8 GB recommended).
-* **Storage:** At least 500 MB free disk space for runtime and database.
-* **Ports:** At least 1 available USB Type-A port for the barcode scanner.
+You do **not** need to install Node.js, npm, Python, or MySQL on your computer to run this system! A standalone, portable Node.js LTS binary is already bundled inside `runtime/node.exe`.
 
-### Developer Software (Optional for running portable build)
-1. **Node.js (LTS Version 18.x, 20.x, or 22.x)**
-   * *Note:* Not required for running the application, as a portable Node.js v24.14.0 binary is pre-bundled in `runtime/node.exe`.
-   * If modifying server scripts, install from [https://nodejs.org](https://nodejs.org).
-2. **Visual Studio Code (Recommended Code Editor)**
-   * Download from [https://code.visualstudio.com](https://code.visualstudio.com).
-3. **C++ Build Tools (Only if compiling native modules from scratch)**
-   * `better-sqlite3` includes precompiled Windows x64 binaries. If you ever compile native Node addons from source on Windows, install Visual Studio C++ Build Tools.
+### 3 Ways to Launch the System
+Choose whichever method is easiest for you:
 
----
+#### Method 1: The Native App Launcher (Double-Click)
+1. Open the `RKA-Pharmacy-IMS-Client-Offline/` folder.
+2. Double-click **`RKA-Pharmacy-IMS.exe`**.
+3. It silently boots the backend in the background and opens a clean, borderless application window.
 
-## 3. Running the Application & Development Workflows
+#### Method 2: The Console Batch Script (Visible Terminal Logs)
+1. Open the `RKA-Pharmacy-IMS-Client-Offline/` folder.
+2. Double-click **`start-app.bat`**.
+3. A command prompt will show the server logs, and your default browser will open to `http://localhost:5000`.
 
-The repository provides the complete, pre-bundled distribution in `RKA-Pharmacy-IMS-Client-Offline/`. Developers and operators can launch, inspect, or manage the backend through multiple workflows:
-
-### Method A: Running with Bundled Runtime (Zero Node.js Installation)
-Even on a clean PC without Node.js installed, you can launch the backend and database using the bundled portable runtime in `RKA-Pharmacy-IMS-Client-Offline\runtime\node.exe`:
-
+#### Method 3: Developer Terminal (Manual Command)
+Open PowerShell in the `RKA-Pharmacy-IMS-Client-Offline/` folder:
 ```powershell
-# Navigate into the client directory
-cd RKA-Pharmacy-IMS-Client-Offline
-
-# Start the Express server and frontend static host
-.\runtime\node.exe server\index.js
+.\runtime\node.exe server/index.js
 ```
-The server will start and display:
+Then open your browser to **`http://localhost:5000`**.
+
+### Logging In
+When the app opens, you will be greeted by the workstation lock screen. Use the default clinic administrator account:
+* **Username:** `admin`
+* **Password:** `rka2026`
+* **Operator:** Lourdes Gincen L. Cesista
+
+### Running the Automated Test Suite
+To verify that all 38 thesis manuscript specifications are functioning:
+```powershell
+cd RKA-Pharmacy-IMS-Client-Offline
+.\runtime\node.exe verify_all_specs.js
+```
+You should see:
 ```text
-=======================================================
- R.K.A PHARMACY INVENTORY MANAGEMENT SYSTEM (FEFO+) 
- San Antonio, Agoo, La Union                           
- Server active on http://localhost:5000             
- Client dev proxy: http://localhost:3000              
-=======================================================
-```
-Open **http://localhost:5000** in your browser.
-
----
-
-### Method B: Running with Globally Installed Node.js
-If you have Node.js installed globally:
-
-```powershell
-cd RKA-Pharmacy-IMS-Client-Offline
-
-# Start the Express server
-node server\index.js
+================================================================
+ VERIFICATION RESULTS: 38 PASSED, 0 FAILED
+================================================================
 ```
 
 ---
 
-### Method C: Database Seeding & Maintenance
-The application auto-seeds initial data on first launch if the database is empty. To manually re-seed or verify database integrity:
+## 3. The Complete Codebase Tour (Where Does Everything Live?)
 
-```powershell
-cd RKA-Pharmacy-IMS-Client-Offline
+The codebase is split into **Two Worlds**:
+1. **The Backend (`server/`)**: Express.js REST API routes and SQLite database operations.
+2. **The Frontend (`client/`)**: React 19 single-page application built with Vite and Tailwind CSS.
+   * `client/src/`: Where developers write JSX components and CSS.
+   * `client/dist/`: Where Vite outputs the compiled bundle that Express serves to the browser.
 
-# Run the seeding script
-.\runtime\node.exe server\seed.js
-```
-*(Or `node server\seed.js` using global Node).* This populates `server/data/pharmacy_inventory.db` with standard clinic medicines, multi-tier batches, and 35 days of sales records.
-
----
-
-### Method D: Application Launchers
-* **Native GUI App:** Double-click `RKA-Pharmacy-IMS.exe` (starts the Node backend silently and opens Microsoft Edge in standalone App Mode).
-* **Console Batch Script:** Double-click `start-app.bat` (launches backend with visible terminal logs).
-
----
-
-### Frontend Architecture Note (React 19 + Vite)
-The production UI in `client/dist/` is precompiled using Vite into an optimized production bundle with Tailwind CSS styles. `server/index.js` serves these static assets directly from port 5000:
-```javascript
-const clientBuildPath = path.join(__dirname, '../client/dist');
-app.use(express.static(clientBuildPath));
-```
-Any non-API GET request falls back to `client/dist/index.html` for single-page client routing.
-
----
-
-## 4. Client Deployment: Portable Standalone Workstation
-
-### The Production Client Package (`RKA-Pharmacy-IMS-Client-Offline`)
-For clinic computers and teammate workstations, the application is packaged as a **zero-installation, completely portable distribution**. Non-technical clinic operators do not need to install Node.js, install npm packages, or touch the command line.
-
-#### Architecture of the Standalone Package
-```
+### Annotated Directory Tree
+```text
 RKA-Pharmacy-IMS-Client-Offline/
-├── RKA-Pharmacy-IMS.exe        # Native C# launcher (silent background Node server + Edge app mode)
-├── Setup-Desktop-Shortcut.bat  # Automated desktop shortcut creator (OneDrive & Windows SpecialFolder compatible)
-├── start-app.bat               # Fallback batch launcher (with automatic working directory lock)
 ├── runtime/
 │   └── node.exe                # Bundled standalone Node.js v24.14.0 LTS binary
 ├── server/
-│   ├── index.js                # Express production server & static client host
-│   ├── db.js                   # SQLite database manager & rolling backup routine
-│   └── data/
-│       ├── pharmacy_inventory.db # Embedded clinic database (WAL mode)
-│       └── backups/            # 30-day automated rolling backups
+│   ├── index.js                # Express app entry point & static file server
+│   ├── db.js                   # SQLite database connection, schema, & Scrypt hashing
+│   ├── seed.js                 # Initial clinic medicine catalog & sales history seed
+│   ├── data/
+│   │   ├── pharmacy_inventory.db # The SQLite database file (WAL mode enabled)
+│   │   └── backups/            # Rolling 30-day automated backup snapshots
+│   └── routes/                 # REST API endpoints (One file per feature area)
+│       ├── auth.js             # Operator login, session check, password change
+│       ├── backup.js           # USB flash drive detection, WAL checkpoint, export
+│       ├── alerts.js           # Stock & expiry alerts with manual acknowledgment
+│       ├── batches.js          # Batch creation, quantity updates, barcode tag generation
+│       ├── medicines.js        # Medicine catalog, pricing, category management
+│       ├── transactions.js     # Dispensing (POS), FEFO enforcement, override logs
+│       ├── fefoPlus.js         # Consumption velocity, Days of Supply, Expiry Risk Margin
+│       ├── audit.js            # Immutable audit trail ledger & CSV export
+│       ├── simulation.js       # FIFO vs FEFO vs FEFO+ comparative simulation
+│       ├── settings.js         # Countdown tier thresholds and clinic profile
+│       └── evaluations.js      # System Usability Scale (SUS) survey engine
 ├── client/
-│   └── dist/                   # Compiled Vite/React production assets
-└── node_modules/               # Pre-installed production packages (better-sqlite3 x64 native)
+│   ├── src/                    # React Source Code (Edit your UI here!)
+│   │   ├── components/         # Reusable UI widgets & Modals
+│   │   │   ├── Navbar.jsx      # Top banner, operator badge, navigation tabs, bell
+│   │   │   ├── LoginModal.jsx  # Scrypt workstation authentication lock screen
+│   │   │   ├── BatchStatusConfirmModal.jsx # Warning/Critical/At-Risk confirmation gate
+│   │   │   ├── OverrideModal.jsx           # Mandatory FEFO override justification dialog
+│   │   │   ├── AddMedicineModal.jsx        # Modal to register new medicine catalog items
+│   │   │   ├── AlertNotificationDropdown.jsx # Top-right active alert drawer with Ack buttons
+│   │   │   ├── HelpGuideModal.jsx          # Dual-version beginner & advanced operating guide
+│   │   │   └── ExitConfirmModal.jsx        # Accidental exit prevention prompt
+│   │   ├── views/              # Full-page screens corresponding to navigation tabs
+│   │   │   ├── DashboardView.jsx   # Metrics, priority alert banner, countdown breakdown
+│   │   │   ├── InventoryView.jsx   # Medicine catalog, batch table, printable barcode labels
+│   │   │   ├── StockInView.jsx     # Intake workflow, cost inheritance, supplier tracking
+│   │   │   ├── StockOutView.jsx    # Dispensing POS, barcode scanner focus, cart, receipt
+│   │   │   ├── FefoPlusView.jsx    # Consumption velocity, ERM radar, 1-click reorder sync
+│   │   │   ├── AuditTrailView.jsx  # Immutable system logs with search and CSV export
+│   │   │   ├── SimulationView.jsx  # Historical replay comparing FIFO vs FEFO vs FEFO+
+│   │   │   └── SettingsView.jsx    # Threshold configuration, USB backups, password change
+│   │   └── App.jsx             # Workstation shell, state orchestrator, auth guard
+│   └── dist/                   # Compiled HTML/CSS/JS served to the browser
+├── verify_all_specs.js         # Automated test suite validating all thesis requirements
+├── Setup-Desktop-Shortcut.bat  # 1-click shortcut installer
+├── start-app.bat               # Fallback launcher
+└── RKA-Pharmacy-IMS.exe        # Native Windows launcher
 ```
 
-#### How the Launchers Work:
-1. **`RKA-Pharmacy-IMS.exe` (Primary Launcher):**
-   - A lightweight .NET executable that runs without opening a black command prompt window.
-   - Spawns `runtime\node.exe server\index.js` in the background.
-   - Polls `http://localhost:5000/api/health` until the server responds.
-   - Launches Microsoft Edge in standalone Application Mode:
-     ```text
-     msedge.exe --app=http://localhost:5000 --window-size=1366,768
-     ```
-   - If Edge is unavailable, it automatically falls back to opening the system's default browser.
-2. **`start-app.bat` (Fallback Launcher):**
-   - Includes `cd /d "%~dp0"` to guarantee that the working directory is always locked to the application folder, even if launched via administrator mode or external scripts.
-3. **`Setup-Desktop-Shortcut.bat` (Installer):**
-   - Uses PowerShell to query the Windows Shell API: `$ws.SpecialFolders.Item('Desktop')` and `[Environment]::GetFolderPath('Desktop')`.
-   - Correctly resolves Desktop paths on all systems, including PCs with **Microsoft OneDrive Backup** enabled (`C:\Users\<user>\OneDrive\Desktop`) and standard local folders (`C:\Users\<user>\Desktop`).
-   - Creates a shortcut titled **"R.K.A Pharmacy IMS.lnk"** targeting `RKA-Pharmacy-IMS.exe` with the working directory set properly.
+---
+
+## 4. Follow the Data: 4 Step-by-Step Request Traces
+
+To truly understand how this system works, follow a piece of data from the user's action all the way down to the database and back.
 
 ---
 
-### Distribution Methods
+### Trace 1: User Authentication & Workstation Lock
+What happens when the operator logs into the workstation?
 
-#### Method 1: Distributing via GitHub ZIP Download
-When sharing the repository with external evaluators, panel members, or colleagues:
-1. Direct the recipient to the repository: **https://github.com/zitch21/RKA-PHARMACY**
-2. Instruct them to click **Code** -> **Download ZIP** to get `RKA-PHARMACY-main.zip`.
-3. Inform them to **Extract All...** to a permanent local path (e.g. `C:\RKA-PHARMACY` or `Documents\RKA-PHARMACY`).
-4. Double-click **`Setup-Desktop-Shortcut.bat`** and launch.
-
-#### Method 2: Distributing via USB Flash Drive
-When deploying to the clinic counter or offline computers:
-1. **Checkpoint the SQLite Database (Flush WAL logs):**
-   In the client offline folder, execute:
-   ```powershell
-   .\runtime\node.exe -e "const db = require('better-sqlite3')('server/data/pharmacy_inventory.db'); db.pragma('wal_checkpoint(TRUNCATE)'); db.close();"
-   ```
-2. **Create the ZIP Archive:**
-   Compress the `RKA-Pharmacy-IMS-Client-Offline` folder into `RKA-Pharmacy-IMS-Client-Offline.zip`.
-3. **Copy to USB Flash Drive:**
-   Copy the `.zip` file to the flash drive.
-
----
-
-### Installation on the Recipient's PC
-
-Provide these 3 simple instructions to clinic staff or evaluators:
-
-1. **Extract the ZIP file first (Crucial):**
-   - Right-click the `.zip` file -> select **"Extract All..."**.
-   - Choose a permanent location (e.g., `C:\`, `Documents`, or your personal workspace).
-   - *⚠️ Do not run files directly inside the `.zip` archive preview.*
-2. **Create the Desktop Shortcut:**
-   - Open the extracted folder and double-click **`Setup-Desktop-Shortcut.bat`**.
-   - A success message will confirm the shortcut has been added to their desktop.
-3. **Launch the System:**
-   - Double-click the new shortcut on the desktop (or `RKA-Pharmacy-IMS.exe` / `start-app.bat`).
-   - If Windows SmartScreen appears (*"Windows protected your PC"*), click **More info** -> **Run anyway**.
+```
+[User types admin / rka2026]
+       │
+       ▼
+1. LoginModal.jsx (React) sends HTTP POST to /api/auth/login
+       │
+       ▼
+2. server/routes/auth.js queries users table by username:
+   db.prepare('SELECT * FROM users WHERE username = ?').get('admin')
+       │
+       ▼
+3. verifyPassword() in server/db.js splits stored hash ("salt:derivedKey")
+   and uses crypto.scryptSync(password, salt, 64) to verify match in constant time.
+       │
+       ▼
+4. auth.js records USER_LOGIN event in audit_logs table with timestamp & operator name.
+       │
+       ▼
+5. Server responds with { user: { id, username, full_name, role }, token: "..." }.
+       │
+       ▼
+6. App.jsx stores user object in sessionStorage, closes LoginModal, and unlocks UI.
+```
 
 ---
 
-### Alternative Packaging Methods (Reference)
+### Trace 2: Barcode Scanning & FEFO Dispensing
+What happens when the pharmacist scans a barcode to dispense medicine?
 
-#### Approach B: Electron Desktop Installer
-If you wish to wrap the entire app in Chromium:
-1. Install Electron packages: `npm install --save-dev electron electron-builder`
-2. Configure `electron/main.js` and add `build` options to `package.json`.
-3. Run `npm run dist` to generate an NSIS `.exe` installer.
-
-#### Approach C: Inno Setup Packaging
-If compiling into a Windows setup wizard:
-1. Use Inno Setup Compiler with a `setup.iss` script.
-2. Package `runtime\node.exe`, `server\`, `client\dist\`, and `node_modules\`.
-3. Compile to produce `Setup_RKA_Pharmacy_IMS.exe`.
-
----
-
-## 5. USB Barcode Scanner Integration Guide
-
-### How Standard Barcode Scanners Communicate
-Most commercial handheld barcode scanners (Honeywell, Zebra, Netum, Eyoyo, Inateck, Symcode, etc.) operate as **HID Keyboard Wedge** devices:
-* **Zero Driver Setup:** Windows recognizes them as standard USB keyboards. No serial ports (RS-232), custom DLLs, or COM port configuration needed.
-* **Keystroke Emulation:** When a barcode is read, the scanner sends the decoded alphanumeric characters in rapid succession (<20 ms for 15 characters), followed immediately by an `Enter` (Carriage Return `\r\n`) character.
-
-### How the Software Captures Scans
-In the Dispensing (`StockOutView.jsx`) and Stock In (`StockInView.jsx`) interfaces:
-
-1. **Auto-Focus Target Input:**
-   The barcode input field references an auto-focus hook on initial load and after every transaction:
-   ```javascript
-   const barcodeInputRef = useRef(null);
-
-   useEffect(() => {
-     barcodeInputRef.current?.focus();
-   }, []);
-   ```
-
-2. **Capturing the Scan on `Enter`:**
-   When the scanner completes the barcode transmission, it sends an `Enter` key event:
-   ```javascript
-   const handleBarcodeKeyDown = (e) => {
-     if (e.key === 'Enter') {
-       e.preventDefault();
-       const scannedCode = barcodeInput.trim();
-       if (scannedCode) {
-         processScannedBarcode(scannedCode);
-         setBarcodeInput(''); // Clear for next scan
-       }
-     }
-   };
-   ```
-
-3. **Global Scan Buffer (Failsafe for Defocused Inputs):**
-   If the operator accidentally clicks outside the input box, a global window listener monitors typing velocity. Because humans type at >80 ms per key while hardware scanners transmit at <20 ms per character, the system identifies automated scanner input and routes it directly to the barcode handler.
-
-### Configuring the Physical Scanner Hardware
-To prepare any standard barcode scanner for R.K.A Pharmacy:
-1. Scan **"Reset to Factory Defaults"** in the scanner's user manual.
-2. Scan **"USB HID Mode"** (default).
-3. Scan **"Add CR/LF Suffix"** (or **"Add Enter Key"**).
-
-### Testing Without a Physical Scanner
-Beginner developers do **not** need physical hardware to test scanning:
-* Click the barcode input box in the Dispensing tab.
-* Type any medicine barcode (e.g., `MED-001-AMOXI` or `8806123456789`) and press the **Enter** key on your keyboard.
-* The system behaves identically to a physical laser scan.
+```
+[Pharmacist pulls barcode scanner trigger on Amoxicillin box]
+       │
+       ▼
+1. Scanner transmits characters 'MED-001-AMOXI' + Enter in <20ms.
+       │
+       ▼
+2. StockOutView.jsx captures Enter key on the auto-focused barcode input.
+       │
+       ▼
+3. Frontend queries active batches for this medicine, sorted by expiration_date ASC.
+       │
+       ▼
+4. FEFO Check: Is the earliest expiring batch selected?
+   • If YES, but tier is Warning (31–90d), Critical (1–30d), or At-Risk:
+     BatchStatusConfirmModal opens -> Operator reviews countdown and clicks "Confirm".
+   • If NO (User manually picked a later batch):
+     OverrideModal opens -> Operator must enter a mandatory justification note.
+   • If EXPIRED (<= 0 days):
+     Action is HARD-BLOCKED. An error banner displays: "Expired batch cannot be released!"
+       │
+       ▼
+5. Item enters Cart -> Pharmacist clicks "Complete Dispense".
+       │
+       ▼
+6. POST /api/transactions/stock-out is called with:
+   { items: [{ batch_id: 2, quantity: 1, status_confirmed: true }] }
+       │
+       ▼
+7. server/routes/transactions.js opens an atomic SQLite Transaction:
+   • Deducts quantity from batches table (updates status to 'consumed' if quantity reaches 0).
+   • Inserts record into transactions table with locked batch selling price.
+   • Inserts STOCK_OUT or STOCK_OUT_OVERRIDE record into audit_logs table.
+       │
+       ▼
+8. Server returns 201 Created with printable receipt payload. Cart clears and focuses input for next scan.
+```
 
 ---
 
-## 6. Offline Database Strategy & Long-Term Performance
+### Trace 3: FEFO+ Expiry Risk Calculation
+How does the system figure out that a batch is "At-Risk" of expiring on the shelf?
 
-### Database Engine: SQLite 3 with `better-sqlite3`
-* **File Location:** `server/data/pharmacy_inventory.db`
-* **Why Embedded SQLite?**
-  * **Single Portable File:** Moving the database or creating a backup is as simple as copying one file.
-  * **Zero Database Server Maintenance:** SQLite runs in-process inside Node.js. There is no external database daemon to stop, fail to start, or consume idle RAM.
-  * **ACID Compliant:** Transactions are atomic and durable.
+```
+1. Frontend requests GET /api/fefo-plus/analysis.
+       │
+       ▼
+2. server/routes/fefoPlus.js queries transactions over past 30 days:
+   Average Daily Consumption (ADC) = Total Units Sold / 30 Days
+       │
+       ▼
+3. For each active batch:
+   Days to Expiry (DTE) = Expiration Date - Today
+   Days of Supply (DOS) = Current Batch Quantity / ADC
+       │
+       ▼
+4. Expiry Risk Margin (ERM) = Days to Expiry - Days of Supply - Buffer Days
+       │
+       ▼
+5. If ERM < 0:
+   The batch is flagged as "At-Risk" (will expire before normal clinic demand can consume it).
+   The frontend renders an orange/red alert badge on Dashboard and FEFO+ tab.
+```
 
 ---
 
-### Write-Ahead Logging (WAL) for Crash Resiliency
-Provincial clinic locations in La Union may experience sudden power dropouts. Standard databases can suffer file corruption if power fails during a write.
+### Trace 4: End-of-Day USB Removable Storage Backup
+How does the system back up the clinic database to a physical USB flash drive?
 
-In `server/db.js`, Write-Ahead Logging is permanently enabled:
+```
+1. In SettingsView.jsx, operator navigates to "End-of-Day Database Backup".
+       │
+       ▼
+2. GET /api/backup/drives executes Windows CIM query:
+   Get-CimInstance Win32_LogicalDisk
+   Identifies removable USB flash drives (DriveType == 2) and lists them in dropdown.
+       │
+       ▼
+3. Operator selects "E:\" and clicks "Export to Drive".
+       │
+       ▼
+4. POST /api/backup/export-removable is called with { drive_letter: "E:" }.
+       │
+       ▼
+5. In server/routes/backup.js:
+   • Issues SQLite WAL checkpoint: db.pragma('wal_checkpoint(TRUNCATE)').
+     (This merges all uncommitted WAL logs into the main database file).
+   • Creates target directory on flash drive: E:\RKA_PHARMACY_BACKUPS\
+   • Copies database to E:\RKA_PHARMACY_BACKUPS\pharmacy_backup_YYYY-MM-DD_HH-mm-ss.db
+   • Writes BACKUP_EXPORT_USB record to audit_logs table.
+       │
+       ▼
+6. Returns success message: "Backup successfully exported to E:\RKA_PHARMACY_BACKUPS\...".
+```
+
+---
+
+## 5. The 5 Core Architectural Concepts Explained Simply
+
+### Concept 1: The FEFO+ Mathematical Formulas
+In traditional FIFO (First-In, First-Out), medicines are sold based on when the pharmacy *bought* them, regardless of expiry dates.  
+In standard FEFO (First-Expiry, First-Out), medicines are sold by expiration date, but the pharmacy has no idea if stock will actually finish before expiring.  
+**FEFO+ solves this by combining expiration dates with sales velocity:**
+
+$$\text{Days to Expiry (DTE)} = \text{Expiration Date} - \text{Current Date}$$
+
+$$\text{Average Daily Consumption (ADC)} = \frac{\sum \text{Stock-Out Quantity Over 30 Days}}{30}$$
+
+$$\text{Days of Supply (DOS)} = \frac{\text{Current Batch Quantity}}{\text{ADC}}$$
+
+$$\text{Expiry Risk Margin (ERM)} = \text{DTE} - \text{DOS} - \text{Safety Buffer Days}$$
+
+* **If ERM $\ge 0$:** The batch is safe. It will be fully consumed before expiring.
+* **If ERM $< 0$:** The batch is **At-Risk**. The clinic will not sell out in time, creating financial waste unless proactive discounts or doctor advisories are issued.
+
+$$\text{Reorder Point (ROP)} = (\text{ADC} \times \text{Supplier Lead Time}) + (\text{ADC} \times \text{Safety Buffer Days})$$
+
+---
+
+### Concept 2: 5-Tier Expiration Countdown & Confirmation Gate
+Every medicine batch in the pharmacy is classified dynamically based on its remaining days to expiry:
+
+| Tier | Remaining Days | Behavior During Dispensing | UI Badge |
+| :--- | :--- | :--- | :--- |
+| **Safe** | $> 180$ days | Added to cart directly | Green (`Safe`) |
+| **Monitor** | $91\text{--}180$ days | Added to cart directly | Blue (`Monitor`) |
+| **Warning** | $31\text{--}90$ days | **Requires explicit operator confirmation** | Amber (`Warning`) |
+| **Critical** | $1\text{--}30$ days | **Requires explicit operator confirmation** | Red (`Critical`) |
+| **Expired** | $\le 0$ days | **Hard-blocked from release** (HTTP 400) | Dark Red (`Expired`) |
+
+> [!NOTE]
+> All threshold values are fully customizable by the clinic administrator in **Settings** and can be reset to factory defaults with 1 click.
+
+---
+
+### Concept 3: Crash-Proof Offline SQLite in WAL Mode
+Why don't we use MongoDB, PostgreSQL, or MySQL?
+* External database servers require background services (`mysqld.exe`) that can fail to start, require configuration, and consume RAM.
+* SQLite is embedded directly into Node.js via `better-sqlite3`. The database is a single file: `server/data/pharmacy_inventory.db`.
+
+#### What is WAL Mode?
+By default, databases write directly to the database file. If the power cuts mid-write, the file can be corrupted.  
+In `server/db.js`, we turn on **Write-Ahead Logging**:
 ```javascript
 db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
 ```
-* In **WAL mode**, new writes are appended to an auxiliary `pharmacy_inventory.db-wal` file before being merged back into the database file.
-* If power cuts mid-transaction, uncommitted writes are safely discarded, and committed writes are preserved with **0% risk of database file corruption**.
+* **The Analogy:** Imagine keeping a small notepad (the WAL file) next to a heavy accounting ledger. When a customer buys medicine, you quickly scribble it on the notepad. Even if the lights go out, the notepad is intact. Periodically, the notes are cleanly merged into the big ledger.
+* This guarantees **zero file corruption**, even during unexpected power outages.
 
 ---
 
-### Database Relational Schema
-The database schema (`server/db.js`) is organized into 6 core tables:
-1. **`medicines`**: Master catalog of pharmaceutical items (brand/generic names, dosages, barcodes, lead time, and reorder levels).
-2. **`batches`**: Physical inventory batches linked to medicines (batch numbers, manufacturing/expiration dates, remaining quantities, unit cost, and selling prices).
-3. **`transactions`**: Transaction ledger tracking stock-in, stock-out (dispensing), inventory recounts, safe disposals, and FEFO override reasons.
-4. **`audit_logs`**: Immutable, tamper-evident audit ledger capturing administrative actions, batch price alterations, and operator names.
-5. **`settings`**: Configuration key-value store for expiration countdown tiers (Safe, Monitor, Warning, Critical), buffer days, and pharmacy info.
-6. **`usability_evaluations`**: Usability testing ledger storing System Usability Scale (SUS) 10-item questionnaire responses and calculated SUS scores.
+### Concept 4: Scrypt Cryptographic Password Security
+Never store plaintext passwords in a database! If someone copies the database file, all passwords would be exposed.
 
----
-
-### Preventing Performance Degradation Over 5–10 Years
-A busy clinic dispensing 60–100 prescriptions daily can generate ~35,000 transaction records annually. Without optimization, queries will eventually slow down.
-
-The following architectural safeguards prevent performance degradation:
-
-#### 1. High-Performance B-Tree Secondary Indexes
-In `server/db.js`, indexes are built on all frequently filtered and joined columns:
-```sql
--- Fast batch lookups by medicine and status
-CREATE INDEX IF NOT EXISTS idx_batches_med_status ON batches(medicine_id, status);
-
--- Instant FEFO sorting by expiration date
-CREATE INDEX IF NOT EXISTS idx_batches_expiry ON batches(expiration_date);
-
--- Sub-millisecond barcode lookups during dispensing
-CREATE INDEX IF NOT EXISTS idx_medicines_barcode ON medicines(barcode);
-CREATE INDEX IF NOT EXISTS idx_medicines_code ON medicines(code);
-
--- Transaction history and sales velocity queries
-CREATE INDEX IF NOT EXISTS idx_transactions_med ON transactions(medicine_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
-CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp);
-```
-
-#### 2. Native C++ Prepared Statements
-All database queries use `better-sqlite3` prepared statements:
-```javascript
-const query = db.prepare('SELECT * FROM medicines WHERE barcode = ?');
-const result = query.get(scannedBarcode);
-```
-Prepared statements are compiled once by SQLite and kept in memory, eliminating SQL parsing overhead on repeated barcode scans.
-
-#### 3. Periodic SQLite Optimization (`PRAGMA optimize`)
-On server startup, `db.pragma('optimize')` analyzes index usage and updates internal query planner statistics.
-
----
-
-## 7. Automated Backups & Disaster Recovery
-
-### Automated Rolling Daily Backups
-The server includes an automated non-blocking backup function (`createDatabaseBackup()` in `server/db.js`).
-
-1. Every time the server starts (or at 24-hour intervals), SQLite's native backup API creates a consistent snapshot:
+In `server/db.js`, we use Node.js built-in `crypto.scryptSync`:
+1. When a user creates or changes a password, we generate a random 16-byte salt:
+   ```javascript
+   const salt = crypto.randomBytes(16).toString('hex');
    ```
-   server/data/backups/pharmacy_backup_YYYY-MM-DD.db
+2. We derive a 64-byte key using Scrypt (a memory-hard hashing function designed to resist GPU/brute-force attacks):
+   ```javascript
+   const hash = crypto.scryptSync(password, salt, 64).toString('hex');
    ```
-2. The routine automatically cleans up old backups, retaining the **most recent 30 days** of snapshots while automatically purging older files to conserve hard drive space.
-
-### Clinic Disaster Recovery Procedure
-If the clinic laptop experiences hardware failure:
-1. Copy the `RKA-Pharmacy-IMS-Client-Offline` folder onto a new computer.
-2. Copy the latest `pharmacy_backup_YYYY-MM-DD.db` from your backup USB drive.
-3. Rename it to `pharmacy_inventory.db` and place it in `server/data/`.
-4. Run `Setup-Desktop-Shortcut.bat` and launch the application. 100% of records are fully restored.
+3. We store the string `salt:hash` in the `users` table.
+4. During login, `verifyPassword` takes the user's password, hashes it with the stored salt, and compares the hashes using `crypto.timingSafeEqual` to prevent timing attacks.
 
 ---
 
-## 8. Troubleshooting & Beginner FAQ
+### Concept 5: The Immutable Audit Trail Ledger
+Clinic pharmacies must maintain strict records for regulatory compliance (FDA / DOH guidelines). In `server/db.js`, the `audit_logs` table records every sensitive action:
 
-### Q1: Desktop shortcut installer throws `DirectoryNotFoundException`
-**Symptom:** Terminal shows `Unable to save shortcut "C:\Users\<name>\Desktop\... DirectoryNotFoundException"`.  
-**Cause:** The PC has Microsoft OneDrive PC Backup enabled, which moves the Desktop folder to `C:\Users\<name>\OneDrive\Desktop`.  
-**Solution:** The updated `Setup-Desktop-Shortcut.bat` uses Windows Shell API (`$ws.SpecialFolders.Item('Desktop')`) to dynamically locate the real Desktop folder on any PC, whether OneDrive is enabled or not.
+* `USER_LOGIN` / `USER_LOGOUT`
+* `STOCK_OUT` (Standard FEFO dispensing)
+* `STOCK_OUT_OVERRIDE` (Dispensing a non-FEFO batch with mandatory justification)
+* `ALERT_ACKNOWLEDGED` (Operator manual alert acknowledgment)
+* `PRICE_ADJUSTMENT` (Changing batch cost or selling price)
+* `DATABASE_BACKUP_EXPORT` (USB backup exports)
 
----
-
-### Q2: Blue popup: "Windows protected your PC" (Microsoft Defender SmartScreen)
-**Symptom:** When double-clicking `RKA-Pharmacy-IMS.exe`, Windows SmartScreen blocks execution.  
-**Cause:** Windows flags newly copied or extracted executables from USB flash drives that do not have expensive commercial code-signing certificates.  
-**Solution:** Click **"More info"** on the popup, then click **"Run anyway"**. This only needs to be done once.
-
----
-
-### Q3: Shortcut breaks or app says files are missing
-**Symptom:** Double-clicking the desktop shortcut says the target was not found.  
-**Cause:** The files were run directly from inside the `.zip` archive without extracting. Windows runs zipped files from a temporary cache (`AppData\Local\Temp`) which disappears when closed.  
-**Solution:** Right-click the `.zip` file -> **Extract All...** to a permanent directory (such as `Documents` or `C:\`), then run `Setup-Desktop-Shortcut.bat`.
+> [!IMPORTANT]
+> The audit trail is **append-only**. There is no API route or UI button to edit or delete an audit log. Records can be filtered and exported to CSV anytime.
 
 ---
 
-### Q4: Port 5000 is already in use
-**Symptom:** `Error: listen EADDRINUSE: address already in use :::5000`  
-**Solution:** A previous instance of Node is still running in the background. Close it using PowerShell:
+## 6. Beginner Developer Playbook: "How Do I Make Changes?"
+
+Here are 5 concrete step-by-step recipes for common development tasks.
+
+---
+
+### Recipe 1: Adding a New Backend REST Endpoint
+Suppose you want to add a route that returns the total count of medicines:
+
+1. Open `server/routes/medicines.js`.
+2. Add your route handler:
+   ```javascript
+   // GET /api/medicines/count
+   router.get('/count', (req, res) => {
+     try {
+       const row = db.prepare('SELECT COUNT(*) AS total FROM medicines').get();
+       res.json({ total_medicines: row.total });
+     } catch (err) {
+       res.status(500).json({ error: err.message });
+     }
+   });
+   ```
+3. Restart the server:
+   ```powershell
+   .\runtime\node.exe server/index.js
+   ```
+4. Test it in your browser: `http://localhost:5000/api/medicines/count`.
+
+---
+
+### Recipe 2: Modifying the Database Schema
+Suppose you want to add a `manufacturer_contact` column to the `medicines` table:
+
+1. Open `server/db.js`.
+2. Locate the `initDatabase()` function.
+3. Add an `ALTER TABLE` statement wrapped in a `try/catch` (this ensures existing databases upgrade without throwing an error if the column already exists):
+   ```javascript
+   try {
+     db.prepare('ALTER TABLE medicines ADD COLUMN manufacturer_contact TEXT').run();
+   } catch (e) {
+     // Column already exists, safe to ignore
+   }
+   ```
+4. When the server boots, the new column will be added automatically!
+
+---
+
+### Recipe 3: Adding or Editing a React View
+Suppose you want to edit the Dashboard to add a custom greeting:
+
+1. Open `client/src/views/DashboardView.jsx`.
+2. Find the header section around line 40.
+3. Edit the JSX (e.g., add a badge or change the subtitle text).
+4. Save the file.
+5. **Crucial Step:** Because the server serves the compiled files from `client/dist`, you must rebuild the client (see Recipe 4)!
+
+---
+
+### Recipe 4: Recompiling the Production Frontend
+Whenever you edit anything inside `client/src/`, you must rebuild the bundle with Vite:
+
 ```powershell
-# Find process on port 5000
-netstat -ano | findstr :5000
+# 1. Navigate to the client source folder
+cd C:\Users\emman\.gemini\antigravity\scratch\rka-pharmacy-ims\client
 
-# Kill the process using its PID (e.g., 1234)
-taskkill /PID 1234 /F
+# 2. Run the Vite build command
+npm.cmd run build
+
+# 3. Copy the compiled dist folder to the offline client directory
+Copy-Item -Path "dist\*" -Destination "c:\Users\emman\OneDrive\Desktop\RKA PHARMACY\RKA-Pharmacy-IMS-Client-Offline\client\dist" -Recurse -Force
+
+# 4. Also keep client/src in sync
+Copy-Item -Path "src\*" -Destination "c:\Users\emman\OneDrive\Desktop\RKA PHARMACY\RKA-Pharmacy-IMS-Client-Offline\client\src" -Recurse -Force
 ```
+Refresh your browser (`Ctrl + F5` to clear browser cache), and your changes will appear immediately!
 
 ---
 
-### Q5: `better-sqlite3` native compilation error
-**Symptom:** `Error: Could not locate the bindings file...` after switching Node.js versions.  
-**Solution:** Rebuild the native SQLite binary for your current Node version:
-```powershell
-npm rebuild better-sqlite3
-```
+### Recipe 5: Writing an Automated Verification Test
+Suppose you want to add an automated test to ensure that the system prevents setting negative prices:
+
+1. Open `RKA-Pharmacy-IMS-Client-Offline/verify_all_specs.js`.
+2. Add an assertion inside `runTests()`:
+   ```javascript
+   console.log('Testing Negative Price Prevention:');
+   const badPriceRes = await request('POST', '/api/batches', {
+     medicine_id: 1,
+     batch_number: 'TEST-NEG-01',
+     expiration_date: '2027-12-31',
+     initial_quantity: 10,
+     unit_cost: -50, // Negative cost!
+     selling_price: 10
+   });
+   assert(badPriceRes.statusCode === 400, 'Rejects negative unit cost with 400 Bad Request');
+   ```
+3. Run the test suite:
+   ```powershell
+   .\runtime\node.exe verify_all_specs.js
+   ```
 
 ---
 
-### Q6: Barcode scanner types strange characters (e.g., symbols instead of numbers)
-**Symptom:** Barcode `12345` types as `!@#$%`.  
-**Solution:** The scanner operates as a keyboard. Check Windows Keyboard Input Language in the Windows Taskbar:
-* Ensure Windows language is set to **English (United States)**. Non-standard keyboard layouts (e.g., French AZERTY) interpret numeric keystrokes differently.
+## 7. Working with Barcode Scanners (Hardware Guide)
+
+### How Barcode Scanners Actually Work
+Many beginner developers assume barcode scanners require complex serial drivers (RS-232) or Bluetooth SDKs. **They do not!**
+
+Standard USB barcode scanners operate as **HID Keyboard Wedge** devices:
+1. When you plug the scanner into a USB port, Windows sees it as a **standard USB keyboard**.
+2. When the laser scans a barcode (e.g., `8806123456789`), the scanner literally "types" the characters into your computer very quickly (<20 milliseconds for 13 characters).
+3. At the end of the barcode, the scanner sends an **`Enter` key (`\r\n`)**.
+
+### How the Code Captures Scans (`StockOutView.jsx`)
+1. **Auto-Focus:** An invisible or stylized input box is focused on page load using `inputRef.current?.focus()`.
+2. **`onKeyDown` Handler:** When the scanner hits `Enter`, the event listener intercepts it, extracts the string, looks up the medicine, and adds the earliest FEFO batch to the cart.
+3. **Global Scan Buffer:** If the user clicks elsewhere on the screen, a global window listener tracks keystroke timing. Since humans type at >80ms per key while barcode scanners type at <20ms, the system automatically redirects fast bursts of keystrokes to the barcode handler!
+
+### How to Test Without a Barcode Scanner
+You do **not** need a physical scanner to develop or test:
+1. Open the **Dispense (FEFO)** tab in the app.
+2. Click into the barcode input field.
+3. Type any barcode manually (e.g., `MED-001-AMOXI` or `880123456789`) and press **Enter** on your keyboard.
+4. The system behaves exactly as if a laser scanned the box!
 
 ---
 
-### Q7: Can the pharmacy operate multiple counters on the same local network?
-**Answer:** Yes. Because the server listens on `http://0.0.0.0:5000`, other computers connected to the same clinic Wi-Fi or router can access the system by opening `http://<SERVER-LOCAL-IP>:5000` in their browser (e.g., `http://192.168.1.100:5000`).
+## 8. Common Beginner Pitfalls & Traps to Avoid
+
+### Pitfall 1: "I edited a React file, but my browser shows old code!"
+* **Cause:** The Express backend serves static assets from `client/dist/`, NOT from `client/src/`.
+* **Fix:** Rebuild the frontend bundle using `npm.cmd run build` inside the client folder and copy the `dist/` output over (see Recipe 4).
+
+### Pitfall 2: "Port 5000 is already in use (`EADDRINUSE`)!"
+* **Cause:** A previous instance of the Node server is still running in the background.
+* **Fix:** Open PowerShell and kill the process:
+  ```powershell
+  Get-Process node -ErrorAction SilentlyContinue | Stop-Process -Force
+  ```
+
+### Pitfall 3: "Running from inside the ZIP file fails!"
+* **Cause:** If you double-click `RKA-Pharmacy-IMS.exe` directly inside the Windows `.zip` preview without extracting, Windows runs it in a temporary folder (`AppData\Local\Temp`). When you close the app, all database changes are deleted!
+* **Fix:** Always right-click the `.zip` file and select **Extract All...** to a real folder first.
+
+### Pitfall 4: PowerShell Execution Policy Error (`npm.ps1 cannot be loaded`)
+* **Cause:** Windows PowerShell disables script execution by default.
+* **Fix:** Use `npm.cmd` instead of `npm`, e.g.:
+  ```powershell
+  npm.cmd run build
+  ```
 
 ---
 
-### Q8: "Destination path too long" error during ZIP extraction
-**Symptom:** Windows displays an error stating the file name(s) would be too long for the destination folder during extraction.  
-**Cause:** Windows has a default `MAX_PATH` limit (260 characters). Deep folder hierarchies (such as extracting inside nested Downloads folders) can exceed this limit for pre-bundled packages.  
-**Solution:** Extract the archive directly into a shorter root directory, such as `C:\RKA-PHARMACY` or `Documents\RKA-PHARMACY`.
+## 9. Glossary for Non-Pharmacist Developers
+
+| Term | Full Name | Plain English Meaning |
+| :--- | :--- | :--- |
+| **FEFO** | First-Expiry, First-Out | Inventory strategy where medicines with the nearest expiration date are sold first to minimize spoilage. |
+| **FIFO** | First-In, First-Out | Older inventory strategy where items received first are sold first, regardless of expiration date. |
+| **FEFO+** | Enhanced FEFO | The custom algorithm designed in this thesis that pairs FEFO with sales velocity and Expiry Risk Margin. |
+| **ADC / ADQS** | Average Daily Consumption | The average number of units of a medicine sold per day over the last 30 days. |
+| **DTE** | Days to Expiry | Number of days remaining between today and a batch's expiration date. |
+| **DOS** | Days of Supply | How many days the current stock will last based on the current sales velocity (`Stock / ADC`). |
+| **ERM** | Expiry Risk Margin | A buffer metric (`DTE - DOS - Buffer`). If negative, the batch is at risk of expiring on the shelf. |
+| **ROP** | Reorder Point | The inventory level that automatically triggers placing a replenishment order with the supplier. |
+| **Lead Time** | Supplier Lead Time | The number of days it takes for a pharmaceutical distributor to deliver medicines after an order is placed. |
+| **Buffer Days** | Safety Buffer | Extra cushion days configured to absorb supplier delivery delays or sudden demand spikes. |
+| **WAL** | Write-Ahead Logging | A crash-proof SQLite transaction log mode that prevents database corruption during power outages. |
+| **HID Wedge** | Human Interface Device Wedge | Standard hardware protocol where a barcode scanner emulates a USB keyboard. |
 
 ---
 
-## 9. Operational Governance & Pharmacy Safeguards
-
-### 9.1 Stock-In Pricing Governance & Dropdown Auto-Fill
-* **Zero-Price Prevention:** Both frontend (`StockInView.jsx`) and backend (`POST /api/batches`) disallow recording medicine batches with empty or ₱0.00 `unit_cost` or `selling_price`.
-* **Previous Batch Price Inheritance:** When registering incoming batches, the user can select the pricing of any existing batch of the same medicine from a dropdown menu, which auto-fills the unit cost and selling price fields, or toggle to manual input for new price structures.
-
-### 9.2 Dispensing Price Immutability & Price Adjustments
-* **POS Price Lockdown:** In `StockOutView.jsx`, prices cannot be altered during dispensing or on customer transaction slips, preventing unauthorized register-level price changes.
-* **Medicines & Batches Management:** Price revisions must be conducted through the "Medicines & Batches" view via `EditBatchModal.jsx`.
-* **Audit Trail Accountability:** Every batch price adjustment invokes `PATCH /api/batches/:id` and records a `PRICE_ADJUSTMENT` entry in `audit_logs` storing previous cost, new cost, previous selling price, new selling price, reason, and operator name.
-
-### 9.3 Accidental Exit Prevention & System Telemetry
-* **Browser-Level Defense:** A `beforeunload` listener prompts the operator before closing browser tabs or windows to prevent accidental loss of active dispensing transactions.
-* **In-App Modal Confirmation:** The navigation bar features a dedicated Exit action button opening an `ExitConfirmModal` with clear confirmation before shutting down.
-* **Live Connection Indicator:** The header displays `● DB Online • FEFO+ Active`, confirming that the local SQLite database is connected and serving queries.
-
-### 9.4 Settings Default Configuration Management
-* **1-Click Reset:** The Settings interface features a "Default Settings" button restoring recommended baseline values:
-  * Safe Tier: > 180 days
-  * Monitor Tier: 91 to 180 days
-  * Warning Tier: 31 to 90 days
-  * Critical Tier: 1 to 30 days
-  * Safety Buffer: 3 days
-  * Consumption History: 30 days
-* **Idempotency Detection:** If the system is already configured with default values, clicking the button displays an informational alert: *"Already in default settings"*.
-
-### 9.5 Dual-Version Help Guide
-* **Version 1 (Daily Operational Guide):** Quick reference for counter staff covering barcode scanning, auto-FEFO dispensing, intake, and quarantine.
-* **Version 2 (Advanced System Guide):** Comprehensive administrative guide detailing:
-  1. *FEFO+ Intelligence:* Mathematical definitions for Days to Expiry (DTE), Days to Consume (DTC), Expiry Risk Margin (ERM), and dynamic reorder thresholds.
-  2. *Audit Trail Governance:* Protocol for logging mandatory FEFO overrides and batch price changes.
-  3. *Policy Simulation Engine:* Replaying historical logs under FIFO, FEFO, and FEFO+ models.
-  4. *Settings & Threshold Customization:* How to calibrate tier countdowns and lead-time safety buffers.
-
-### 9.6 Dynamic UI Modes (Clean vs. Maximalist)
-* **Clean / Minimalist Mode:** Tailored for daily POS operations, presenting essential high-contrast metrics and stripped of dense academic jargon.
-* **Maximalist Mode:** Exposes full research telemetry, mathematical equations, multi-parameter KPI grids, and detailed analytical tables for thesis defense and inventory analysis.
-
----
-
-*Document Revision: 2.1.0 (Updated September 2026)*  
-*Target Application: R.K.A Pharmacy IMS (San Antonio, Agoo, La Union)*
-
+*Document Version:* 3.0.0 (Comprehensive Beginner Edition)  
+*Last Updated:* September 2026  
+*Target System:* R.K.A Pharmacy IMS (San Antonio, Agoo, La Union)

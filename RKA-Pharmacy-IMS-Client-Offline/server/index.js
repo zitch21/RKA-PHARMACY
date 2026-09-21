@@ -14,6 +14,7 @@ app.use(express.json());
 seedDatabase();
 
 // API Routes
+app.use('/api/auth', require('./routes/auth'));
 app.use('/api/medicines', require('./routes/medicines'));
 app.use('/api/batches', require('./routes/batches'));
 app.use('/api/transactions', require('./routes/transactions'));
@@ -23,6 +24,7 @@ app.use('/api/simulation', require('./routes/simulation'));
 app.use('/api/audit', require('./routes/audit'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/evaluations', require('./routes/evaluations'));
+app.use('/api/backup', require('./routes/backup'));
 
 // Serve frontend static build in production
 const clientBuildPath = path.join(__dirname, '../client/dist');

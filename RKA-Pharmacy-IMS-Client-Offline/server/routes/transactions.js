@@ -72,8 +72,13 @@ router.post('/stock-out', (req, res) => {
       const receiptNo = reference_no || `RCPT-${Date.now().toString().slice(-6)}`;
 
       for (const item of dispenseItems) {
-        const { medicine_id, batch_id, quantity, override_reason } = item;
+        let { medicine_id, batch_id, quantity, override_reason, status_confirmed, expiry_status } = item;
         const qtyToDispense = parseInt(quantity);
+
+        if (!medicine_id && batch_id) {
+          const bRow = db.prepare('SELECT medicine_id FROM batches WHERE id = ?').get(batch_id);
+          if (bRow) medicine_id = bRow.medicine_id;
+        }
 
         if (!medicine_id || qtyToDispense <= 0) {
           throw new Error('Invalid item or quantity specified.');
@@ -195,6 +200,8 @@ router.post('/stock-out', (req, res) => {
             total_amount: totalAmount,
             is_override: isOverride === 1,
             override_reason: finalReason,
+            status_confirmed: !!status_confirmed,
+            expiry_status: expiry_status || null,
             remaining_batch_qty: remainingQty
           },
           operator_name

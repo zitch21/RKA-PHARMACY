@@ -1,6 +1,7 @@
 const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 
 const dbDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dbDir)) {
@@ -13,6 +14,19 @@ const db = new Database(dbPath);
 // Enable foreign keys and WAL mode for reliability
 db.pragma('foreign_keys = ON');
 db.pragma('journal_mode = WAL');
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex');
+  const hash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return `${salt}:${hash}`;
+}
+
+function verifyPassword(password, storedHash) {
+  if (!storedHash || !storedHash.includes(':')) return false;
+  const [salt, hash] = storedHash.split(':');
+  const verifyHash = crypto.scryptSync(password, salt, 64).toString('hex');
+  return hash === verifyHash;
+}
 
 function initSchema() {
   db.exec(`
@@ -103,6 +117,25 @@ function initSchema() {
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      username TEXT UNIQUE NOT NULL,
+      password_hash TEXT NOT NULL,
+      full_name TEXT NOT NULL,
+      role TEXT NOT NULL DEFAULT 'Owner / Clinic Administrator',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      last_login DATETIME
+    );
+
+    CREATE TABLE IF NOT EXISTS alert_acknowledgments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      alert_key TEXT UNIQUE NOT NULL,
+      alert_type TEXT NOT NULL,
+      entity_id INTEGER NOT NULL,
+      acknowledged_by TEXT NOT NULL DEFAULT 'Lourdes Gincen L. Cesista',
+      acknowledged_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE INDEX IF NOT EXISTS idx_batches_med_status ON batches(medicine_id, status);
     CREATE INDEX IF NOT EXISTS idx_batches_expiry ON batches(expiration_date);
     CREATE INDEX IF NOT EXISTS idx_medicines_barcode ON medicines(barcode);
@@ -110,6 +143,7 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_transactions_med ON transactions(medicine_id);
     CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp);
+    CREATE INDEX IF NOT EXISTS idx_alert_ack_key ON alert_acknowledgments(alert_key);
   `);
 
   // Run SQLite Query Optimizer
@@ -117,6 +151,16 @@ function initSchema() {
     db.pragma('optimize');
   } catch (e) {
     // optimize pragma fallback
+  }
+
+  // Seed default clinic administrator account if empty
+  const userCheck = db.prepare('SELECT COUNT(*) as count FROM users').get();
+  if (!userCheck || userCheck.count === 0) {
+    const defaultHash = hashPassword('rka2026');
+    db.prepare(`
+      INSERT INTO users (username, password_hash, full_name, role)
+      VALUES (?, ?, ?, ?)
+    `).run('admin', defaultHash, 'Lourdes Gincen L. Cesista', 'Owner / Clinic Administrator');
   }
 
   // Default settings
@@ -266,5 +310,7 @@ module.exports = {
   calculateDaysToExpiry,
   getSettingsMap,
   getExpiryTier,
-  updateExpiredBatchesStatus
+  updateExpiredBatchesStatus,
+  hashPassword,
+  verifyPassword
 };

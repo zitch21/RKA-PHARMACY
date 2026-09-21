@@ -1,0 +1,182 @@
+# R.K.A Pharmacy Inventory Management System (FEFO+)
+
+> **Offline-First Clinic Pharmacy Inventory Management System with Automated Stock Alert, Expiration Tracking (FEFO+), Scrypt Authentication, Barcode-Assisted Dispensing, and Removable USB Backup.**
+
+[![Platform: Windows 10 / 11](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-blue.svg)](#system-requirements)
+[![Architecture: Offline-First](https://img.shields.io/badge/Architecture-Offline--First%20%7C%20SQLite%20WAL-success.svg)](#system-overview--key-features)
+[![Security: Scrypt Hashing](https://img.shields.io/badge/Security-Scrypt%20Hashed%20Auth-purple.svg)](#-operator-authentication--security)
+[![Verification Suite: 38/38 Passed](https://img.shields.io/badge/Verification%20Suite-38%2F38%20Passed%20(100%25)-emerald.svg)](#-automated-verification-suite)
+[![License: Academic Research](https://img.shields.io/badge/License-Academic%20Research%20Project-orange.svg)](#-project--research-attribution)
+
+---
+
+## 🏛️ Project & Research Attribution
+
+* **Academic Institution:** Don Mariano Marcos Memorial State University – South La Union Campus (DMMMSU-SLUC)
+* **College:** College of Computer Science, Agoo, La Union
+* **Degree Program:** Bachelor of Science in Computer Science (S.Y. 2026–2027)
+* **Undergraduate Thesis Title:** *"Inventory Management System for Clinic Pharmacy Supplies with Automated Stock Alert and Expiration Tracking"* (August 2026)
+* **Client Partner:** R.K.A Pharmacy, San Antonio, Agoo, La Union
+* **Clinic Administrator / Sole Proprietor:** Lourdes Gincen L. Cesista
+
+### Research & Development Team
+* **Hadriane Jerwin G. Estepa** – *Team Leader*
+* **Emmanuel John P. Bernal** – *Lead Developer & Researcher*
+* **Friah Yssabel D. Agbuya** – *Researcher*
+* **Krissha Mae D. Estolero** – *Researcher*
+* **Mark Ivan G. Medrano** – *Researcher*
+* **Rafael E. Tan** – *Researcher*
+
+**Thesis Adviser:** Nema Rose D. Rivera, DIT  
+**Dean, College of Computer Science:** Charlie S. Marzan, PhD CS  
+
+---
+
+## 🌟 System Overview & Key Features
+
+The **R.K.A Pharmacy Inventory Management System** is a mission-critical, standalone workstation application engineered specifically for community and clinic pharmacies. Built with an **offline-first** architecture, the system operates completely independently of external cloud providers, guaranteeing 100% uptime during provincial power disruptions or internet outages.
+
+### Core Capabilities
+* 📦 **Batch-Level Tracking & Barcode Operations**: Full plug-and-play support for standard USB HID barcode scanners. Generates internal Code 128 barcodes and printable shelf labels for unbarcoded or repacked supplies.
+* ⏳ **FEFO+ (Enhanced First-Expiry-First-Out) Dispensing**: Automatically selects and dispenses the earliest expiring active batch.
+  * **Safe** (> 180 days) & **Monitor** (91–180 days): Direct release.
+  * **Warning** (31–90 days), **Critical** (1–30 days), & **At-Risk**: Requires explicit user confirmation before release.
+  * **Expired** ($\le 0$ days): **Strictly blocked** from selection and dispensing.
+* 🧠 **Expiry Risk Margin (ERM) Intelligence**: Compares actual consumption velocity (ADC) against remaining shelf life to identify batches at high risk of expiry waste before they expire.
+* 📈 **Dynamic Suggested Reorder Planner**: Dynamically calculates replenishment reorder points:
+  $$\text{Reorder Point (ROP)} = (\text{ADC} \times \text{Lead Time}) + \text{Safety Stock}$$
+* 🔔 **Persistent Stock & Expiry Alert Acknowledgment**: Active alerts remain visible on the dashboard and notification center until explicitly acknowledged by an operator, with all acknowledgments logged in the audit trail.
+* 🔒 **Operator Authentication & Scrypt Password Security**: Multi-tier operator accounts with passwords hashed using Node.js native `scrypt` cryptographic key derivation. Station auto-locks behind an authentication screen when unauthenticated.
+* 🛡️ **Locked Counter Pricing & Immutable Audit Trail**: Dispensing prices are strictly locked at register level to prevent unauthorized alteration. Any non-FEFO batch overrides require mandatory justification notes.
+* 💾 **End-of-Day Database Backup to Removable Storage**: Windows CIM disk scanner detects connected USB flash drives; exports point-in-time WAL-checkpointed database copies directly to removable media.
+
+---
+
+## 🔐 Operator Authentication & Security
+
+The system enforces authentication to protect clinical inventory and pricing data:
+
+| Role | Username | Default Password | Operator Name | Permissions |
+| :--- | :--- | :--- | :--- | :--- |
+| **Administrator / Owner** | `admin` | `rka2026` | **Lourdes Gincen L. Cesista** | Full access: Dispensing, Intake, Price Adjustment, Reorder Setup, Backups, User Management |
+
+> [!IMPORTANT]
+> Passwords are never stored in plaintext. They are protected using **Scrypt key-derivation hashing** with unique cryptographic salts. Passwords can be changed anytime in the **Settings** view.
+
+---
+
+## 📥 Quick Start Guide (Windows)
+
+**No installation of Node.js, npm, or database software is required.** A portable Node.js LTS runtime is pre-bundled in the package.
+
+### Step 1: Download the Repository ZIP
+1. Visit the GitHub repository: **[https://github.com/zitch21/RKA-PHARMACY](https://github.com/zitch21/RKA-PHARMACY)**
+2. Click **`Code`** > **`Download ZIP`**.
+3. Save `RKA-PHARMACY-main.zip` to your computer.
+
+### Step 2: Extract the ZIP Archive (Crucial Step)
+> [!WARNING]
+> Do **NOT** run files directly from inside the Windows `.zip` preview window. Running directly from a `.zip` executes in a temporary Windows sandbox, causing file loss and preventing database writes.
+
+1. Right-click `RKA-PHARMACY-main.zip` > **Extract All...**.
+2. Extract to a permanent location (e.g. `C:\RKA-PHARMACY`, `Documents`, or `Desktop`).
+
+### Step 3: Create Desktop Shortcut (1-Click Installer)
+1. Open the extracted folder: `RKA-Pharmacy-IMS-Client-Offline/`.
+2. Double-click **`Setup-Desktop-Shortcut.bat`**.
+3. A shortcut titled **"R.K.A Pharmacy IMS"** with the official logo will appear on your Windows Desktop (compatible with both local and OneDrive-synced Desktops).
+
+### Step 4: Launch the Application
+1. Double-click the **R.K.A Pharmacy IMS** desktop shortcut (or double-click `RKA-Pharmacy-IMS.exe` inside the folder).
+2. If Windows SmartScreen appears (*"Windows protected your PC"*), click **More info** > **Run anyway**.
+3. The system starts automatically in dedicated application mode at:
+   ```text
+   http://localhost:5000
+   ```
+4. Sign in with the default credentials (`admin` / `rka2026`).
+
+---
+
+## 🧪 Automated Verification Suite
+
+The repository includes a self-contained automated test suite validating all thesis manuscript requirements:
+- Scrypt authentication and session validation
+- Countdown tier classification and live date calculation
+- Strict blocking of expired batches from dispensing
+- FEFO override enforcement and mandatory justification logging
+- Warning/Critical release status confirmation
+- Persistent alert acknowledgment and audit trail logging
+- FEFO+ Expiry Risk Margin (ERM) and dynamic reorder points
+- End-of-day USB removable storage backup and WAL truncate checkpoints
+- Policy simulation comparison (FIFO vs FEFO vs FEFO+)
+
+## 📂 Repository Structure
+
+```text
+RKA-PHARMACY/
+├── README.md                          # Project overview and quick start guide
+├── DEVELOPER_GUIDE.md                 # Comprehensive developer manual & beginner guide
+├── Setup-Desktop-Shortcut.bat         # Root-level desktop shortcut installer
+├── start-app.bat                      # Root fallback application launcher
+└── RKA-Pharmacy-IMS-Client-Offline/   # Standalone, portable client distribution
+    ├── RKA-Pharmacy-IMS.exe           # Native C# launcher (silent background server + app mode)
+    ├── Setup-Desktop-Shortcut.bat     # Client-level shortcut installer (OneDrive compatible)
+    ├── start-app.bat                  # Client-level batch launcher
+    ├── verify_all_specs.js            # Automated thesis specification verification suite
+    ├── app-icon.ico                   # Application icon
+    ├── runtime/                       # Bundled portable Node.js v24.14.0 LTS runtime
+    │   └── node.exe
+    ├── server/                        # Express backend API & SQLite database
+    │   ├── index.js                   # Application server entry point & static file server
+    │   ├── db.js                      # SQLite WAL configuration, Scrypt hashing, and schema
+    │   ├── seed.js                    # Initial clinic medicine catalog & 35-day transaction seed
+    │   ├── routes/                    # REST API endpoints
+    │   │   ├── auth.js                # Scrypt login, session validation, password change
+    │   │   ├── backup.js              # USB drive detection, WAL checkpoint, direct export
+    │   │   ├── alerts.js              # Stock & expiry alerts with manual acknowledgment
+    │   │   ├── batches.js             # Batch-level inventory tracking & barcode tags
+    │   │   ├── medicines.js           # Medicine catalog & price management
+    │   │   ├── transactions.js        # Stock-out POS, FEFO enforcement, override auditing
+    │   │   ├── fefoPlus.js            # FEFO+ Expiry Risk Margin & reorder formulas
+    │   │   ├── audit.js               # Immutable audit trail ledger & CSV export
+    │   │   ├── simulation.js          # FIFO vs FEFO vs FEFO+ policy simulation
+    │   │   ├── settings.js            # Threshold configuration store
+    │   │   └── evaluations.js         # System Usability Scale (SUS) survey engine
+    │   └── data/                      # Embedded database & rolling backups
+    │       ├── pharmacy_inventory.db  # SQLite database in Write-Ahead Logging (WAL) mode
+    │       └── backups/               # Automated 30-day rolling daily backups
+    ├── client/
+    │   ├── src/                       # Complete React 19 + Tailwind CSS source code
+    │   │   ├── components/            # Modals, Navbar, Alert Dropdowns, Barcode Scanner
+    │   │   ├── views/                 # Dashboard, Inventory, Stock-In, Stock-Out, FEFO+, etc.
+    │   │   └── App.jsx                # Main workstation shell & authentication guard
+    │   └── dist/                      # Precompiled production bundle served by Express
+    └── node_modules/                  # Bundled production dependencies (better-sqlite3 x64 native)
+```
+
+---
+
+## 🖥️ Application Modules Summary
+
+* **Dashboard**: Key operational metrics, daily sales totals, active inventory value, 5-tier expiry countdown breakdown, and persistent priority alert banner.
+* **Medicines & Batches**: Master catalog management, batch intake, batch cost/price adjustments, and printable Code 128 shelf labels.
+* **Stock In (Intake)**: Intake workflow with pricing validation, previous batch price inheritance, and expiration date preview.
+* **Stock Out (Dispensing / POS)**: Real-time barcode scanning, automated FEFO batch allocation, Warning/Critical confirmation modal, mandatory override justifications, locked counter pricing, and printable receipts.
+* **FEFO+ Risk & Reorder**: Consumption velocity analysis, Days to Expiry (DTE), Days of Supply, Expiry Risk Margin (ERM), and 1-click Suggested Reorder synchronization.
+* **Audit Trail**: Tamper-evident ledger logging dispensing overrides, batch price adjustments, alert acknowledgments, backups, and user logins with CSV export.
+* **Policy Simulation**: Comparative historical evaluation between FIFO, standard FEFO, and FEFO+ models demonstrating waste reduction.
+* **Settings**: Configurable expiration countdown tiers, supplier lead time, safety buffer days, removable USB storage backup export, and operator password management.
+
+---
+
+## 📖 In-Depth Developer Guide
+
+For complete technical documentation, mathematical formulas, SQLite B-tree index schemas, disaster recovery protocols, and a **step-by-step onboarding walkthrough for beginner developers**, please refer to:
+
+👉 **[DEVELOPER_GUIDE.md](DEVELOPER_GUIDE.md)**
+
+---
+
+## 📄 License & Intellectual Property
+
+Developed as an undergraduate thesis project for the **Bachelor of Science in Computer Science** program at **Don Mariano Marcos Memorial State University – South La Union Campus (DMMMSU-SLUC)** for the operational benefit of **R.K.A Pharmacy, San Antonio, Agoo, La Union**. All rights reserved © 2026.

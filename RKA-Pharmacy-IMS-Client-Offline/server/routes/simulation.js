@@ -3,9 +3,10 @@ const router = express.Router();
 const { db } = require('../db');
 
 // Run simulation comparing FIFO vs FEFO vs FEFO+ and Static vs Computed Reorder Thresholds
-router.post('/run', (req, res) => {
+const handleSimulation = (req, res) => {
   try {
-    const { days, simulation_days, scenario = 'standard' } = req.body;
+    const params = { ...(req.query || {}), ...(req.body || {}) };
+    const { days, simulation_days, scenario = 'standard' } = params;
     const simDays = parseInt(days || simulation_days) || 90;
 
     // Retrieve active medicines from database
@@ -272,6 +273,9 @@ router.post('/run', (req, res) => {
         fefoResult,
         fefoPlusResult
       ],
+      fifo: fifoResult,
+      fefo: fefoResult,
+      fefo_plus: fefoPlusResult,
       reorder_comparison: reorderComparison,
       summary_findings: {
         best_policy_for_waste: 'FEFO+',
@@ -282,6 +286,11 @@ router.post('/run', (req, res) => {
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
-});
+};
+
+router.post('/run', handleSimulation);
+router.get('/run', handleSimulation);
+router.post('/compare', handleSimulation);
+router.get('/compare', handleSimulation);
 
 module.exports = router;

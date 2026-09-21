@@ -39,10 +39,12 @@ router.get('/', (req, res) => {
 
     const enriched = batches.map(b => {
       const days = calculateDaysToExpiry(b.expiration_date, today);
+      const tier = getExpiryTier(days, settings);
       return {
         ...b,
         days_to_expiry: days,
-        expiry_tier: getExpiryTier(days, settings),
+        expiry_tier: tier,
+        expiry_status: tier,
         is_expired: days <= 0
       };
     });

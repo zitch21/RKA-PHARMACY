@@ -110,28 +110,6 @@ The repository includes a self-contained automated test suite validating all the
 - End-of-day USB removable storage backup and WAL truncate checkpoints
 - Policy simulation comparison (FIFO vs FEFO vs FEFO+)
 
-To execute the test suite:
-```powershell
-# Open terminal inside RKA-Pharmacy-IMS-Client-Offline
-cd RKA-Pharmacy-IMS-Client-Offline
-
-# Run the verification script using the bundled runtime
-.\runtime\node.exe verify_all_specs.js
-```
-
-**Expected Output:**
-```text
-================================================================
- STARTING THESIS SPECIFICATION & REGRESSION VERIFICATION SUITE
-================================================================
-...
-================================================================
- VERIFICATION RESULTS: 38 PASSED, 0 FAILED
-================================================================
-```
-
----
-
 ## 📂 Repository Structure
 
 ```text

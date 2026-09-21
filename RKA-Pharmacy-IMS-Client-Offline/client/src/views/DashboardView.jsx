@@ -3,19 +3,14 @@ import {
   Boxes,
   AlertTriangle,
   Clock,
-  TrendingDown,
   Sparkles,
   ArrowRight,
   ShieldCheck,
-  ShieldAlert,
   ArrowDownToLine,
   ArrowUpFromLine,
   AlertOctagon,
   RefreshCw,
-  CheckCircle2,
-  HelpCircle,
-  BookOpen,
-  LayoutTemplate
+  CheckCircle2
 } from 'lucide-react';
 
 export default function DashboardView({
@@ -25,10 +20,10 @@ export default function DashboardView({
   fefoData,
   onNavigate,
   onRefresh,
-  onOpenAddMedicine,
+  _onOpenAddMedicine,
   uiMode = 'minimalist',
   onToggleUiMode,
-  onOpenHelp,
+  _onOpenHelp,
   onAcknowledgeAlert
 }) {
   const summary = alerts?.summary || {};
@@ -51,36 +46,13 @@ export default function DashboardView({
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {/* Quick UI Mode Switcher */}
-          <button
-            onClick={() => onToggleUiMode && onToggleUiMode()}
-            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold rounded-lg border transition ${
-              uiMode === 'minimalist'
-                ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
-                : 'bg-indigo-50 text-indigo-800 border-indigo-300 hover:bg-indigo-100'
-            }`}
-            title="Switch UI display mode"
-          >
-            <LayoutTemplate className="w-4 h-4" />
-            <span>{uiMode === 'minimalist' ? '🌿 Clean Mode' : '🔬 Maximalist Mode'}</span>
-          </button>
-
-          {/* How to Use Guide */}
-          <button
-            onClick={onOpenHelp}
-            className="flex items-center gap-1.5 px-3 py-2 text-xs font-bold text-emerald-800 bg-emerald-100/90 hover:bg-emerald-200 border border-emerald-300 rounded-lg transition"
-            title="Open Emergency Guide for beginners"
-          >
-            <HelpCircle className="w-4 h-4 text-emerald-700" />
-            <span>How to Use</span>
-          </button>
-
           <button
             onClick={onRefresh}
-            className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200 transition"
+            className="flex items-center gap-1.5 p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-100 rounded-lg border border-slate-200 transition text-xs font-semibold"
             title="Refresh inventory metrics"
           >
             <RefreshCw className="w-4 h-4" />
+            <span className="hidden md:inline">Refresh</span>
           </button>
           <button
             onClick={() => onNavigate('stock-out')}
@@ -99,7 +71,7 @@ export default function DashboardView({
         </div>
       </div>
 
-      {/* Persistent Critical and Reorder Alerts Banner (Manuscript p. 26 Protocol) */}
+      {/* Persistent Critical and Reorder Alerts Banner */}
       {((alerts?.critical && alerts.critical.length > 0) || (alerts?.low_stock && alerts.low_stock.length > 0)) && (
         <div className="bg-rose-50 border-2 border-rose-300 rounded-2xl p-4 shadow-sm space-y-3 animate-in fade-in">
           <div className="flex items-center justify-between">
@@ -335,62 +307,6 @@ export default function DashboardView({
               </div>
             </div>
           </div>
-
-          {/* Simple Clean Low Stock Checklist */}
-          {alerts?.low_stock?.length > 0 && (
-            <div className="bg-white rounded-2xl border border-slate-200 p-5 shadow-xs">
-              <div className="flex items-center justify-between mb-3 border-b border-slate-100 pb-2">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-amber-600" />
-                  <h4 className="font-bold text-xs uppercase tracking-wider text-slate-800">
-                    Medicines That Need Reordering
-                  </h4>
-                </div>
-                <button
-                  onClick={() => onNavigate('fefo-plus')}
-                  className="text-xs font-semibold text-emerald-700 hover:underline"
-                >
-                  Open Reorder Planner →
-                </button>
-              </div>
-
-              <div className="divide-y divide-slate-100">
-                {alerts.low_stock.slice(0, 5).map((m) => (
-                  <div key={m.id} className="py-2.5 flex items-center justify-between text-xs">
-                    <div>
-                      <span className="font-bold text-slate-900">{m.brand_name}</span>
-                      <span className="text-slate-500 ml-1.5">({m.generic_name} • {m.dosage_strength})</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-amber-800 bg-amber-100 px-2 py-0.5 rounded text-[11px]">
-                        Stock: {m.total_stock} (Min: {m.reorder_threshold})
-                      </span>
-                      {m.is_acknowledged ? (
-                        <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 px-1.5 py-0.5 rounded">
-                          ✓ Ack
-                        </span>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => onAcknowledgeAlert && onAcknowledgeAlert(m.alert_key, 'LOW_STOCK', m.id)}
-                          className="text-[10px] font-bold text-slate-700 hover:text-emerald-700 bg-slate-100 hover:bg-emerald-50 border border-slate-300 px-1.5 py-0.5 rounded transition"
-                          title="Acknowledge alert and log in audit trail"
-                        >
-                          Ack
-                        </button>
-                      )}
-                      <button
-                        onClick={() => onNavigate('stock-in')}
-                        className="text-emerald-700 font-bold hover:underline text-[11px]"
-                      >
-                        Receive Stock →
-                      </button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           {/* Minimalist Switch Footer Helper */}
           <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-500">

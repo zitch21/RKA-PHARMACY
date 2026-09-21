@@ -1,22 +1,22 @@
 import React, { useState } from 'react';
 import {
   Sparkles,
-  TrendingDown,
   TrendingUp,
   AlertTriangle,
   CheckCircle,
-  HelpCircle,
   Clock,
-  ArrowRight,
-  ShieldCheck,
   Check,
   RefreshCw,
-  Info
+  Info,
+  AlertCircle,
+  Filter
 } from 'lucide-react';
 
-export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
+export default function FefoPlusView({ fefoData, onRefresh, _onNavigate }) {
   const [applyingId, setApplyingId] = useState(null);
   const [actionSuccess, setActionSuccess] = useState(null);
+  const [actionError, setActionError] = useState(null);
+  const [showOnlyDiscrepant, setShowOnlyDiscrepant] = useState(false);
 
   const atRiskBatches = fefoData?.at_risk_batches || [];
   const medicineAnalysis = fefoData?.medicine_analysis || [];
@@ -27,6 +27,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
   const handleApplySuggestedThreshold = async (medicineId, suggestedValue) => {
     setApplyingId(medicineId);
     setActionSuccess(null);
+    setActionError(null);
 
     try {
       const res = await fetch(`/api/fefo-plus/apply-suggested-threshold/${medicineId}`, {
@@ -41,7 +42,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
       setActionSuccess(data.message);
       onRefresh();
     } catch (err) {
-      alert(err.message);
+      setActionError(err.message);
     } finally {
       setApplyingId(null);
     }
@@ -75,11 +76,23 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
         </button>
       </div>
 
-      {/* Success Notification */}
+      {/* Notifications */}
       {actionSuccess && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-center gap-2 animate-in fade-in">
-          <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>{actionSuccess}</span>
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-center justify-between gap-2 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span>{actionSuccess}</span>
+          </div>
+          <button onClick={() => setActionSuccess(null)} className="text-emerald-700 hover:text-emerald-900 font-bold text-xs">✕</button>
+        </div>
+      )}
+      {actionError && (
+        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs flex items-center justify-between gap-2 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{actionError}</span>
+          </div>
+          <button onClick={() => setActionError(null)} className="text-rose-700 hover:text-rose-900 font-bold text-xs">✕</button>
         </div>
       )}
 
@@ -212,7 +225,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
 
       {/* Section 2: Reorder Level Suggestion & Dynamic Threshold Planner */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-        <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+        <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-emerald-600" />
@@ -221,6 +234,24 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
             <p className="text-xs text-slate-500">
               Formula: <span className="font-mono text-emerald-800 font-semibold">Suggested = ADQS × (Lead Time + Buffer Days)</span>. Compares owner's current threshold with computed requirement.
             </p>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto">
+            <button
+              type="button"
+              onClick={() => setShowOnlyDiscrepant(!showOnlyDiscrepant)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border transition ${
+                showOnlyDiscrepant
+                  ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
+                  : 'bg-slate-100 text-slate-700 border-slate-300 hover:bg-slate-200'
+              }`}
+            >
+              <Filter className="w-3.5 h-3.5" />
+              <span>{showOnlyDiscrepant ? 'Filter: Discrepant Only' : 'Show: All Items'}</span>
+              <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${showOnlyDiscrepant ? 'bg-white text-emerald-800' : 'bg-slate-200 text-slate-800'}`}>
+                {medicineAnalysis.filter(ma => ma.suggested_reorder_level !== ma.current_threshold).length}
+              </span>
+            </button>
           </div>
         </div>
 
@@ -239,7 +270,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {medicineAnalysis.map((ma) => {
+              {(showOnlyDiscrepant ? medicineAnalysis.filter(ma => ma.suggested_reorder_level !== ma.current_threshold) : medicineAnalysis).map((ma) => {
                 const isSuggestedDifferent = ma.suggested_reorder_level !== ma.current_threshold;
 
                 return (

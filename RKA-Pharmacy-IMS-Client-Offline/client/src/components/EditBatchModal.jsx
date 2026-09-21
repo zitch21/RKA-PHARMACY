@@ -1,5 +1,5 @@
-﻿import React, { useState, useEffect } from 'react';
-import { X, DollarSign, Save, AlertCircle, ShieldAlert } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { X, DollarSign, Save, AlertCircle } from 'lucide-react';
 
 export default function EditBatchModal({ batch, isOpen, onClose, onBatchUpdated }) {
   const [unitCost, setUnitCost] = useState('');
@@ -88,7 +88,7 @@ export default function EditBatchModal({ batch, isOpen, onClose, onBatchUpdated 
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
             <div className="font-bold text-sm text-slate-900">{batch.brand_name}</div>
             <div className="text-slate-500 font-mono text-[11px]">
-              Batch: <span className="font-bold text-slate-700">{batch.batch_number}</span> â€¢ Exp: {batch.expiration_date}
+              Batch: <span className="font-bold text-slate-700">{batch.batch_number}</span> • Exp: {batch.expiration_date}
             </div>
             <div className="text-[11px] text-slate-500">
               Remaining Stock: <span className="font-bold text-emerald-800">{batch.current_quantity} units</span>
@@ -98,7 +98,7 @@ export default function EditBatchModal({ batch, isOpen, onClose, onBatchUpdated 
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                Unit Cost (â‚±) *
+                Unit Cost (₱) *
               </label>
               <input
                 type="number"
@@ -116,7 +116,7 @@ export default function EditBatchModal({ batch, isOpen, onClose, onBatchUpdated 
 
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                Selling Price (â‚±) *
+                Selling Price (₱) *
               </label>
               <input
                 type="number"

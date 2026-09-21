@@ -3,18 +3,13 @@ import {
   History,
   Download,
   Search,
-  Filter,
   ShieldAlert,
-  ArrowDownToLine,
-  ArrowUpFromLine,
-  Trash2,
-  Sliders,
-  Calendar,
-  UserCheck,
-  Tag
+  Tag,
+  RotateCcw,
+  UserCheck
 } from 'lucide-react';
 
-export default function AuditTrailView() {
+export default function AuditTrailView({ _uiMode = 'minimalist' }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -105,45 +100,65 @@ export default function AuditTrailView() {
       </div>
 
       {/* Filter and Search Bar */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-        <form onSubmit={handleSearchSubmit} className="md:col-span-2 relative flex gap-2">
-          <div className="relative flex-1">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              placeholder="Search by details, batch, medicine, receipt, or operator..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-            />
-          </div>
-          <button
-            type="submit"
-            className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition"
-          >
-            Search
-          </button>
-        </form>
+      <div className="space-y-2 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <form onSubmit={handleSearchSubmit} className="md:col-span-2 relative flex gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search by details, batch, medicine, receipt, or operator..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              />
+            </div>
+            <button
+              type="submit"
+              className="px-4 py-1.5 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg transition shrink-0"
+            >
+              Search
+            </button>
+          </form>
 
-        <div>
-          <select
-            value={actionFilter}
-            onChange={(e) => {
-              setActionFilter(e.target.value);
-              setPage(1);
-            }}
-            className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-slate-700"
-          >
-            <option value="">All Action Types</option>
-            <option value="STOCK_OUT">Stock-Out (FEFO Dispense)</option>
-            <option value="STOCK_OUT_OVERRIDE">Stock-Out Overrides</option>
-            <option value="STOCK_IN">Stock-In (Intake)</option>
-            <option value="STOCK_ADJUSTMENT">Stock Adjustments</option>
-            <option value="PRICE_ADJUSTMENT">Price Adjustments</option>
-            <option value="DISPOSAL">Stock Disposals</option>
-            <option value="CREATE_MEDICINE">Registered Medicines</option>
-          </select>
+          <div>
+            <select
+              value={actionFilter}
+              onChange={(e) => {
+                setActionFilter(e.target.value);
+                setPage(1);
+              }}
+              className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-slate-700"
+            >
+              <option value="">All Action Types</option>
+              <option value="STOCK_OUT">Stock-Out (FEFO Dispense)</option>
+              <option value="STOCK_OUT_OVERRIDE">Stock-Out Overrides</option>
+              <option value="STOCK_IN">Stock-In (Intake)</option>
+              <option value="STOCK_ADJUSTMENT">Stock Adjustments</option>
+              <option value="PRICE_ADJUSTMENT">Price Adjustments</option>
+              <option value="DISPOSAL">Stock Disposals</option>
+              <option value="CREATE_MEDICINE">Registered Medicines</option>
+            </select>
+          </div>
         </div>
+
+        {(searchTerm || actionFilter) && (
+          <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
+            <span>Filtering active</span>
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                setActionFilter('');
+                setPage(1);
+              }}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md transition"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset Search & Filters</span>
+            </button>
+          </div>
+        )}
       </div>
 
       {/* Logs Table */}
@@ -164,7 +179,7 @@ export default function AuditTrailView() {
                 let parsedDetails = null;
                 try {
                   parsedDetails = JSON.parse(log.details);
-                } catch (e) {
+                } catch {
                   parsedDetails = null;
                 }
 
@@ -253,21 +268,25 @@ export default function AuditTrailView() {
         </div>
 
         {/* Pagination Bar */}
-        <div className="p-3 bg-slate-50 border-t border-slate-200 flex justify-between items-center text-xs text-slate-600">
-          <span>Total records: <strong>{total}</strong></span>
-          <div className="flex gap-2">
+        <div className="p-3 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-2 text-xs text-slate-600">
+          <span>
+            Showing <strong>{total === 0 ? 0 : (page - 1) * 50 + 1}</strong> to <strong>{Math.min(page * 50, total)}</strong> of <strong>{total}</strong> records
+          </span>
+          <div className="flex items-center gap-2">
             <button
               disabled={page <= 1}
               onClick={() => setPage(prev => prev - 1)}
-              className="px-3 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40 transition"
+              className="px-3 py-1 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-40 transition font-medium"
             >
               Previous
             </button>
-            <span className="px-2 py-1 font-semibold text-slate-700">Page {page}</span>
+            <span className="px-2.5 py-1 font-bold text-indigo-900 bg-indigo-50 border border-indigo-200 rounded-lg">
+              Page {page} of {Math.max(1, Math.ceil(total / 50))}
+            </span>
             <button
-              disabled={logs.length < 50}
+              disabled={page * 50 >= total || logs.length < 50}
               onClick={() => setPage(prev => prev + 1)}
-              className="px-3 py-1 bg-white border border-slate-300 rounded hover:bg-slate-100 disabled:opacity-40 transition"
+              className="px-3 py-1 bg-white border border-slate-300 rounded-lg hover:bg-slate-100 disabled:opacity-40 transition font-medium"
             >
               Next
             </button>

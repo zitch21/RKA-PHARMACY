@@ -2,21 +2,15 @@ import React, { useState } from 'react';
 import {
   Search,
   Plus,
-  Barcode,
   Layers,
-  Calendar,
-  AlertCircle,
-  Clock,
   Trash2,
   Sliders,
   ChevronDown,
   ChevronUp,
   Tag,
-  ShieldCheck,
-  ShieldAlert,
-  AlertOctagon,
   Edit3,
-  DollarSign
+  DollarSign,
+  RotateCcw
 } from 'lucide-react';
 import BarcodeModal from '../components/BarcodeModal';
 import DisposalModal from '../components/DisposalModal';
@@ -29,7 +23,7 @@ export default function InventoryView({
   batches,
   onRefresh,
   onOpenAddMedicine,
-  onNavigate
+  _onNavigate
 }) {
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
@@ -104,46 +98,72 @@ export default function InventoryView({
       </div>
 
       {/* Filter Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
-        {/* Search */}
-        <div className="sm:col-span-2 relative">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-          <input
-            type="text"
-            placeholder="Search by brand, generic, barcode, or code..."
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-          />
+      <div className="space-y-2 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+        <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+          {/* Search */}
+          <div className="sm:col-span-2 relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+            <input
+              type="text"
+              placeholder="Search by brand, generic, barcode, or code..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+            />
+          </div>
+
+          {/* Category Filter */}
+          <div>
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-slate-700"
+            >
+              {categories.map((c) => (
+                <option key={c} value={c}>{c}</option>
+              ))}
+            </select>
+          </div>
+
+          {/* Status Filter */}
+          <div>
+            <select
+              value={selectedStatus}
+              onChange={(e) => setSelectedStatus(e.target.value)}
+              className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-slate-700"
+            >
+              <option value="All">All Stock & Expiry States</option>
+              <option value="low_stock">Low Stock (≤ Threshold)</option>
+              <option value="out_of_stock">Out of Stock</option>
+              <option value="critical">Critical Expiry (1-30 days)</option>
+              <option value="warning">Warning Expiry (31-90 days)</option>
+              <option value="expired">Expired Batches</option>
+            </select>
+          </div>
         </div>
 
-        {/* Category Filter */}
-        <div>
-          <select
-            value={selectedCategory}
-            onChange={(e) => setSelectedCategory(e.target.value)}
-            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-slate-700"
-          >
-            {categories.map((c) => (
-              <option key={c} value={c}>{c}</option>
-            ))}
-          </select>
-        </div>
-
-        {/* Status Filter */}
-        <div>
-          <select
-            value={selectedStatus}
-            onChange={(e) => setSelectedStatus(e.target.value)}
-            className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-slate-700"
-          >
-            <option value="All">All Stock & Expiry States</option>
-            <option value="low_stock">Low Stock (≤ Threshold)</option>
-            <option value="out_of_stock">Out of Stock</option>
-            <option value="critical">Critical Expiry (1-30 days)</option>
-            <option value="warning">Warning Expiry (31-90 days)</option>
-            <option value="expired">Expired Batches</option>
-          </select>
+        {/* Filter Summary & 1-Click Reset */}
+        <div className="flex items-center justify-between pt-2 border-t border-slate-100 text-xs text-slate-500">
+          <div>
+            Showing <strong>{filteredMedicines.length}</strong> of <strong>{medicines.length}</strong> medicines
+            {(searchTerm || selectedCategory !== 'All' || selectedStatus !== 'All') && (
+              <span className="text-emerald-700 font-semibold ml-2">(Filtered)</span>
+            )}
+          </div>
+          {(searchTerm || selectedCategory !== 'All' || selectedStatus !== 'All') && (
+            <button
+              type="button"
+              onClick={() => {
+                setSearchTerm('');
+                setSelectedCategory('All');
+                setSelectedStatus('All');
+              }}
+              className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-md transition"
+            >
+              <RotateCcw className="w-3 h-3" />
+              <span>Reset All Filters</span>
+            </button>
+          )}
         </div>
       </div>
 

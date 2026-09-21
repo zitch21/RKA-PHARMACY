@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import BarcodeModal from '../components/BarcodeModal';
 
-export default function StockInView({ medicines, batches = [], onRefresh, onOpenAddMedicine, uiMode = 'minimalist' }) {
+export default function StockInView({ medicines, batches = [], onRefresh, onOpenAddMedicine, _uiMode = 'minimalist' }) {
   const [barcodeInput, setBarcodeInput] = useState('');
   const [selectedMedId, setSelectedMedId] = useState('');
   const [batchNumber, setBatchNumber] = useState('');
@@ -513,6 +513,36 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
               </span>
             </div>
           </div>
+
+          {/* Real-time Profit Margin & Delivery Value Calculation */}
+          {parseFloat(unitCost) > 0 && parseFloat(sellingPrice) > 0 && (
+            <div className={`p-3 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in ${
+              parseFloat(sellingPrice) <= parseFloat(unitCost)
+                ? 'bg-rose-50 border-rose-200 text-rose-900'
+                : 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
+            }`}>
+              <div className="flex items-center gap-2">
+                <span className="font-bold">Estimated Profit Markup:</span>
+                <span className={`font-extrabold text-sm ${
+                  parseFloat(sellingPrice) <= parseFloat(unitCost) ? 'text-rose-700' : 'text-emerald-700'
+                }`}>
+                  {parseFloat(sellingPrice) >= parseFloat(unitCost)
+                    ? `+₱${(parseFloat(sellingPrice) - parseFloat(unitCost)).toFixed(2)} (+${(((parseFloat(sellingPrice) - parseFloat(unitCost)) / parseFloat(unitCost)) * 100).toFixed(1)}%)`
+                    : `-₱${(parseFloat(unitCost) - parseFloat(sellingPrice)).toFixed(2)} (Negative Margin)`}
+                </span>
+                {parseFloat(sellingPrice) <= parseFloat(unitCost) && (
+                  <span className="text-[10px] font-bold bg-rose-200 text-rose-800 px-1.5 py-0.5 rounded">
+                    ⚠ Warning: Price ≤ Cost
+                  </span>
+                )}
+              </div>
+              {parseInt(quantity) > 0 && (
+                <span className="text-[11px] text-slate-600 font-medium">
+                  Total Delivery Retail: <strong>₱{(parseInt(quantity) * parseFloat(sellingPrice)).toFixed(2)}</strong>
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Supplier & Receipt info */}

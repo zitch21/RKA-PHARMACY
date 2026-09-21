@@ -1,18 +1,16 @@
 import React, { useState, useRef, useEffect } from 'react';
+import confetti from 'canvas-confetti';
 import {
   ArrowUpFromLine,
   Barcode,
   Search,
   ShoppingCart,
   Trash2,
-  AlertTriangle,
   CheckCircle2,
   Printer,
   ShieldCheck,
   ShieldAlert,
   AlertOctagon,
-  Clock,
-  Sparkles,
   HelpCircle
 } from 'lucide-react';
 import OverrideModal from '../components/OverrideModal';
@@ -22,12 +20,13 @@ export default function StockOutView({
   medicines,
   batches,
   onRefresh,
-  onNavigate,
-  uiMode = 'minimalist',
+  _onNavigate,
+  _uiMode = 'minimalist',
   onOpenHelp,
   currentUser
 }) {
   const [barcodeInput, setBarcodeInput] = useState('');
+  const [medSearchTerm, setMedSearchTerm] = useState('');
   const [selectedMedId, setSelectedMedId] = useState('');
   const [cart, setCart] = useState([]);
   const [patientOrRef, setPatientOrRef] = useState('');
@@ -185,7 +184,7 @@ export default function StockOutView({
       return;
     }
 
-    // Manuscript Figure 2 Protocol: If earliest expiring batch is Warning, Critical, or At-risk, require user confirmation
+    // FEFO Expiry Risk Verification: If earliest expiring batch is Warning, Critical, or At-risk, require user confirmation
     const isAtRiskOrWarning = batch.expiry_tier === 'Critical' || batch.expiry_tier === 'Warning' || batch.is_at_waste_risk || batch.days_to_expiry <= 90;
     if (isAtRiskOrWarning) {
       setPendingStatusConfirmItem({
@@ -331,7 +330,7 @@ export default function StockOutView({
 
       try {
         confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } });
-      } catch (e) {}
+      } catch {}
     } catch (err) {
       setError(err.message);
     } finally {
@@ -416,11 +415,32 @@ export default function StockOutView({
             <span className="text-xs font-normal text-slate-400">Step 1 of 2</span>
           </h3>
 
-          {/* Medicine Select */}
-          <div>
-            <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-              Medicine Catalog
-            </label>
+          {/* Medicine Select with Search Filter */}
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <label className="block text-xs font-semibold uppercase text-slate-700">
+                Medicine Catalog
+              </label>
+              {medSearchTerm && (
+                <button
+                  type="button"
+                  onClick={() => setMedSearchTerm('')}
+                  className="text-[10px] text-emerald-700 hover:underline font-semibold"
+                >
+                  Clear filter
+                </button>
+              )}
+            </div>
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2.5" />
+              <input
+                type="text"
+                placeholder="Type to filter medicine dropdown (brand, generic, code)..."
+                value={medSearchTerm}
+                onChange={(e) => setMedSearchTerm(e.target.value)}
+                className="w-full pl-8 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none mb-1.5 bg-slate-50 focus:bg-white"
+              />
+            </div>
             <select
               value={selectedMedId}
               onChange={(e) => {
@@ -431,12 +451,14 @@ export default function StockOutView({
               }}
               className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-slate-800"
             >
-              <option value="">-- Choose medicine to dispense --</option>
-              {medicines.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.brand_name} - {m.generic_name} ({m.dosage_strength} {m.dosage_form}) • Stock: {m.total_stock}
-                </option>
-              ))}
+              <option value="">-- Choose medicine to dispense ({medicines.filter(m => !medSearchTerm || m.brand_name.toLowerCase().includes(medSearchTerm.toLowerCase()) || m.generic_name.toLowerCase().includes(medSearchTerm.toLowerCase()) || m.code.toLowerCase().includes(medSearchTerm.toLowerCase())).length} matches) --</option>
+              {medicines
+                .filter(m => !medSearchTerm || m.brand_name.toLowerCase().includes(medSearchTerm.toLowerCase()) || m.generic_name.toLowerCase().includes(medSearchTerm.toLowerCase()) || m.code.toLowerCase().includes(medSearchTerm.toLowerCase()))
+                .map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.brand_name} - {m.generic_name} ({m.dosage_strength} {m.dosage_form}) • Stock: {m.total_stock}
+                  </option>
+                ))}
             </select>
           </div>
 
@@ -466,7 +488,6 @@ export default function StockOutView({
                           onClick={() => {
                             if (!isExpired) {
                               setSelectedBatchId(b.id);
-                              setCustomPrice(b.selling_price);
                             }
                           }}
                           className={`p-3 rounded-lg border transition cursor-pointer flex items-center justify-between ${
@@ -485,7 +506,6 @@ export default function StockOutView({
                               checked={isSelected}
                               onChange={() => {
                                 setSelectedBatchId(b.id);
-                                setCustomPrice(b.selling_price);
                               }}
                               className="text-emerald-600 focus:ring-emerald-500"
                             />
@@ -544,11 +564,35 @@ export default function StockOutView({
                         max={currentSelectedBatch.current_quantity}
                         value={quantityInput}
                         onChange={(e) => setQuantityInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            handleAddToCart();
+                          }
+                        }}
                         className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white font-bold"
                       />
-                      <span className="text-[10px] text-slate-500 mt-0.5 block">
-                        Max available: {currentSelectedBatch.current_quantity}
-                      </span>
+                      {/* Quick Qty Buttons */}
+                      <div className="flex flex-wrap items-center gap-1 mt-1.5">
+                        <span className="text-[10px] text-slate-400 font-medium mr-0.5">Quick:</span>
+                        {[1, 5, 10].map(n => (
+                          <button
+                            key={n}
+                            type="button"
+                            onClick={() => setQuantityInput(Math.min(n, currentSelectedBatch.current_quantity))}
+                            className="px-1.5 py-0.5 text-[10px] font-bold bg-white border border-slate-200 text-slate-700 rounded hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300 transition"
+                          >
+                            +{n}
+                          </button>
+                        ))}
+                        <button
+                          type="button"
+                          onClick={() => setQuantityInput(currentSelectedBatch.current_quantity)}
+                          className="px-1.5 py-0.5 text-[10px] font-bold bg-white border border-slate-200 text-slate-700 rounded hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300 transition"
+                        >
+                          Max ({currentSelectedBatch.current_quantity})
+                        </button>
+                      </div>
                     </div>
 
                     <div>
@@ -600,9 +644,22 @@ export default function StockOutView({
                 <ShoppingCart className="w-4 h-4 text-emerald-600" />
                 <span>Dispensing Slip / Cart</span>
               </div>
-              <span className="text-xs bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-full">
-                {cart.length} Item{cart.length !== 1 ? 's' : ''}
-              </span>
+              <div className="flex items-center gap-2">
+                {cart.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setCart([])}
+                    className="text-[10px] font-semibold text-rose-600 hover:text-rose-800 hover:underline flex items-center gap-1"
+                    title="Clear all items in cart"
+                  >
+                    <Trash2 className="w-3 h-3" />
+                    <span>Clear Cart</span>
+                  </button>
+                )}
+                <span className="text-xs bg-slate-100 text-slate-600 font-bold px-2 py-0.5 rounded-full">
+                  {cart.length} Item{cart.length !== 1 ? 's' : ''}
+                </span>
+              </div>
             </div>
 
             {/* Slip Items List */}

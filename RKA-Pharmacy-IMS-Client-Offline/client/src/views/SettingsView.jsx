@@ -7,17 +7,15 @@ import {
   Clock,
   Sliders,
   Building,
-  ShieldAlert,
-  Database,
-  Sparkles,
-  BookOpen,
   LayoutTemplate,
   RotateCcw,
   HardDrive,
   Download,
   Key,
   Lock,
-  FolderSync
+  FolderSync,
+  RefreshCw,
+  BookOpen
 } from 'lucide-react';
 
 const DEFAULT_CONFIG = {
@@ -50,6 +48,7 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
   // Backup & Storage States
   const [drives, setDrives] = useState([]);
   const [selectedDrive, setSelectedDrive] = useState('');
+  const [drivesLoading, setDrivesLoading] = useState(false);
   const [backupLoading, setBackupLoading] = useState(false);
   const [backupMessage, setBackupMessage] = useState(null);
   const [backupError, setBackupError] = useState(null);
@@ -64,16 +63,8 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
   const [passwordMessage, setPasswordMessage] = useState(null);
   const [passwordError, setPasswordError] = useState(null);
 
-  useEffect(() => {
-    fetch('/api/settings')
-      .then(res => res.json())
-      .then(data => {
-        if (data && Object.keys(data).length > 0) {
-          setSettings(prev => ({ ...prev, ...data }));
-        }
-      })
-      .catch(err => console.error('Failed to load settings:', err));
-
+  const fetchDrives = () => {
+    setDrivesLoading(true);
     fetch('/api/backup/drives')
       .then(res => res.json())
       .then(data => {
@@ -84,7 +75,21 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
           else if (data.drives.length > 0) setSelectedDrive(data.drives[0].device_id);
         }
       })
-      .catch(err => console.error('Failed to load storage drives:', err));
+      .catch(err => console.error('Failed to load storage drives:', err))
+      .finally(() => setDrivesLoading(false));
+  };
+
+  useEffect(() => {
+    fetch('/api/settings')
+      .then(res => res.json())
+      .then(data => {
+        if (data && Object.keys(data).length > 0) {
+          setSettings(prev => ({ ...prev, ...data }));
+        }
+      })
+      .catch(err => console.error('Failed to load settings:', err));
+
+    fetchDrives();
   }, []);
 
   const handleChange = (e) => {
@@ -631,7 +636,7 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
             <div>
               <h3 className="font-bold text-slate-900 text-sm">End-of-Day Database Backup & Removable Storage</h3>
               <p className="text-xs text-slate-500">
-                Manuscript pp. 13 & 26 specification: Secure daily inventory backups to removable USB drives
+                Secure daily inventory backups to removable USB drives
               </p>
             </div>
           </div>
@@ -704,6 +709,15 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
                 </select>
                 <button
                   type="button"
+                  onClick={fetchDrives}
+                  disabled={drivesLoading}
+                  className="p-2 text-slate-600 hover:text-slate-900 hover:bg-slate-200 border border-slate-300 rounded-lg transition"
+                  title="Rescan connected storage drives (USB flash drives)"
+                >
+                  <RefreshCw className={`w-3.5 h-3.5 ${drivesLoading ? 'animate-spin' : ''}`} />
+                </button>
+                <button
+                  type="button"
                   onClick={handleExportToRemovable}
                   disabled={backupLoading || !selectedDrive}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg shadow-xs transition"
@@ -725,7 +739,7 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
             <div>
               <h3 className="font-bold text-slate-900 text-sm">Station Security & Password Management</h3>
               <p className="text-xs text-slate-500">
-                Manuscript p. 26 specification: Scrypt-hashed password storage for authorized pharmacy personnel
+                Scrypt-hashed password storage for authorized pharmacy personnel
               </p>
             </div>
           </div>

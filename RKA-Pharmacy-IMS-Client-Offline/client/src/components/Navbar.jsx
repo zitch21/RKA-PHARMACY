@@ -12,12 +12,10 @@ import {
   Bell,
   Barcode,
   UserCheck,
-  BookOpen,
-  Sparkles,
   LayoutTemplate,
   HelpCircle,
   LogOut,
-  CheckCircle2
+  Lock
 } from 'lucide-react';
 import AlertNotificationDropdown from './AlertNotificationDropdown';
 
@@ -174,7 +172,7 @@ export default function Navbar({
               className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition shadow-xs"
               title="Lock workstation / Sign out operator session"
             >
-              <LogOut className="w-3.5 h-3.5 text-slate-600" />
+              <Lock className="w-3.5 h-3.5 text-slate-600" />
               <span className="hidden sm:inline">Lock / Sign Out</span>
             </button>
           )}

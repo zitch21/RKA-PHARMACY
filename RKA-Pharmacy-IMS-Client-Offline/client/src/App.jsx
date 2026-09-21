@@ -12,6 +12,7 @@ import SettingsView from './views/SettingsView';
 import HelpGuideModal from './components/HelpGuideModal';
 import ExitConfirmModal from './components/ExitConfirmModal';
 import LoginModal from './components/LoginModal';
+import ErrorBoundary from './components/ErrorBoundary';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -24,7 +25,7 @@ export default function App() {
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  // Authenticated Operator Session (Scrypt / Manuscript p. 26)
+  // Authenticated Operator Session (Scrypt Security)
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const saved = sessionStorage.getItem('rka_user');
@@ -169,7 +170,7 @@ export default function App() {
             <span className="text-xs font-semibold uppercase tracking-wider">Loading R.K.A Pharmacy Records...</span>
           </div>
         ) : (
-          <>
+          <ErrorBoundary key={activeTab} onNavigateHome={() => setActiveTab('dashboard')}>
             {activeTab === 'dashboard' && (
               <DashboardView
                 medicines={medicines}
@@ -245,7 +246,7 @@ export default function App() {
                 currentUser={currentUser}
               />
             )}
-          </>
+          </ErrorBoundary>
         )}
       </main>
 
@@ -291,7 +292,7 @@ export default function App() {
         onClose={() => setIsExitModalOpen(false)}
       />
 
-      {/* Scrypt Authentication / Station Lock Modal (Manuscript p. 26) */}
+      {/* Scrypt Authentication / Station Lock Modal */}
       {!currentUser && (
         <LoginModal onLogin={handleLogin} />
       )}

@@ -42,13 +42,23 @@ const handleAnalysis = (req, res) => {
     const medicineAnalysis = [];
     const atRiskBatches = [];
 
+    // Prepare statements outside loop for optimal execution plan reuse
+    const getBatchesStmt = db.prepare(`
+      SELECT * FROM batches
+      WHERE medicine_id = ? AND status = 'active' AND current_quantity > 0 AND expiration_date > ?
+      ORDER BY expiration_date ASC
+    `);
+
+    const salesQueryStmt = !isColdStart ? db.prepare(`
+      SELECT COALESCE(SUM(quantity), 0) as total_sold
+      FROM transactions
+      WHERE medicine_id = ? AND transaction_type = 'stock_out'
+        AND created_at >= DATE('now', '-' || ? || ' days')
+    `) : null;
+
     for (const med of medicines) {
       // Fetch active unexpired batches in FEFO order
-      const batches = db.prepare(`
-        SELECT * FROM batches
-        WHERE medicine_id = ? AND status = 'active' AND current_quantity > 0 AND expiration_date > ?
-        ORDER BY expiration_date ASC
-      `).all(med.id, todayStr);
+      const batches = getBatchesStmt.all(med.id, todayStr);
 
       const totalCurrentStock = batches.reduce((sum, b) => sum + b.current_quantity, 0);
       const leadTime = med.supplier_lead_time_days || 5;
@@ -98,12 +108,7 @@ const handleAnalysis = (req, res) => {
       } else {
         // PREDICTIVE ENGINE ACTIVE (t >= N):
         // Formula: D_hat_i = (1 / N) * SUM(S_i,t) over N operational days
-        const salesQuery = db.prepare(`
-          SELECT COALESCE(SUM(quantity), 0) as total_sold
-          FROM transactions
-          WHERE medicine_id = ? AND transaction_type = 'stock_out'
-            AND created_at >= DATE('now', '-' || ? || ' days')
-        `).get(med.id, N);
+        const salesQuery = salesQueryStmt.get(med.id, N);
 
         const totalSold = salesQuery ? salesQuery.total_sold : 0;
         const adqs = parseFloat((totalSold / N).toFixed(2));
@@ -265,10 +270,11 @@ router.post('/bulk-apply-suggested', (req, res) => {
     const applied = [];
     const bulkTx = db.transaction((list) => {
       const updateStmt = db.prepare('UPDATE medicines SET reorder_threshold = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      const getMedStmt = db.prepare('SELECT id, brand_name, reorder_threshold FROM medicines WHERE id = ?');
       for (const item of list) {
         const val = parseInt(item.suggested_value, 10);
         if (isNaN(val) || val < 0) continue;
-        const med = db.prepare('SELECT id, brand_name, reorder_threshold FROM medicines WHERE id = ?').get(item.medicine_id);
+        const med = getMedStmt.get(item.medicine_id);
         if (med) {
           updateStmt.run(val, med.id);
           applied.push({

@@ -37,12 +37,13 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
 
   // Version 1: Counter & Emergency Quick Guide
   const v1Topics = [
-    { id: 'dispense', num: '1', title: 'Sell / Dispense', sub: 'FEFO Queue & Multi-Batch', icon: ShoppingCart, color: 'emerald' },
-    { id: 'purchase_orders', num: '2', title: 'Purchase Orders', sub: 'Create, Place & Receive', icon: FileText, color: 'blue' },
-    { id: 'stockin', num: '3', title: 'Stock-In Intake', sub: 'Batch & Expiry Intake', icon: ArrowDownToLine, color: 'teal' },
-    { id: 'expired', num: '4', title: 'Expired Medicine', sub: 'Strict Safety Lockout', icon: ShieldAlert, color: 'red' },
-    { id: 'alerts', num: '5', title: 'Warning Colors', sub: 'Status Meanings', icon: AlertTriangle, color: 'amber' },
-    { id: 'contacts', num: '6', title: 'Clinic Contacts', sub: 'Emergency & System Info', icon: Phone, color: 'purple' },
+    { id: 'dispense', num: '1', title: 'Sell / Dispense', sub: 'FEFO Queue & Quick +Buttons', icon: ShoppingCart, color: 'emerald' },
+    { id: 'purchase_orders', num: '2', title: 'Purchase Orders', sub: 'Manual/Auto & Bulk Draft', icon: FileText, color: 'blue' },
+    { id: 'stockin', num: '3', title: 'Stock-In Intake', sub: 'Batch & Expiry Date Jumps', icon: ArrowDownToLine, color: 'teal' },
+    { id: 'ui_modes', num: '4', title: 'Modes & Languages', sub: 'Clean Mode & Offline i18n', icon: Sliders, color: 'indigo' },
+    { id: 'expired', num: '5', title: 'Expired Safety', sub: 'Strict Safety Lockout', icon: ShieldAlert, color: 'red' },
+    { id: 'alerts', num: '6', title: 'Warning Colors', sub: 'Status Meanings', icon: AlertTriangle, color: 'amber' },
+    { id: 'contacts', num: '7', title: 'Clinic Contacts', sub: 'Emergency & Backup Exit', icon: Phone, color: 'purple' },
   ];
 
   // Version 2: Advanced System & Management Guide
@@ -128,7 +129,7 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
 
         {/* Topic Selector Tabs */}
         <div className={`grid gap-2 p-3 bg-slate-100 border-b border-slate-200 ${
-          guideVersion === 'v1' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-6' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'
+          guideVersion === 'v1' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-7' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'
         }`}>
           {currentTopics.map((t) => {
             const Icon = t.icon;
@@ -200,15 +201,25 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
                       <div>
-                        <strong className="text-xs text-slate-900">Automated Batch Queue & Multi-Batch Split:</strong>
+                        <strong className="text-xs text-slate-900">Cumulative Quick Dispense Buttons (+1, +5, +10, Max) & Stock Clamping:</strong>
                         <p className="text-xs text-slate-600 mt-0.5">
-                          The earliest batch is highlighted. Enter the requested quantity. If the quantity exceeds the first lot, the system fills from the first lot and takes the remainder from the next batch automatically.
+                          Under the quantity box, click <strong>+1</strong>, <strong>+5</strong>, or <strong>+10</strong> to quickly increment dispense quantities. Clicking <code>+5</code> three times sets 15 units. The system strictly clamps values between 1 and the batch's current stock (<code>Math.min</code>), preventing counter errors. Click <strong>Max</strong> to quickly dispense the entire remaining batch.
                         </p>
                       </div>
                     </li>
 
                     <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">4</span>
+                      <div>
+                        <strong className="text-xs text-slate-900">Automated Batch Queue & Multi-Batch Split:</strong>
+                        <p className="text-xs text-slate-600 mt-0.5">
+                          The earliest batch is highlighted. If an order exceeds the first lot, the system fills from the first lot and takes the remainder from the next batch automatically, enforcing FEFO safety at every stage.
+                        </p>
+                      </div>
+                    </li>
+
+                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">5</span>
                       <div>
                         <strong className="text-xs text-slate-900">Add to Cart & Complete Sale:</strong>
                         <p className="text-xs text-slate-600 mt-0.5">
@@ -250,9 +261,12 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
                       <div>
-                        <strong className="text-slate-900">Review Replenishment Recommendations:</strong>
+                        <strong className="text-slate-900">Replenishment Recommendations & PO Auto-Drafting Modes:</strong>
                         <p className="text-slate-600 mt-0.5">
-                          Open <strong>"Purchase Orders"</strong> to view items that have fallen below their reorder points. Click <strong>"Create PO from All Suggestions"</strong> to generate a ready-to-order draft order.
+                          Open <strong>"Purchase Orders"</strong> to view items that have fallen below their reorder points. The system supports two drafting modes configured in Settings:
+                          <br />• <strong>Manual Review Mode:</strong> Review recommendations and click <em>"Create PO from All Suggestions"</em>.
+                          <br />• <strong>Instant Auto Mode:</strong> System automatically compiles low-stock items into ready supplier draft POs.
+                          <br />• <strong>FEFO+ Bulk Draft:</strong> In the FEFO+ Reorder Planner, click <em>"Bulk Draft Purchase Orders"</em> to generate supplier-grouped orders in one click.
                         </p>
                       </div>
                     </li>
@@ -260,9 +274,9 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
                       <div>
-                        <strong className="text-slate-900">Place Order with Supplier:</strong>
+                        <strong className="text-slate-900">Place Order with Supplier & Print Voucher Slip:</strong>
                         <p className="text-slate-600 mt-0.5">
-                          Once confirmed, click <strong>"Place Order with Supplier"</strong>. Click <strong>"Print PO Slip"</strong> to generate an official printed procurement voucher.
+                          Once confirmed, click <strong>"Place Order with Supplier"</strong>. Click <strong>"Print PO Slip"</strong> to generate an official printed procurement voucher complete with item details and signature spaces.
                         </p>
                       </div>
                     </li>
@@ -311,12 +325,22 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                       <span className="w-6 h-6 rounded-full bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
                       <div>
                         <strong className="text-slate-900">Select Item & Batch Number:</strong>
-                        <p className="text-slate-600 mt-0.5">Select the medicine from the list, enter the batch/lot number, manufacturing date, and expiration date.</p>
+                        <p className="text-slate-600 mt-0.5">Select the medicine from the list, enter the batch/lot number, and manufacturing date.</p>
                       </div>
                     </li>
 
                     <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <span className="w-6 h-6 rounded-full bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
+                      <div>
+                        <strong className="text-slate-900">Expiry Date Jump Buttons (+6 Mos, +1 Yr, +2 Yrs, +3 Yrs):</strong>
+                        <p className="text-slate-600 mt-0.5">
+                          Click <strong>+6 Mos</strong>, <strong>+1 Yr</strong>, <strong>+2 Yrs</strong>, or <strong>+3 Yrs</strong> above the expiration date box to automatically calculate future dates with calendar-safe month clamping, preventing tedious manual date picker clicking.
+                        </p>
+                      </div>
+                    </li>
+
+                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="w-6 h-6 rounded-full bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
                       <div>
                         <strong className="text-slate-900">Set Cost & Selling Price:</strong>
                         <p className="text-slate-600 mt-0.5">Enter the supplier wholesale unit cost and clinic retail selling price. Selling prices are locked at the counter.</p>
@@ -324,13 +348,65 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     </li>
 
                     <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="w-6 h-6 rounded-full bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
+                      <span className="w-6 h-6 rounded-full bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0">4</span>
                       <div>
                         <strong className="text-slate-900">Print Shelf Barcode:</strong>
                         <p className="text-slate-600 mt-0.5">Click <strong>"Record Batch Stock-In"</strong> and click <strong>"Print Label"</strong> if you need a Code 128 barcode sticker for repacked supplies.</p>
                       </div>
                     </li>
                   </ol>
+                </div>
+              )}
+
+              {/* Topic 4: Interface Modes & Tri-Lingual Localization */}
+              {activeTopic === 'ui_modes' && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl">
+                    <h3 className="font-bold text-sm text-indigo-900 flex items-center gap-2">
+                      <Sliders className="w-5 h-5 text-indigo-600 shrink-0" />
+                      <span>Clean & Simple Mode, Offline Tri-Lingual i18n & Smart Exit</span>
+                    </h3>
+                    <p className="text-xs text-indigo-800 mt-1">
+                      Customize your counter workspace for peak dispensing speed or full clinic management, and switch languages anytime without internet.
+                    </p>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+                      <h4 className="font-bold text-slate-900 mb-1 flex items-center gap-1.5">
+                        <Sparkles className="w-4 h-4 text-emerald-600" />
+                        <span>Clean & Simple vs. Maximalist Mode:</span>
+                      </h4>
+                      <p className="text-slate-600">
+                        • <strong>Clean & Simple Mode:</strong> Streamlines the clinic workflow into 4 essential tabs (Dashboard, Sell / Dispense, Stock In, Inventory) with enlarged action buttons, simplified statistics, and reduced visual clutter for fast peak-hour dispensing.<br />
+                        • <strong>Maximalist Mode:</strong> Unlocks all 9 operational views (including Purchase Orders, FEFO+ Risk Analytics, Immutable Audit Ledger, Policy Simulation, and Settings) for comprehensive administrative oversight.<br />
+                        • <em>Toggle anytime:</em> Use the switch button in the top navigation header. Your preference is saved locally.
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+                      <h4 className="font-bold text-slate-900 mb-1 flex items-center gap-1.5">
+                        <BookOpen className="w-4 h-4 text-blue-600" />
+                        <span>Offline Tri-Lingual Language Switcher (EN / FIL / TAGLISH):</span>
+                      </h4>
+                      <p className="text-slate-600">
+                        • Switch between <strong>English (EN)</strong>, <strong>Simple Filipino (FIL)</strong>, and <strong>Taglish (TAGLISH)</strong> using the language pill in the top header.<br />
+                        • <strong>100% Offline:</strong> Powered by an embedded language dictionary that works without an active internet connection.<br />
+                        • Translates all 9 views, action buttons, table columns, countdown badges, alert dialogs, and verification modals.
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200">
+                      <h4 className="font-bold text-slate-900 mb-1 flex items-center gap-1.5">
+                        <RotateCcw className="w-4 h-4 text-purple-600" />
+                        <span>Smart "Backup & Exit" Modal with USB Detection:</span>
+                      </h4>
+                      <p className="text-slate-600">
+                        • When finishing your shift, click <strong>"Exit & Backup"</strong> in the top header.<br />
+                        • The system automatically enumerates connected USB drives (via Windows CIM query) and executes a WAL-checkpointed database export directly to your flash drive before cleanly closing the workstation.
+                      </p>
+                    </div>
+                  </div>
                 </div>
               )}
 
@@ -482,6 +558,13 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                         Suggested Reorder Level = Daily Demand × (Supplier Lead Time + Safety Buffer Days)
                       </div>
                     </div>
+
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                      <h4 className="font-bold text-slate-900 mb-1">4. Reorder Planner & Bulk Draft Synchronization</h4>
+                      <p className="text-slate-600">
+                        In the FEFO+ tab, the Reorder Planner lists all items whose current stock is at or below the dynamic reorder point. Operators can click <strong>"Bulk Draft Purchase Orders"</strong> to instantly generate ready-to-order supplier purchase orders grouped by distributor in a single atomic transaction.
+                      </p>
+                    </div>
                   </div>
                 </div>
               )}
@@ -522,6 +605,15 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                       <h4 className="font-bold text-slate-900 mb-1">3. Printable Vouchers:</h4>
                       <p className="text-slate-600">
                         Click <strong>"Print PO Slip"</strong> on any purchase order to generate a clean, official procurement voucher complete with item specifications, quantities, costs, and signature spaces.
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <h4 className="font-bold text-slate-900 mb-1">4. Configurable PO Auto-Drafting Modes:</h4>
+                      <p className="text-slate-600">
+                        Configured in Settings:
+                        <br />• <strong>Manual Review:</strong> Staff inspects recommendations and explicitly creates purchase orders.
+                        <br />• <strong>Instant Auto:</strong> System groups replenishment suggestions by distributor and automatically creates draft purchase orders when inventory breaches the reorder point.
                       </p>
                     </div>
                   </div>
@@ -632,6 +724,14 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                       <h4 className="font-bold text-slate-900 mb-1">Cold-Start Suppression Rule:</h4>
                       <p className="text-slate-600">
                         If elapsed operational history is less than the configured window N, automated predictive forecasting is gracefully suppressed. The system operates under standard FEFO dispatching and manual owner reorder thresholds until sufficient history is recorded.
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <h4 className="font-bold text-slate-900 mb-1">PO Drafting Mode & Removable Storage Backup:</h4>
+                      <p className="text-slate-600">
+                        • <strong>PO Drafting Mode:</strong> Choose between <em>Manual Review</em> and <em>Instant Auto</em> mode to control automated purchase order creation.<br />
+                        • <strong>Removable USB Backup:</strong> Detects connected USB flash drives (via Windows CIM query). Checkpoints the SQLite Write-Ahead Log (WAL) and exports a standalone point-in-time database snapshot directly to the selected removable drive.
                       </p>
                     </div>
 

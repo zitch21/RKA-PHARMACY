@@ -30,24 +30,27 @@ router.get('/', (req, res) => {
 
     const orders = db.prepare(query).all(...params);
 
+    // Prepare statement once outside mapping loop for high-throughput efficiency
+    const getItemsStmt = db.prepare(`
+      SELECT 
+        poi.*,
+        m.code as medicine_code,
+        m.barcode as medicine_barcode,
+        m.brand_name,
+        m.generic_name,
+        m.dosage_strength,
+        m.dosage_form,
+        m.unit_of_measure,
+        m.supplier_name as medicine_supplier
+      FROM purchase_order_items poi
+      JOIN medicines m ON poi.medicine_id = m.id
+      WHERE poi.po_id = ?
+      ORDER BY poi.id ASC
+    `);
+
     // Attach items to each purchase order
     const enrichedOrders = orders.map(po => {
-      const items = db.prepare(`
-        SELECT 
-          poi.*,
-          m.code as medicine_code,
-          m.barcode as medicine_barcode,
-          m.brand_name,
-          m.generic_name,
-          m.dosage_strength,
-          m.dosage_form,
-          m.unit_of_measure,
-          m.supplier_name as medicine_supplier
-        FROM purchase_order_items poi
-        JOIN medicines m ON poi.medicine_id = m.id
-        WHERE poi.po_id = ?
-        ORDER BY poi.id ASC
-      `).all(po.id);
+      const items = getItemsStmt.all(po.id);
 
       return {
         ...po,
@@ -104,6 +107,18 @@ router.get('/recommendations', (req, res) => {
 
     const recommendations = [];
 
+    // Prepare statements outside loop for optimal query plan reuse
+    const salesQueryStmt = !isColdStart ? db.prepare(`
+      SELECT COALESCE(SUM(quantity), 0) as total_sold
+      FROM transactions
+      WHERE medicine_id = ? AND transaction_type = 'stock_out'
+        AND created_at >= DATE('now', '-' || ? || ' days')
+    `) : null;
+
+    const latestBatchStmt = db.prepare(`
+      SELECT unit_cost, selling_price FROM batches WHERE medicine_id = ? ORDER BY id DESC LIMIT 1
+    `);
+
     for (const med of medicines) {
       const leadTime = med.supplier_lead_time_days || 5;
       const bufferDays = med.buffer_days || parseInt(settings.default_buffer_days || '3', 10) || 3;
@@ -113,14 +128,9 @@ router.get('/recommendations', (req, res) => {
       let suggestedPurchaseQty = 0;
       let needsReorder = false;
 
-      if (!isColdStart) {
+      if (!isColdStart && salesQueryStmt) {
         // Calculate moving average over N days
-        const salesQuery = db.prepare(`
-          SELECT COALESCE(SUM(quantity), 0) as total_sold
-          FROM transactions
-          WHERE medicine_id = ? AND transaction_type = 'stock_out'
-            AND created_at >= DATE('now', '-' || ? || ' days')
-        `).get(med.id, N);
+        const salesQuery = salesQueryStmt.get(med.id, N);
 
         const totalSold = salesQuery ? salesQuery.total_sold : 0;
         adqs = parseFloat((totalSold / N).toFixed(2));
@@ -139,9 +149,7 @@ router.get('/recommendations', (req, res) => {
       }
 
       // Check if medicine has a recent unit cost for estimate
-      const latestBatch = db.prepare(`
-        SELECT unit_cost, selling_price FROM batches WHERE medicine_id = ? ORDER BY id DESC LIMIT 1
-      `).get(med.id);
+      const latestBatch = latestBatchStmt.get(med.id);
 
       const estimatedCost = latestBatch ? latestBatch.unit_cost : 10.0;
 

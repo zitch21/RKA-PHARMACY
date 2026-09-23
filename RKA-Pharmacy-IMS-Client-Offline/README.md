@@ -5,7 +5,7 @@
 [![Platform: Windows 10 / 11](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-blue.svg)](#system-requirements)
 [![Architecture: Offline-First](https://img.shields.io/badge/Architecture-Offline--First%20%7C%20SQLite%20WAL-success.svg)](#system-overview--key-features)
 [![Security: Scrypt Hashing](https://img.shields.io/badge/Security-Scrypt%20Hashed%20Auth-purple.svg)](#-operator-authentication--security)
-[![Verification Suite: 42/42 Passed](https://img.shields.io/badge/Verification%20Suite-42%2F42%20Passed%20(100%25)-emerald.svg)](#-automated-verification-suite)
+[![Verification Suite: 46/46 Passed](https://img.shields.io/badge/Verification%20Suite-46%2F46%20Passed%20(100%25)-emerald.svg)](#-automated-verification-suite)
 [![License: Academic Research](https://img.shields.io/badge/License-Academic%20Research%20Project-orange.svg)](#-project--research-attribution)
 
 ---
@@ -37,21 +37,31 @@
 The **R.K.A Pharmacy Inventory Management System** is a mission-critical, standalone workstation application engineered specifically for community and clinic pharmacies. Built with an **offline-first** architecture, the system operates completely independently of external cloud providers, guaranteeing 100% uptime during provincial power disruptions or internet outages.
 
 ### Core Capabilities
+* 🖥️ **Clean & Simple vs. Maximalist UI Modes**: Instant workstation layout switcher.
+  * **Clean & Simple Mode:** Streamlines the dispensary into 4 essential tabs (*Dashboard, Dispense / POS, Stock In, Inventory*) with enlarged touchpoints, condensed summary cards, and minimal clutter for fast peak-hour counter dispensing.
+  * **Maximalist Mode:** Full 9-view operational environment displaying complete analytical graphs, Purchase Orders procurement, FEFO+ risk calculators, immutable audit trail, policy simulation, and system settings.
+* 🌐 **Offline Tri-Lingual Localization**: Instant header switcher between **English (`EN`)**, **Simple Filipino (`FIL`)**, and **Taglish (`TAGLISH`)**. Operates 100% offline via embedded dictionary across all 9 views, action dialogs, and verification popups.
 * 📦 **Batch-Level Tracking & Barcode Operations**: Full plug-and-play support for standard USB HID barcode scanners. Generates internal Code 128 barcodes and printable shelf labels for unbarcoded or repacked supplies.
 * ⏳ **FEFO+ (Enhanced First-Expiry-First-Out) Dispensing**: Automatically selects and dispenses the earliest expiring active batch.
   * **Safe** (> 180 days) & **Monitor** (91–180 days): Direct release.
   * **Warning** (31–90 days), **Critical** (1–30 days), & **At-Risk**: Requires explicit user confirmation before release.
   * **Expired** ($\le 0$ days): **Strictly blocked** from selection and dispensing.
   * **Multi-Batch Auto-Allocation**: Large dispensing orders automatically split sequentially across earliest-expiring active batches when a single batch has insufficient quantity.
-* 🧠 **Demand Forecasting & Expiry Risk Margin (FEFO+)**: Computes moving average daily demand over a configurable baseline window ($N \in \{10, 20, 30\}$ operational days). Quantifies Days to Depletion, Expiry Risk Margin, and Predicted Expired Waste.
+* ⚡ **Cumulative Quick Dispense & Date Jump Ergonomics**:
+  * **Quick Dispense Buttons (`+1, +5, +10, Max`)**: Stackable quantity increments with automatic stock clamping (`Math.min`) to prevent accidental over-dispensing.
+  * **Intake Date Jump Buttons (`+6 Mos, +1 Yr, +2 Yrs, +3 Yrs`)**: 1-click expiration date setting with calendar-safe month clamping for rapid stock intake.
+* 🧠 **Demand Forecasting & Expiry Risk Margin (FEFO+)**: Computes moving average daily demand over a configurable baseline window ($N \in \{10, 20, 30\}$ operational days). Quantifies Days to Depletion, Expiry Risk Margin, and Predicted Expired Waste ($Q_{\text{waste}}$).
 * 🛡️ **Cold-Start Suppression Rule**: When transactional history is below the configured window ($t < N$), automated algorithmic reorder generation is safely suppressed with an informative banner, falling back to manual clinic reorder thresholds and standard FEFO allocation.
 * 📑 **Purchase Orders & Procurement Lifecycle**: Complete procurement tracking from 1-click reorder drafts to placed supplier orders, receiving into active inventory batches, and printable voucher slips.
+  * **Configurable Auto-Drafting Modes**: Choose between *Manual Review Mode* and *Instant Auto Mode* in Settings.
+  * **FEFO+ Reorder Planner Bulk Draft**: 1-click batch generation of supplier-grouped draft purchase orders directly from the demand forecasting engine.
 * 📈 **Dynamic Suggested Reorder Planner**: Dynamically calculates replenishment reorder points:
   $$\text{Reorder Point (ROP)} = (\text{Daily Demand} \times \text{Lead Time}) + \text{Safety Buffer}$$
 * 🔔 **Persistent Stock & Expiry Alert Acknowledgment**: Active alerts remain visible on the dashboard and notification center until explicitly acknowledged by an operator, with all acknowledgments logged in the audit trail.
+* 🔬 **Policy Simulation Engine**: In-memory policy simulator comparing FIFO vs FEFO vs FEFO+ over configurable simulation windows with pre-loaded multi-batch benchmark scenarios demonstrating waste reduction and safety buffer efficacy.
 * 🔒 **Operator Authentication & Scrypt Password Security**: Multi-tier operator accounts with passwords hashed using Node.js native `scrypt` cryptographic key derivation. Station auto-locks behind an authentication screen when unauthenticated.
 * 🛡️ **Locked Counter Pricing & Immutable Audit Trail**: Dispensing prices are strictly locked at register level to prevent unauthorized alteration. Any non-FEFO batch overrides require mandatory justification notes.
-* 💾 **End-of-Day Database Backup to Removable Storage**: Windows CIM disk scanner detects connected USB flash drives; exports point-in-time WAL-checkpointed database copies directly to removable media.
+* 💾 **Smart "Backup & Exit" Modal with Removable Storage Detection**: Windows CIM disk scanner detects connected USB flash drives; exports point-in-time WAL-checkpointed database copies directly to removable media before clean workstation shutdown.
 
 ---
 
@@ -102,7 +112,7 @@ The system enforces authentication to protect clinical inventory and pricing dat
 
 ## 🧪 Automated Verification Suite
 
-The repository includes a self-contained automated test suite validating all clinic and thesis specifications (42/42 tests passing):
+The repository includes a self-contained automated test suite validating all clinic and thesis specifications (46/46 tests passing):
 - Scrypt authentication and session validation
 - Countdown tier classification and live date calculation
 - Strict blocking of expired batches from dispensing
@@ -110,12 +120,24 @@ The repository includes a self-contained automated test suite validating all cli
 - Warning/Critical release status confirmation
 - Multi-batch FEFO automatic splitting across inventory batches
 - Persistent alert acknowledgment and audit trail logging
-- FEFO+ Expiry Risk Margin, Days to Depletion, and predicted expired waste
+- FEFO+ Expiry Risk Margin, Days to Depletion, and predicted expired waste ($Q_{\text{waste}}$)
 - Configurable demand observation window ($N \in \{10, 20, 30\}$ days)
 - Cold-Start rule ($t < N$) reorder suppression and fallback
-- Purchase order lifecycle: Draft creation, placing, receiving, and cancellation
+- Purchase order lifecycle: Draft creation, placing, receiving into active inventory batches, and cancellation
 - End-of-day USB removable storage backup and WAL truncate checkpoints
 - Policy simulation comparison (FIFO vs FEFO vs FEFO+)
+
+To run the verification test suite:
+```powershell
+cd RKA-Pharmacy-IMS-Client-Offline
+.\runtime\node.exe verify_all_specs.js
+```
+
+To run the complete system and database health check:
+```powershell
+cd RKA-Pharmacy-IMS-Client-Offline
+.\runtime\node.exe check_system_health.js
+```
 
 ## 📂 Repository Structure
 
@@ -167,15 +189,17 @@ RKA-PHARMACY/
 
 ## 🖥️ Application Modules Summary
 
+* **Dual UI Modes**: Clean & Simple Mode (essential 4 tabs for rapid counter dispensing) vs. Maximalist Mode (all 9 views with full analytics, procurement, audit trail, simulation, and settings).
+* **Tri-Lingual Localization**: 100% offline switcher supporting English (`EN`), Simple Filipino (`FIL`), and Taglish (`TAGLISH`) across all 9 views, tables, action buttons, and confirmation dialogs.
 * **Dashboard**: Key operational metrics, daily sales totals, active inventory value, 5-tier expiry countdown breakdown, and persistent priority alert banner.
 * **Medicines & Batches**: Master catalog management, batch intake, batch cost/price adjustments, and printable Code 128 shelf labels.
-* **Stock In (Intake)**: Intake workflow with pricing validation, previous batch price inheritance, and expiration date preview.
-* **Purchase Orders**: Full procurement management lifecycle. Convert suggested reorders into draft POs, place orders with suppliers, print formal PO slip vouchers with authorized signature blocks, receive delivered items into active inventory batches, and manage cancellations.
-* **Stock Out (Dispensing / POS)**: Real-time barcode scanning, automated multi-batch FEFO allocation, Warning/Critical confirmation modal, mandatory override justifications, locked counter pricing, and printable receipts.
-* **FEFO+ Risk & Reorder**: Daily demand moving average, Days to Expiry, Days to Depletion, Expiry Risk Margin, Cold-Start threshold banner, and 1-click Suggested Reorder synchronization into Purchase Orders.
+* **Stock In (Intake)**: Intake workflow with pricing validation, previous batch price inheritance, calendar-safe expiration date jump buttons (`+6 Mos, +1 Yr, +2 Yrs, +3 Yrs`), and expiration date preview.
+* **Purchase Orders**: Full procurement management lifecycle with configurable drafting modes (`manual` vs `instant_auto`). Convert suggested reorders into draft POs, place orders with suppliers, print formal PO slip vouchers with authorized signature blocks, receive delivered items into active inventory batches, and manage cancellations.
+* **Stock Out (Dispensing / POS)**: Real-time barcode scanning, cumulative quick dispense buttons (`+1, +5, +10, Max`) with stock clamping, automated multi-batch FEFO allocation, Warning/Critical confirmation modal, mandatory override justifications, locked counter pricing, and printable receipts.
+* **FEFO+ Risk & Reorder**: Daily demand moving average, Days to Expiry, Days to Depletion, Expiry Risk Margin, Cold-Start threshold banner, and 1-click Bulk Suggested Reorder synchronization into Purchase Orders.
 * **Audit Trail**: Tamper-evident ledger logging dispensing overrides, batch price adjustments, alert acknowledgments, baseline window modifications, purchase order actions, backups, and user logins with CSV export.
-* **Policy Simulation**: Comparative historical evaluation between FIFO, standard FEFO, and FEFO+ models demonstrating waste reduction.
-* **Settings**: Configurable baseline observation window ($N \in \{10, 20, 30\}$ days), expiration countdown tiers, supplier lead time, safety buffer days, removable USB storage backup export, and operator password management.
+* **Policy Simulation**: Comparative historical evaluation between FIFO, standard FEFO, and FEFO+ models with benchmark multi-batch scenarios demonstrating waste reduction and safety buffer efficacy.
+* **Settings**: Configurable baseline observation window ($N \in \{10, 20, 30\}$ days), PO auto-drafting mode toggle, expiration countdown tiers, supplier lead time, safety buffer days, removable USB storage backup export, and operator password management.
 
 ---
 

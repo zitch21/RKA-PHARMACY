@@ -397,7 +397,11 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
                     type="button"
                     onClick={() => {
                       const d = new Date();
+                      const originalDay = d.getDate();
                       d.setMonth(d.getMonth() + pill.months);
+                      if (d.getDate() !== originalDay) {
+                        d.setDate(0); // Clamp to last day of target month if month has fewer days
+                      }
                       const yyyy = d.getFullYear();
                       const mm = String(d.getMonth() + 1).padStart(2, '0');
                       const dd = String(d.getDate()).padStart(2, '0');

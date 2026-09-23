@@ -24,13 +24,17 @@ This guide is designed specifically for you. It explains how this system works, 
    - [Trace 3: Demand Forecasting & Expiry Risk Calculation](#trace-3-demand-forecasting--expiry-risk-calculation)
    - [Trace 4: End-of-Day USB Removable Storage Backup](#trace-4-end-of-day-usb-removable-storage-backup)
    - [Trace 5: Purchase Orders Procurement & Receiving Lifecycle](#trace-5-purchase-orders-procurement--receiving-lifecycle)
-5. [The 6 Core Architectural Concepts Explained Simply](#5-the-6-core-architectural-concepts-explained-simply)
+5. [The 10 Core Architectural Concepts Explained Simply](#5-the-10-core-architectural-concepts-explained-simply)
    - [Concept 1: Demand Forecasting & FEFO+ Risk Margin Intelligence](#concept-1-demand-forecasting--fefo-risk-margin-intelligence)
    - [Concept 2: 5-Tier Expiration Countdown & Confirmation Gate](#concept-2-5-tier-expiration-countdown--confirmation-gate)
    - [Concept 3: Crash-Proof Offline SQLite in WAL Mode](#concept-3-crash-proof-offline-sqlite-in-wal-mode)
    - [Concept 4: Scrypt Cryptographic Password Security](#concept-4-scrypt-cryptographic-password-security)
    - [Concept 5: The Immutable Audit Trail Ledger](#concept-5-the-immutable-audit-trail-ledger)
    - [Concept 6: Procurement State Machine & Multi-Batch Auto-Allocation](#concept-6-procurement-state-machine--multi-batch-auto-allocation)
+   - [Concept 7: Clean & Simple vs. Maximalist UI Mode Architecture](#concept-7-clean--simple-vs-maximalist-ui-mode-architecture)
+   - [Concept 8: Offline Tri-Lingual Localization System (`LanguageContext`)](#concept-8-offline-tri-lingual-localization-system-languagecontext)
+   - [Concept 9: PO Auto-Drafting Modes & Bulk Reorder Sync](#concept-9-po-auto-drafting-modes--bulk-reorder-sync)
+   - [Concept 10: Cumulative Quick Dispense & Date Jump UI Ergonomics](#concept-10-cumulative-quick-dispense--date-jump-ui-ergonomics)
 6. [Beginner Developer Playbook: "How Do I Make Changes?"](#6-beginner-developer-playbook-how-do-i-make-changes)
    - [Recipe 1: Adding a New Backend REST Endpoint](#recipe-1-adding-a-new-backend-rest-endpoint)
    - [Recipe 2: Modifying the Database Schema](#recipe-2-modifying-the-database-schema)
@@ -109,8 +113,8 @@ When the app opens, you will be greeted by the workstation lock screen. Use the 
 * **Password:** `rka2026`
 * **Operator:** Lourdes Gincen L. Cesista
 
-### Running the Automated Test Suite
-To verify that all 42 thesis and clinic specifications are functioning:
+### Running the Automated Test Suite & Health Audits
+To verify that all 46 thesis and clinic specifications are functioning:
 ```powershell
 cd RKA-Pharmacy-IMS-Client-Offline
 .\runtime\node.exe verify_all_specs.js
@@ -118,8 +122,14 @@ cd RKA-Pharmacy-IMS-Client-Offline
 You should see:
 ```text
 ================================================================
- VERIFICATION RESULTS: 42 PASSED, 0 FAILED
+ ALL SPECIFICATION VERIFICATION SUITE COMPLETED:
+ 46 PASSED, 0 FAILED
 ================================================================
+```
+
+To run the complete system and database health audit:
+```powershell
+.\runtime\node.exe check_system_health.js
 ```
 
 To run the comprehensive stress and edge-case test suite:
@@ -173,6 +183,8 @@ RKA-Pharmacy-IMS-Client-Offline/
 │   │   │   ├── AlertNotificationDropdown.jsx # Top-right active alert drawer with Ack buttons
 │   │   │   ├── HelpGuideModal.jsx          # Dual-version beginner & advanced operating guide
 │   │   │   └── ExitConfirmModal.jsx        # Accidental exit prevention prompt
+│   │   ├── context/
+│   │   │   └── LanguageContext.jsx # Offline tri-lingual dictionary (EN, FIL, TAGLISH) & t() hook
 │   │   ├── views/              # Full-page screens corresponding to navigation tabs
 │   │   │   ├── DashboardView.jsx       # Metrics, priority alert banner, countdown breakdown
 │   │   │   ├── InventoryView.jsx       # Medicine catalog, batch table, printable barcode labels
@@ -185,7 +197,8 @@ RKA-Pharmacy-IMS-Client-Offline/
 │   │   │   └── SettingsView.jsx        # Configurable window (N), tiers, USB backup, security
 │   │   └── App.jsx             # Workstation shell, state orchestrator, auth guard
 │   └── dist/                   # Compiled HTML/CSS/JS served to the browser
-├── verify_all_specs.js         # Automated test suite validating all thesis requirements (42 tests)
+├── check_system_health.js      # Zero-defect SQLite integrity, schema & foreign key auditor
+├── verify_all_specs.js         # Automated test suite validating all thesis requirements (46 tests)
 ├── stress_test_error_handling.js # Concurrency, boundary & robustness test suite
 ├── Setup-Desktop-Shortcut.bat  # 1-click shortcut installer
 ├── start-app.bat               # Fallback launcher
@@ -525,6 +538,126 @@ During dispensing (POS), when a customer requests a quantity greater than what i
 
 ---
 
+### Concept 7: Clean & Simple vs. Maximalist UI Mode Architecture
+
+Provincial pharmacy operators face high cognitive load during morning rushes, where complex charts and nine different menu options increase the risk of dispensing errors. Conversely, clinic owners require deep analytics, full audit trails, and policy simulations during evening administration.
+
+The system solves this with a **Dual UI Operational State**:
+```
+                        ┌────────────────────────────────────────┐
+                        │      Workstation UI Mode Switcher      │
+                        │    (Persisted in localStorage)         │
+                        └───────────────────┬────────────────────┘
+                                            │
+                     ┌──────────────────────┴──────────────────────┐
+                     ▼                                             ▼
+        [ Clean & Simple Mode ]                         [ Maximalist Mode ]
+    • Essential 4-tab workflow:                     • Full 9-view workspace:
+      - Dashboard (Vital stats only)                  - Dashboard, Inventory, Stock In
+      - Dispense / POS (Large touchpoints)            - Purchase Orders, Dispense, FEFO+
+      - Stock In (Streamlined intake)                 - Audit Trail, Simulation, Settings
+      - Inventory (Core stock table)                • Granular parameter configuration
+    • Prominent quick-dispense buttons              • Comprehensive analytical graphs
+    • Background administrative panels hidden       • Exportable audit ledgers & reports
+```
+
+#### State Orchestration (`App.jsx` & `Navbar.jsx`)
+1. **Persistent State:** Managed via `const [uiMode, setUiMode] = useState(() => localStorage.getItem('rka_ui_mode') || 'clean');`.
+2. **Tab Filtering:** In Clean & Simple mode, `Navbar.jsx` renders only the 4 primary tabs: `dashboard`, `stock-out`, `stock-in`, and `inventory`.
+3. **Responsive View Adaptation:** Individual views receive `uiMode` as a prop and selectively collapse secondary metric tables and informational banners to keep the counter clean.
+
+---
+
+### Concept 8: Offline Tri-Lingual Localization System (`LanguageContext`)
+
+Community clinics in northern the Philippines operate fluidly across **English**, **Filipino (Tagalog)**, and **Taglish** (colloquial Filipino-English hybrid). External cloud translation APIs (e.g. Google Translate) fail completely during rural internet outages.
+
+The system implements an embedded, zero-dependency **Offline Tri-Lingual Architecture**:
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                        LanguageContext.jsx                             │
+│                                                                        │
+│  State: language ('EN' | 'FIL' | 'TAGLISH')                            │
+│  Storage: localStorage.getItem('rka_lang_preference')                  │
+│                                                                        │
+│  Translation Function:                                                 │
+│  t(key, fallbackText, params)                                          │
+│                                                                        │
+│  Embedded Dictionaries:                                                │
+│  ├── EN:      {"nav_pos": "Dispense", "btn_add": "Add to Cart"}        │
+│  ├── FIL:     {"nav_pos": "Magbenta", "btn_add": "Ilagay sa Cart"}     │
+│  └── TAGLISH: {"nav_pos": "Mag-Dispense", "btn_add": "I-add sa Cart"}  │
+└────────────────────────────────────────────────────────────────────────┘
+```
+
+#### How to Use `useLanguage` in Any React Component:
+```javascript
+import { useLanguage } from '../context/LanguageContext';
+
+export default function MyComponent() {
+  const { t } = useLanguage();
+  return (
+    <button className="btn-primary">
+      {t('btn_complete_sale', 'Complete Dispense')}
+    </button>
+  );
+}
+```
+* **Fallback Safety:** If a translation key is missing in the active language dictionary, `t()` immediately falls back to `fallbackText`, ensuring zero runtime `undefined` crashes.
+* **Coverage:** Fully wired across all 9 views, header navigation, modals (`ExitConfirmModal`, `BatchStatusConfirmModal`, `HelpGuideModal`), and alerts.
+
+---
+
+### Concept 9: PO Auto-Drafting Modes & Bulk Reorder Sync
+
+Procurement replenishment is governed by two complementary workflows designed for single-operator clinics:
+
+#### 1. Configurable Drafting Modes (`po_drafting_mode`)
+Stored in SQLite `settings` table:
+* **`manual` (Default):** The system displays replenishment suggestions based on the dynamic reorder point formula $\text{ROP} = \hat{D}_i \cdot (L_i + K_{\text{buffer}})$. The operator manually reviews low-stock items and explicitly creates draft orders.
+* **`instant_auto`:** The backend automatically compiles medicines falling below their reorder threshold into ready-to-order supplier draft purchase orders without manual item selection.
+
+#### 2. Reorder Planner Bulk Draft (`POST /api/purchase-orders/bulk-draft`)
+From the **FEFO+ Risk & Reorder** view, the operator can click **"Bulk Draft Purchase Orders"**:
+1. The server receives the array of replenishment items.
+2. Items are grouped automatically by `supplier_name`.
+3. Sequential PO reference numbers (`PO-YYYYMMDD-XXXX`) are allocated.
+4. Estimated unit costs are inherited from each medicine's latest active batch.
+5. In a single atomic SQLite database transaction, draft purchase orders and line items are inserted, and a `BULK_CREATE_PURCHASE_ORDERS` entry is written to the immutable audit trail.
+
+---
+
+### Concept 10: Cumulative Quick Dispense & Date Jump UI Ergonomics
+
+Counter efficiency and error prevention are reinforced by two custom UI interaction patterns:
+
+#### 1. Cumulative Quick Dispense with Stock Clamping (`StockOutView.jsx`)
+Under the quantity input field, operators have access to `+1`, `+5`, `+10`, and `Max` buttons:
+```javascript
+// Clamped cumulative increment:
+onClick={() => setQuantityInput(prev => 
+  Math.min(currentSelectedBatch.current_quantity, (parseInt(prev, 10) || 0) + amount)
+)}
+```
+* **Repeated Clicks Accumulate:** Clicking `+5` three times automatically increments to 15.
+* **Strict Safety Clamping:** Quantity is strictly clamped using `Math.min(current_quantity, ...)` so an operator can never accidentally request more units than the selected batch contains.
+* **1-Click Max:** Clicking `Max` sets the exact remaining batch stock.
+
+#### 2. Calendar-Safe Expiry Date Jump Buttons (`StockInView.jsx`)
+Entering expiration dates for new stock intake is accelerated by `+6 Mos`, `+1 Yr`, `+2 Yrs`, and `+3 Yrs` pill buttons.
+To prevent the standard JavaScript `Date` rollover bug where adding months on the 31st overflows into the following month (e.g. March 31 + 6 months rolling into October 1 instead of September 30), the algorithm clamps to the month's final day:
+```javascript
+const d = new Date();
+const originalDay = d.getDate();
+d.setMonth(d.getMonth() + pill.months);
+if (d.getDate() !== originalDay) {
+  d.setDate(0); // Safely clamp to the last valid day of the target month
+}
+setExpDate(d.toISOString().split('T')[0]);
+```
+
+---
+
 ## 6. Beginner Developer Playbook: "How Do I Make Changes?"
 
 Here are 5 concrete step-by-step recipes for common development tasks.
@@ -691,9 +824,16 @@ You do **not** need a physical scanner to develop or test:
 | **Buffer Days** | Safety Buffer | Extra cushion days configured to absorb supplier delivery delays or sudden demand spikes. |
 | **WAL** | Write-Ahead Logging | A crash-proof SQLite transaction log mode that prevents database corruption during power outages. |
 | **HID Wedge** | Human Interface Device Wedge | Standard hardware protocol where a barcode scanner emulates a USB keyboard. |
+| **Clean Mode** | Clean & Simple UI Mode | Streamlined 4-tab dispensary interface designed to reduce cognitive fatigue during peak counter sales. |
+| **Maximalist Mode** | Maximalist UI Mode | Full 9-view workstation environment exposing all deep analytics, audit ledgers, settings, and simulators. |
+| **Tri-Lingual i18n** | Offline Localization | Embedded client dictionary allowing instant switching between English, Simple Filipino, and Taglish without internet. |
+| **Clamping** | Mathematical Clamping | Constraining quick-dispense increments (`Math.min(stock, current + inc)`) to strictly prevent over-dispensing. |
+| **Date Jump** | Expiry Date Quick-Jump | 1-click pills (`+6m`, `+1y`, `+2y`, `+3y`) with month-end safety clamping for rapid stock intake. |
+| **CIM Disk** | Common Information Model Disk | Windows PowerShell query (`Win32_LogicalDisk`) used to identify removable USB flash drives for backup. |
+| **PO Drafting Mode** | Auto vs Manual PO Drafting | Setting governing whether low-stock items require manual PO creation or are automatically drafted. |
 
 ---
 
-*Document Version:* 3.1.0 (Comprehensive Beginner Edition)  
+*Document Version:* 3.2.0 (Comprehensive Architect & Developer Edition)  
 *Last Updated:* September 2026  
 *Target System:* R.K.A Pharmacy IMS (San Antonio, Agoo, La Union)

@@ -24,10 +24,12 @@ const DEFAULT_CONFIG = {
   warning_threshold_days: '31',
   critical_threshold_days: '1',
   default_buffer_days: '3',
-  history_days_fefo_plus: '30'
+  history_days_fefo_plus: '30',
+  forecasting_window_days: '30',
+  po_drafting_mode: 'manual'
 };
 
-export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggleUiMode, onOpenHelp, currentUser }) {
+export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMode, onOpenHelp, currentUser }) {
   const [settings, setSettings] = useState({
     pharmacy_name: 'R.K.A Pharmacy',
     pharmacy_address: 'San Antonio, Agoo, La Union',
@@ -37,7 +39,9 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
     warning_threshold_days: '31',
     critical_threshold_days: '1',
     default_buffer_days: '3',
-    history_days_fefo_plus: '30'
+    history_days_fefo_plus: '30',
+    forecasting_window_days: '30',
+    po_drafting_mode: 'manual'
   });
 
   const [loading, setLoading] = useState(false);
@@ -107,7 +111,10 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings)
+        body: JSON.stringify({
+          ...settings,
+          operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista'
+        })
       });
 
       const data = await res.json();
@@ -133,7 +140,7 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
       String(settings.warning_threshold_days) === DEFAULT_CONFIG.warning_threshold_days &&
       String(settings.critical_threshold_days) === DEFAULT_CONFIG.critical_threshold_days &&
       String(settings.default_buffer_days) === DEFAULT_CONFIG.default_buffer_days &&
-      String(settings.history_days_fefo_plus) === DEFAULT_CONFIG.history_days_fefo_plus;
+      String(settings.forecasting_window_days || settings.history_days_fefo_plus) === DEFAULT_CONFIG.forecasting_window_days;
 
     if (isAlreadyDefault) {
       setDefaultNotice('Already in default settings');
@@ -332,19 +339,19 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
 
           <div className="flex items-center gap-2">
             <span className={`text-xs font-bold px-2.5 py-1 rounded-full uppercase ${
-              uiMode === 'minimalist' ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-800'
+              uiMode === 'clean' ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-800'
             }`}>
-              Currently: {uiMode === 'minimalist' ? 'Clean / Minimalist' : 'Maximalist (Full)'}
+              Currently: {uiMode === 'clean' ? 'Clean & Simple' : 'Maximalist (Advanced)'}
             </span>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {/* Clean / Minimalist Option */}
+          {/* Clean & Simple Option */}
           <div
-            onClick={() => onToggleUiMode && onToggleUiMode('minimalist')}
+            onClick={() => onToggleUiMode && onToggleUiMode('clean')}
             className={`p-4 rounded-xl border-2 transition cursor-pointer flex flex-col justify-between ${
-              uiMode === 'minimalist'
+              uiMode === 'clean'
                 ? 'border-emerald-600 bg-emerald-50/50 shadow-xs ring-2 ring-emerald-500/20'
                 : 'border-slate-200 hover:border-slate-300 bg-white'
             }`}
@@ -352,37 +359,37 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                  <span>🌿 Clean / Minimalist Mode</span>
+                  <span>🌿 Clean & Simple Mode</span>
                   <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded uppercase">
                     Recommended
                   </span>
                 </span>
-                {uiMode === 'minimalist' && (
+                {uiMode === 'clean' && (
                   <span className="w-2.5 h-2.5 rounded-full bg-emerald-600"></span>
                 )}
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                <strong>Reduces visual noise and clutter.</strong> Hides dense mathematical formulas, complex calculation tables, and internal database IDs. Highlights big, simple action buttons for daily counter operations (selling, receiving, and checking stock). Perfect for emergency operators or temporary staff.
+                <strong>Reduces visual noise and clutter.</strong> Focuses on the 5 daily counter tabs (Dashboard, Stock In, Purchase Orders, Dispense, Settings) while suppressing verbose helper texts. Highlights big, simple action buttons for high-throughput daily transactions.
               </p>
             </div>
 
             <div className="mt-4 pt-3 border-t border-slate-200/60 flex items-center justify-between">
               <span className="text-[11px] font-semibold text-emerald-800">
-                {uiMode === 'minimalist' ? '✓ Currently Active' : 'Click to Activate'}
+                {uiMode === 'clean' ? '✓ Currently Active' : 'Click to Activate'}
               </span>
               <button
                 type="button"
                 onClick={(e) => {
                   e.stopPropagation();
-                  onToggleUiMode && onToggleUiMode('minimalist');
+                  onToggleUiMode && onToggleUiMode('clean');
                 }}
                 className={`px-3 py-1.5 text-xs font-bold rounded-lg transition ${
-                  uiMode === 'minimalist'
+                  uiMode === 'clean'
                     ? 'bg-emerald-600 text-white shadow-xs'
                     : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                 }`}
               >
-                {uiMode === 'minimalist' ? 'Selected' : 'Switch to Clean'}
+                {uiMode === 'clean' ? 'Selected' : 'Switch to Clean'}
               </button>
             </div>
           </div>
@@ -399,14 +406,14 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                  <span>🔬 Maximalist / Clinical Mode</span>
+                  <span>⚡ Maximalist (Advanced) Mode</span>
                 </span>
                 {uiMode === 'maximalist' && (
                   <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>
                 )}
               </div>
               <p className="text-xs text-slate-600 leading-relaxed">
-                <strong>Displays full clinical telemetry.</strong> Shows complete multi-tier countdown countdowns, Expiry Risk Margin equations (DTE − DTC), Average Daily Quantity Sold (ADQS), supplier lead times, and comprehensive audit metadata.
+                <strong>Displays full operational telemetry and all 9 navigation tabs.</strong> Shows complete multi-tier countdowns, Expiry Risk Margins, Average Daily Demand, mathematical formulas, and comprehensive audit metadata.
               </p>
             </div>
 
@@ -520,7 +527,7 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
                 FEFO+ Algorithm & Suggested Reorder Engine Parameters
               </h3>
               <p className="text-xs text-slate-500">
-                Formula: Suggested Reorder Level = ADQS × (Lead Time + Buffer Days)
+                Formula: Suggested Reorder Level = Daily Demand × (Lead Time + Buffer Days)
               </p>
             </div>
           </div>
@@ -545,21 +552,96 @@ export default function SettingsView({ onRefresh, uiMode = 'minimalist', onToggl
             </div>
 
             <div>
-              <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                Minimum Sales History Requirement (Days)
+              <label className="block text-xs font-semibold uppercase text-slate-700 mb-1.5">
+                Forecasting Baseline Window (N Operational Days)
               </label>
-              <input
-                type="number"
-                name="history_days_fefo_plus"
-                min="1"
-                required
-                value={settings.history_days_fefo_plus}
-                onChange={handleChange}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-purple-500 focus:outline-none"
-              />
-              <span className="text-[11px] text-slate-500 mt-1 block">
-                Requires 30 days of recorded sales history before full consumption-based FEFO+ applies.
+              <div className="grid grid-cols-3 gap-2">
+                {[10, 20, 30].map((days) => {
+                  const currentVal = parseInt(settings.forecasting_window_days || settings.history_days_fefo_plus || '30', 10);
+                  const isSelected = currentVal === days;
+                  return (
+                    <button
+                      key={days}
+                      type="button"
+                      onClick={() => setSettings(prev => ({
+                        ...prev,
+                        forecasting_window_days: String(days),
+                        history_days_fefo_plus: String(days)
+                      }))}
+                      className={`py-2 px-2 rounded-lg border text-xs font-bold transition flex flex-col items-center justify-center ${
+                        isSelected
+                          ? 'border-purple-600 bg-purple-50 text-purple-900 ring-2 ring-purple-500/20'
+                          : 'border-slate-300 bg-white text-slate-700 hover:bg-slate-50'
+                      }`}
+                    >
+                      <span>{days} Days</span>
+                      <span className="text-[10px] font-normal text-slate-500">
+                        {days === 30 ? '(Default)' : `${days}d Window`}
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+              <span className="text-[11px] text-slate-500 mt-2 block">
+                Moving average observation window (N). When transaction history t &lt; N, automated forecasting is suppressed and falls back to manual reorder points (Cold-Start Rule).
               </span>
+            </div>
+
+            {/* PO Drafting Automation Mode */}
+            <div className="md:col-span-2 pt-3 border-t border-slate-100">
+              <label className="block text-xs font-semibold uppercase text-slate-700 mb-1.5 flex items-center justify-between">
+                <span>PO Drafting Automation Mode</span>
+                <span className="text-[10px] text-slate-500 font-normal">Controls how Suggested Reorders create Purchase Orders</span>
+              </label>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div
+                  onClick={() => setSettings(prev => ({ ...prev, po_drafting_mode: 'manual' }))}
+                  className={`p-3 rounded-xl border-2 transition cursor-pointer flex items-start gap-3 ${
+                    (settings.po_drafting_mode || 'manual') === 'manual'
+                      ? 'border-emerald-600 bg-emerald-50/50 ring-2 ring-emerald-500/20'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="po_drafting_mode"
+                    value="manual"
+                    checked={(settings.po_drafting_mode || 'manual') === 'manual'}
+                    onChange={handleChange}
+                    className="mt-1 text-emerald-600 focus:ring-emerald-500"
+                  />
+                  <div>
+                    <div className="font-bold text-xs text-slate-900">Manual Confirmation (Default)</div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Prompts the operator with an itemized review dialog before generating the consolidated draft Purchase Order.
+                    </p>
+                  </div>
+                </div>
+
+                <div
+                  onClick={() => setSettings(prev => ({ ...prev, po_drafting_mode: 'instant_auto' }))}
+                  className={`p-3 rounded-xl border-2 transition cursor-pointer flex items-start gap-3 ${
+                    settings.po_drafting_mode === 'instant_auto'
+                      ? 'border-indigo-600 bg-indigo-50/50 ring-2 ring-indigo-500/20'
+                      : 'border-slate-200 bg-white hover:border-slate-300'
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="po_drafting_mode"
+                    value="instant_auto"
+                    checked={settings.po_drafting_mode === 'instant_auto'}
+                    onChange={handleChange}
+                    className="mt-1 text-indigo-600 focus:ring-indigo-500"
+                  />
+                  <div>
+                    <div className="font-bold text-xs text-slate-900">Instant Auto-Draft Mode</div>
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Clicking Accept instantly persists the consolidated draft to the Purchase Orders database and presents a confirmation toast.
+                    </p>
+                  </div>
+                </div>
+              </div>
             </div>
           </div>
         </div>

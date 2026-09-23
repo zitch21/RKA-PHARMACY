@@ -5,7 +5,7 @@ const { db, logAudit, hashPassword, verifyPassword } = require('../db');
 // Login
 router.post('/login', (req, res) => {
   try {
-    const { username, password } = req.body;
+    const { username, password } = req.body || {};
 
     if (!username || !password) {
       return res.status(400).json({ error: 'Username and password are required.' });
@@ -52,7 +52,7 @@ router.post('/login', (req, res) => {
 // Logout
 router.post('/logout', (req, res) => {
   try {
-    const { username, full_name } = req.body;
+    const { username, full_name } = req.body || {};
     logAudit(
       'USER_LOGOUT',
       'AUTH',
@@ -79,7 +79,7 @@ router.get('/session', (req, res) => {
 // Change Password
 router.post('/change-password', (req, res) => {
   try {
-    const { username, current_password, new_password } = req.body;
+    const { username, current_password, new_password } = req.body || {};
 
     if (!username || !current_password || !new_password) {
       return res.status(400).json({ error: 'All fields are required.' });

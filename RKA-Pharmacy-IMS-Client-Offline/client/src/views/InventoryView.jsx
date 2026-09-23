@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Search,
   Plus,
@@ -10,25 +10,35 @@ import {
   Tag,
   Edit3,
   DollarSign,
-  RotateCcw
+  RotateCcw,
+  AlertTriangle
 } from 'lucide-react';
 import BarcodeModal from '../components/BarcodeModal';
 import DisposalModal from '../components/DisposalModal';
 import StockAdjustmentModal from '../components/StockAdjustmentModal';
 import EditMedicineModal from '../components/EditMedicineModal';
 import EditBatchModal from '../components/EditBatchModal';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function InventoryView({
   medicines,
   batches,
   onRefresh,
   onOpenAddMedicine,
-  _onNavigate
+  onNavigate,
+  initialFilter
 }) {
+  const { t } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All');
-  const [selectedStatus, setSelectedStatus] = useState('All');
+  const [selectedStatus, setSelectedStatus] = useState(initialFilter || 'All');
   const [expandedMedId, setExpandedMedId] = useState(null);
+
+  useEffect(() => {
+    if (initialFilter) {
+      setSelectedStatus(initialFilter);
+    }
+  }, [initialFilter]);
 
   const [barcodeMedicine, setBarcodeMedicine] = useState(null);
   const [disposalBatch, setDisposalBatch] = useState(null);
@@ -49,8 +59,8 @@ export default function InventoryView({
     const matchesCategory = selectedCategory === 'All' || m.category === selectedCategory;
 
     let matchesStatus = true;
-    if (selectedStatus === 'low_stock') matchesStatus = m.is_low_stock;
-    if (selectedStatus === 'out_of_stock') matchesStatus = m.is_out_of_stock;
+    if (selectedStatus === 'low_stock') matchesStatus = m.is_low_stock || (m.total_stock <= (m.reorder_threshold || 0));
+    if (selectedStatus === 'out_of_stock') matchesStatus = m.is_out_of_stock || m.total_stock <= 0;
     if (selectedStatus === 'critical') matchesStatus = m.expiry_tier === 'Critical';
     if (selectedStatus === 'warning') matchesStatus = m.expiry_tier === 'Warning';
     if (selectedStatus === 'expired') matchesStatus = m.expiry_tier === 'Expired';
@@ -61,15 +71,15 @@ export default function InventoryView({
   const getTierBadge = (tier) => {
     switch (tier) {
       case 'Expired':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200">Expired</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200">{t('tier_expired', 'Expired')}</span>;
       case 'Critical':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">Critical (1-30d)</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">{t('tier_critical', 'Critical (1-30d)')}</span>;
       case 'Warning':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">Warning (31-90d)</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">{t('tier_warning', 'Warning (31-90d)')}</span>;
       case 'Monitor':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">Monitor (91-180d)</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">{t('tier_monitor', 'Monitor (91-180d)')}</span>;
       case 'Safe':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">Safe (&gt;180d)</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">{t('tier_safe', 'Safe (>180d)')}</span>;
       default:
         return <span className="px-2 py-0.5 rounded text-[10px] text-slate-400">No stock</span>;
     }
@@ -92,7 +102,7 @@ export default function InventoryView({
             className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition"
           >
             <Plus className="w-4 h-4" />
-            <span>Add Medicine Profile</span>
+            <span>{t('btn_add_medicine', 'Add Medicine Profile')}</span>
           </button>
         </div>
       </div>
@@ -100,16 +110,36 @@ export default function InventoryView({
       {/* Filter Bar */}
       <div className="space-y-2 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
         <div className="grid grid-cols-1 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-          {/* Search */}
-          <div className="sm:col-span-2 relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
-            <input
-              type="text"
-              placeholder="Search by brand, generic, barcode, or code..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-            />
+          {/* Search & Low Stock Toggle */}
+          <div className="sm:col-span-2 flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
+              <input
+                type="text"
+                placeholder="Search by brand, generic, barcode, or code..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              />
+            </div>
+
+            {/* Quick-filter toggle badge: [ ⚠️ Low Stock Only ] */}
+            <button
+              type="button"
+              onClick={() => setSelectedStatus(prev => prev === 'low_stock' ? 'All' : 'low_stock')}
+              className={`shrink-0 px-3 py-1.5 text-xs font-bold rounded-lg border transition flex items-center gap-1.5 shadow-2xs ${
+                selectedStatus === 'low_stock'
+                  ? 'bg-amber-500 text-white border-amber-600 shadow-xs ring-2 ring-amber-300'
+                  : 'bg-amber-50 text-amber-800 border-amber-300 hover:bg-amber-100'
+              }`}
+              title="Toggle filter to show only low stock medicines"
+            >
+              <AlertTriangle className="w-3.5 h-3.5" />
+              <span>{t('btn_low_stock_only', 'Low Stock Only')}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono ${selectedStatus === 'low_stock' ? 'bg-amber-600 text-white' : 'bg-amber-200/80 text-amber-900'}`}>
+                {medicines.filter(m => m.is_low_stock || (m.total_stock <= (m.reorder_threshold || 0))).length}
+              </span>
+            </button>
           </div>
 
           {/* Category Filter */}
@@ -132,9 +162,9 @@ export default function InventoryView({
               onChange={(e) => setSelectedStatus(e.target.value)}
               className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-slate-700"
             >
-              <option value="All">All Stock & Expiry States</option>
-              <option value="low_stock">Low Stock (≤ Threshold)</option>
-              <option value="out_of_stock">Out of Stock</option>
+              <option value="All">{t('btn_all_items', 'All Stock & Expiry States')}</option>
+              <option value="low_stock">{t('badge_low_stock', 'Low Stock (≤ Threshold)')}</option>
+              <option value="out_of_stock">{t('badge_out_of_stock', 'Out of Stock')}</option>
               <option value="critical">Critical Expiry (1-30 days)</option>
               <option value="warning">Warning Expiry (31-90 days)</option>
               <option value="expired">Expired Batches</option>

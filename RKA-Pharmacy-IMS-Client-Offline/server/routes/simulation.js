@@ -21,50 +21,91 @@ const handleSimulation = (req, res) => {
       // Create representative batch pool for medicines
       const batchPool = [];
       let bId = 1;
+
+      const isBenchmark = scenario === 'benchmark_divergence' || scenario === 'multi_batch_benchmark';
+
       for (const m of medicines) {
-        // High, medium, low demand profile
-        let dailyDemand = 5;
-        if (m.category === 'Analgesic / Antipyretic') dailyDemand = 14;
-        else if (m.category === 'Antibiotic') dailyDemand = 8;
-        else if (m.category === 'Cardiovascular') dailyDemand = 7;
-        else if (m.category === 'Vitamins & Supplements') dailyDemand = 2; // slow moving
-        else if (m.category === 'Respiratory') dailyDemand = 0.5;
+        if (isBenchmark) {
+          // Chapter 2 Thesis Benchmark Multi-Batch Divergence Scenario:
+          // Batch A: Arrived earlier (received day -15) with distant expiry (day 120, 80 units).
+          // Batch B: Arrived later (received day 5) with imminent expiry (day 38, 60 units).
+          // Daily consumption velocity: 2 units / day.
+          //
+          // Under FIFO: Batch A is released first because received_day (-15) < (5).
+          // While Batch A is being drained, Batch B sits in storage and expires on Day 38!
+          //
+          // Under FEFO / FEFO+: When Batch B arrives on Day 5, its earlier expiry (Day 38 < 120)
+          // immediately prompts dispatch from Batch B, clearing all 60 units before Day 38 with 0% spoilage.
+          const dailyDemand = 2;
 
-        // Batch 1: Received earlier, moderate shelf life
-        batchPool.push({
-          id: bId++,
-          medicine_id: m.id,
-          medicine_name: m.brand_name,
-          received_day: -30,
-          expiry_day: 45, // expires in 45 days
-          initial_qty: 80,
-          current_qty: 80,
-          daily_demand: dailyDemand
-        });
+          batchPool.push({
+            id: bId++,
+            medicine_id: m.id,
+            medicine_name: m.brand_name,
+            batch_label: 'Batch A (Arrived Earlier, Distant Expiry)',
+            received_day: -15,
+            expiry_day: 120,
+            initial_qty: 80,
+            current_qty: 80,
+            daily_demand: dailyDemand
+          });
 
-        // Batch 2: Received recently, longer shelf life
-        batchPool.push({
-          id: bId++,
-          medicine_id: m.id,
-          medicine_name: m.brand_name,
-          received_day: -10,
-          expiry_day: 120, // expires in 120 days
-          initial_qty: 120,
-          current_qty: 120,
-          daily_demand: dailyDemand
-        });
+          batchPool.push({
+            id: bId++,
+            medicine_id: m.id,
+            medicine_name: m.brand_name,
+            batch_label: 'Batch B (Arrived Later, Imminent Expiry)',
+            received_day: 5,
+            expiry_day: 38,
+            initial_qty: 60,
+            current_qty: 60,
+            daily_demand: dailyDemand
+          });
+        } else {
+          // Standard simulation multi-batch profile
+          let dailyDemand = 5;
+          if (m.category === 'Analgesic / Antipyretic') dailyDemand = 14;
+          else if (m.category === 'Antibiotic') dailyDemand = 8;
+          else if (m.category === 'Cardiovascular') dailyDemand = 7;
+          else if (m.category === 'Vitamins & Supplements') dailyDemand = 2;
+          else if (m.category === 'Respiratory') dailyDemand = 0.5;
 
-        // Batch 3: An irregular delivery with shorter shelf life received later
-        batchPool.push({
-          id: bId++,
-          medicine_id: m.id,
-          medicine_name: m.brand_name,
-          received_day: 5,
-          expiry_day: 35, // arrives on day 5 with short expiry!
-          initial_qty: 50,
-          current_qty: 50,
-          daily_demand: dailyDemand
-        });
+          // Batch 1: Received earlier, moderate shelf life
+          batchPool.push({
+            id: bId++,
+            medicine_id: m.id,
+            medicine_name: m.brand_name,
+            received_day: -30,
+            expiry_day: 45,
+            initial_qty: 80,
+            current_qty: 80,
+            daily_demand: dailyDemand
+          });
+
+          // Batch 2: Received recently, longer shelf life
+          batchPool.push({
+            id: bId++,
+            medicine_id: m.id,
+            medicine_name: m.brand_name,
+            received_day: -10,
+            expiry_day: 120,
+            initial_qty: 120,
+            current_qty: 120,
+            daily_demand: dailyDemand
+          });
+
+          // Batch 3: An irregular delivery with shorter shelf life received later
+          batchPool.push({
+            id: bId++,
+            medicine_id: m.id,
+            medicine_name: m.brand_name,
+            received_day: 5,
+            expiry_day: 35,
+            initial_qty: 50,
+            current_qty: 50,
+            daily_demand: dailyDemand
+          });
+        }
       }
       return batchPool;
     }
@@ -281,7 +322,17 @@ const handleSimulation = (req, res) => {
         best_policy_for_waste: 'FEFO+',
         waste_reduction_vs_fifo: `${(fifoResult.total_expired_units - fefoPlusResult.total_expired_units)} units (${(fifoResult.expired_percentage - fefoPlusResult.expired_percentage).toFixed(1)}% drop)`,
         waste_reduction_vs_fefo: `${(fefoResult.total_expired_units - fefoPlusResult.total_expired_units)} units (${(fefoResult.expired_percentage - fefoPlusResult.expired_percentage).toFixed(1)}% drop)`
-      }
+      },
+      benchmark_info: (scenario === 'benchmark_divergence' || scenario === 'multi_batch_benchmark') ? {
+        title: 'Benchmark Multi-Batch Scenario (Chapter 2 Thesis Model)',
+        description: 'Demonstrates batch release divergence: Batch A (arrived earlier, distant expiry) vs Batch B (arrived later, imminent expiry). Evaluates why traditional FIFO results in catastrophic spoilage compared to FEFO and FEFO+.',
+        batch_a: 'Arrived Day -15 | Expires Day 120 (Distant) | Stock: 80 units',
+        batch_b: 'Arrived Day 5 | Expires Day 38 (Imminent) | Stock: 60 units',
+        daily_demand: '2 units / day',
+        fifo_behavior: 'FIFO prioritizes Batch A because it arrived first (Day -15 < Day 5). Batch B sits in storage untouched and completely expires on Day 38.',
+        fefo_behavior: 'FEFO immediately switches to Batch B on Day 5 due to earlier expiry (Day 38 < Day 120), consuming all 60 units before Day 38 with 0% spoilage.',
+        horizon_note: 'Expanding simulation horizon past Day 38 (e.g. 60 or 90 days) triggers the expiration event for Batch B, illustrating the sharp policy divergence.'
+      } : null
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

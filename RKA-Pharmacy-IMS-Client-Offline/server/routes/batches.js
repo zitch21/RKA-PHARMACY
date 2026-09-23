@@ -58,18 +58,30 @@ router.get('/', (req, res) => {
 // POST new batch (direct stock-in)
 router.post('/', (req, res) => {
   try {
+    const normalizeDateStr = (dateStr) => {
+      if (!dateStr) return dateStr;
+      const match = String(dateStr).trim().match(/^(\d{2})-(\d{2})-(\d{4})$/);
+      if (match) {
+        return `${match[3]}-${match[1]}-${match[2]}`;
+      }
+      return String(dateStr).trim();
+    };
+
     const {
       medicine_id,
       batch_number,
       manufacturing_date,
-      expiration_date,
+      expiration_date: rawExpDate,
       quantity,
       unit_cost,
       selling_price,
       supplier_name,
       reference_no,
       notes
-    } = req.body;
+    } = req.body || {};
+
+    const expiration_date = normalizeDateStr(rawExpDate);
+    const mfgNormalized = normalizeDateStr(manufacturing_date);
 
     if (!medicine_id || !batch_number || !expiration_date || !quantity) {
       return res.status(400).json({ error: 'Medicine, batch number, expiration date, and quantity are required.' });
@@ -173,7 +185,7 @@ router.post('/', (req, res) => {
 router.post('/:id/dispose', (req, res) => {
   try {
     const batchId = req.params.id;
-    const { quantity, reason, notes } = req.body;
+    const { quantity, reason, notes } = req.body || {};
 
     const batch = db.prepare(`
       SELECT b.*, m.brand_name, m.generic_name 
@@ -243,7 +255,7 @@ router.post('/:id/dispose', (req, res) => {
 router.patch('/:id', (req, res) => {
   try {
     const batchId = req.params.id;
-    const { unit_cost, selling_price, reason, operator_name } = req.body;
+    const { unit_cost, selling_price, reason, operator_name } = req.body || {};
 
     const batch = db.prepare(`
       SELECT b.*, m.brand_name, m.generic_name

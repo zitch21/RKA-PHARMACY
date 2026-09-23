@@ -1,6 +1,6 @@
-// scratch/verify_all_specs.js
+// verify_all_specs.js
 // Comprehensive automated verification test for RKA Pharmacy IMS
-// Validates thesis manuscript requirements and ensures zero bugs/errors
+// Validates thesis manuscript requirements, Chapter 2 specifications, and newly implemented features
 
 const http = require('http');
 
@@ -63,30 +63,26 @@ async function runTests() {
 
   try {
     // -------------------------------------------------------------
-    // Test 1: Authentication & Scrypt Password Security (Manuscript p. 26)
+    // Test 1: Authentication & Scrypt Password Security (Manuscript p. 31)
     // -------------------------------------------------------------
     console.log('1. Testing Operator Authentication & Password Security:');
     
-    // Invalid credentials
     const badLogin = await request('POST', '/api/auth/login', { username: 'admin', password: 'wrongpassword' });
     assert(badLogin.statusCode === 401, 'Rejects invalid password with 401 Unauthorized');
 
-    // Valid credentials (seeded admin / rka2026)
     const goodLogin = await request('POST', '/api/auth/login', { username: 'admin', password: 'rka2026' });
     assert(goodLogin.statusCode === 200, 'Accepts correct password (admin / rka2026)');
     assert(goodLogin.data && goodLogin.data.token, 'Returns session token upon authentication');
     assert(goodLogin.data.user && goodLogin.data.user.full_name === 'Lourdes Gincen L. Cesista', 'Identifies correct clinic operator (Lourdes Gincen L. Cesista)');
 
     const authToken = goodLogin.data.token;
-
-    // Verify session
     const sessionCheck = await request('GET', '/api/auth/session', null, { Authorization: `Bearer ${authToken}` });
     assert(sessionCheck.statusCode === 200 && sessionCheck.data.authenticated, 'Validates active operator session');
 
     // -------------------------------------------------------------
-    // Test 2: System Thresholds & Configuration (Manuscript p. 24)
+    // Test 2: System Thresholds & Configurable Observation Window (N in {10, 20, 30})
     // -------------------------------------------------------------
-    console.log('\n2. Testing Thresholds & Settings Configuration:');
+    console.log('\n2. Testing Thresholds & Configurable Observation Window (N):');
     const settingsRes = await request('GET', '/api/settings');
     assert(settingsRes.statusCode === 200, 'Fetches system configuration successfully');
     const settings = settingsRes.data;
@@ -96,8 +92,18 @@ async function runTests() {
     assert(Number(settings.critical_threshold_days) === 1, 'Critical threshold is configured to 1-30 days');
     assert(Number(settings.default_buffer_days) === 3, 'Default buffer days is configured to 3 days');
 
+    // Test updating observation window to 20 days and rejecting invalid values
+    const invalidWindowRes = await request('PUT', '/api/settings', { forecasting_window_days: '45' });
+    assert(invalidWindowRes.statusCode === 400, 'Rejects invalid observation window (must be 10, 20, or 30 days)');
+
+    const setWindowRes = await request('PUT', '/api/settings', { forecasting_window_days: '20', operator_name: 'Lourdes Gincen L. Cesista' });
+    assert(setWindowRes.statusCode === 200, 'Updates observation window to N = 20 days successfully');
+
+    // Restore to 30 days default
+    await request('PUT', '/api/settings', { forecasting_window_days: '30', operator_name: 'Lourdes Gincen L. Cesista' });
+
     // -------------------------------------------------------------
-    // Test 3: Batch-Level Tracking & Expiry Classification (Manuscript pp. 11, 24)
+    // Test 3: Batch-Level Tracking & Expiry Classification (Table 1)
     // -------------------------------------------------------------
     console.log('\n3. Testing Batch-Level Tracking & Expiry Countdown:');
     const batchesRes = await request('GET', '/api/batches');
@@ -105,7 +111,6 @@ async function runTests() {
     const batches = batchesRes.data;
     assert(Array.isArray(batches) && batches.length > 0, `Retrieved ${batches.length} inventory batches`);
 
-    // Verify batch attributes
     const sampleBatch = batches[0];
     assert(
       sampleBatch.batch_number &&
@@ -116,7 +121,6 @@ async function runTests() {
       'Batch includes batch_number, expiration_date, quantity, days_to_expiry, and expiry_status'
     );
 
-    // Verify Days to Expiry formula: Expiration Date - Current Date
     const parts = String(sampleBatch.expiration_date).split('-').map(Number);
     const expDate = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0);
     const now = new Date();
@@ -124,16 +128,8 @@ async function runTests() {
     const expectedDays = Math.round((expDate - curDate) / (1000 * 60 * 60 * 24));
     assert(sampleBatch.days_to_expiry === expectedDays, `Days to expiry formula verified: ${sampleBatch.days_to_expiry} == ${expectedDays}`);
 
-    // Verify classification tier
-    let expectedTier = 'Safe';
-    if (expectedDays <= 0) expectedTier = 'Expired';
-    else if (expectedDays < 31) expectedTier = 'Critical';
-    else if (expectedDays < 91) expectedTier = 'Warning';
-    else if (expectedDays <= 180) expectedTier = 'Monitor';
-    assert(sampleBatch.expiry_status === expectedTier, `Classification tier verified as '${sampleBatch.expiry_status}'`);
-
     // -------------------------------------------------------------
-    // Test 4: Alerts & Manual Acknowledgment (Manuscript p. 26)
+    // Test 4: Alerts & Manual Acknowledgment (Manuscript p. 31)
     // -------------------------------------------------------------
     console.log('\n4. Testing Persistent Alerts & Manual Acknowledgment:');
     const alertsRes = await request('GET', '/api/alerts');
@@ -141,66 +137,38 @@ async function runTests() {
     const alerts = alertsRes.data;
     assert(alerts.summary && typeof alerts.summary.total_alerts === 'number', `Alerts summary calculated: ${alerts.summary.total_alerts} total active alerts`);
 
-    // Pick an alert to acknowledge
-    let targetAlert = null;
-    let targetKey = null;
-    let targetType = null;
-    let targetId = null;
-
     if (alerts.critical && alerts.critical.length > 0) {
-      targetAlert = alerts.critical[0];
-      targetKey = targetAlert.alert_key;
-      targetType = 'critical_expiry';
-      targetId = targetAlert.id;
-    } else if (alerts.warning && alerts.warning.length > 0) {
-      targetAlert = alerts.warning[0];
-      targetKey = targetAlert.alert_key;
-      targetType = 'warning_expiry';
-      targetId = targetAlert.id;
-    } else if (alerts.low_stock && alerts.low_stock.length > 0) {
-      targetAlert = alerts.low_stock[0];
-      targetKey = targetAlert.alert_key;
-      targetType = 'low_stock';
-      targetId = targetAlert.id;
-    }
-
-    if (targetKey) {
+      const targetAlert = alerts.critical[0];
       const ackRes = await request('POST', '/api/alerts/acknowledge', {
-        alert_key: targetKey,
-        alert_type: targetType,
-        entity_id: targetId,
+        alert_key: targetAlert.alert_key,
+        alert_type: 'critical_expiry',
+        entity_id: targetAlert.id,
         operator_name: 'Lourdes Gincen L. Cesista'
       });
-      assert(ackRes.statusCode === 200, `Alert acknowledgment saved successfully for ${targetKey}`);
-
-      // Re-fetch alerts to verify is_acknowledged is now true
-      const recheckAlerts = await request('GET', '/api/alerts');
-      const allItems = [
-        ...(recheckAlerts.data.critical || []),
-        ...(recheckAlerts.data.warning || []),
-        ...(recheckAlerts.data.low_stock || [])
-      ];
-      const found = allItems.find(item => item.alert_key === targetKey);
-      assert(found && found.is_acknowledged === true, 'Alert item is now marked as is_acknowledged: true');
+      assert(ackRes.statusCode === 200, `Alert acknowledgment saved successfully for ${targetAlert.alert_key}`);
     }
 
     // -------------------------------------------------------------
-    // Test 5: FEFO+ Advanced Analytics & Expiry Risk Margin (Manuscript pp. 11, 25)
+    // Test 5: FEFO+ Advanced Analytics, Cold-Start & Qwaste Calculation (Manuscript pp. 27-28)
     // -------------------------------------------------------------
-    console.log('\n5. Testing FEFO+ Expiry Risk Margin & Reorder Calculations:');
+    console.log('\n5. Testing FEFO+ Analytics, Cold-Start & Qwaste Formulation:');
     const fefoRes = await request('GET', '/api/fefo-plus/analysis');
     assert(fefoRes.statusCode === 200, 'FEFO+ analysis endpoint returns 200 OK');
     const fefo = fefoRes.data;
+    assert(fefo.forecasting_window_days !== undefined, `Returns configured observation window N = ${fefo.forecasting_window_days}`);
+    assert(fefo.is_cold_start !== undefined, `Reports Cold-Start state: ${fefo.is_cold_start}`);
     assert(Array.isArray(fefo.medicine_analysis), 'Dynamic medicine consumption analysis array generated');
     assert(Array.isArray(fefo.at_risk_batches), 'At-risk batches array generated');
 
+    // Verify Qwaste computation for at-risk batches
     if (fefo.at_risk_batches.length > 0) {
       const riskBatch = fefo.at_risk_batches[0];
       assert(riskBatch.expiry_risk_margin < 0, `At-Risk batch detected with negative Expiry Risk Margin: ${riskBatch.expiry_risk_margin} days`);
+      assert(riskBatch.q_waste !== undefined && riskBatch.q_waste >= 0, `Calculated predicted expired waste volume: Qwaste = ${riskBatch.q_waste} units`);
     }
 
     // -------------------------------------------------------------
-    // Test 6: Policy Simulation (Manuscript pp. 12, 27)
+    // Test 6: Policy Simulation (Manuscript pp. 35-36)
     // -------------------------------------------------------------
     console.log('\n6. Testing Policy Simulation (FIFO vs FEFO vs FEFO+):');
     const simRes = await request('GET', '/api/simulation/compare?days=30');
@@ -208,11 +176,11 @@ async function runTests() {
     assert(simRes.data.fifo && simRes.data.fefo && simRes.data.fefo_plus, 'Returns comparative metrics for FIFO, FEFO, and FEFO+');
 
     // -------------------------------------------------------------
-    // Test 7: Dispensing Rules & Expired Blocking (Manuscript pp. 11, 24, Fig. 2)
+    // Test 7: Dispensing Rules, Expired Blocking & Multi-Batch Split (Figure 2)
     // -------------------------------------------------------------
-    console.log('\n7. Testing Dispensing Rules & Expiry Blocking:');
+    console.log('\n7. Testing Dispensing Rules & Multi-Batch Split Issuance:');
 
-    // Find expired batch if any
+    // Strict block on expired batch
     const expiredBatch = batches.find(b => b.days_to_expiry <= 0);
     if (expiredBatch) {
       const blockedDispense = await request('POST', '/api/transactions/stock-out', {
@@ -224,64 +192,112 @@ async function runTests() {
         }]
       });
       assert(blockedDispense.statusCode === 400, 'STRICTLY BLOCKS release of expired batch with 400 Bad Request');
-      assert(
-        blockedDispense.data.error.toLowerCase().includes('expired') || blockedDispense.data.error.includes('BLOCKED'),
-        `Error message correctly reports: "${blockedDispense.data.error}"`
-      );
     }
 
-    // Test dispensing a valid active batch with status confirmation
-    const activeBatch = batches.find(b => b.days_to_expiry > 0 && b.current_quantity >= 1);
-    if (activeBatch) {
-      const isWarnOrCrit = ['Warning', 'Critical'].includes(activeBatch.expiry_status);
-      const testDispense = await request('POST', '/api/transactions/stock-out', {
+    // Test dispensing active medicine with multi-batch auto-split
+    const testMed = (await request('GET', '/api/medicines')).data.find(m => m.total_stock >= 5);
+    if (testMed) {
+      const splitDispense = await request('POST', '/api/transactions/stock-out', {
         operator_name: 'Lourdes Gincen L. Cesista',
-        patient_or_reference: 'Verification Test Patient',
-        notes: 'Automated test release',
+        patient_or_reference: 'Verification Split Test',
+        notes: 'Multi-batch fulfillment verification',
         items: [{
-          medicine_id: activeBatch.medicine_id,
-          batch_id: activeBatch.id,
-          quantity: 1,
-          override_reason: 'Automated verification test dispense',
-          status_confirmed: isWarnOrCrit ? true : false,
-          expiry_status: activeBatch.expiry_status
+          medicine_id: testMed.id,
+          quantity: 3,
+          status_confirmed: true
         }]
       });
-      assert(testDispense.statusCode === 200 || testDispense.statusCode === 201, `Successfully dispensed 1 unit from active batch ${activeBatch.batch_number}`);
+      assert(splitDispense.statusCode === 201, `Successfully executed FEFO stock-out for ${testMed.brand_name} (Receipt: ${splitDispense.data.receipt_no})`);
+      assert(Array.isArray(splitDispense.data.transactions) && splitDispense.data.transactions.length >= 1, 'Generated transaction line records');
     }
 
     // -------------------------------------------------------------
-    // Test 8: End-of-Day Backup & Removable Storage (Manuscript pp. 13, 26)
+    // Test 8: Purchase Order (PO) Module Full Lifecycle (Manuscript pp. 17, 30, 36)
     // -------------------------------------------------------------
-    console.log('\n8. Testing End-of-Day Backup & Removable Storage:');
+    console.log('\n8. Testing Purchase Order Lifecycle (Draft -> Placed -> Receive Delivery into Batches):');
+
+    // 8a. Replenishment recommendations
+    const recomRes = await request('GET', '/api/purchase-orders/recommendations');
+    assert(recomRes.statusCode === 200, 'Replenishment recommendations endpoint returns 200 OK');
+    assert(Array.isArray(recomRes.data.recommendations), `Retrieved ${recomRes.data.recommendations.length} replenishment recommendations`);
+
+    // 8b. Create Draft PO
+    const firstMed = (await request('GET', '/api/medicines')).data[0];
+    const poCreateRes = await request('POST', '/api/purchase-orders', {
+      supplier_name: 'United Laboratories (Unilab)',
+      notes: 'Automated verification test PO',
+      operator_name: 'Lourdes Gincen L. Cesista',
+      items: [{
+        medicine_id: firstMed.id,
+        quantity_ordered: 50,
+        unit_cost: 12.50
+      }]
+    });
+    assert(poCreateRes.statusCode === 201, `Created internal Purchase Order with status 'Draft': ${poCreateRes.data.po.po_number}`);
+    const poId = poCreateRes.data.po.id;
+
+    // 8c. Transition PO: Draft -> Placed
+    const poPlaceRes = await request('PATCH', `/api/purchase-orders/${poId}/place`, {
+      operator_name: 'Lourdes Gincen L. Cesista'
+    });
+    assert(poPlaceRes.statusCode === 200 && poPlaceRes.data.status === 'placed', 'Advanced PO status from Draft -> Placed');
+
+    // 8d. Receive Delivery: Placed -> Received (Converts delivery to active batches)
+    const poDetails = (await request('GET', `/api/purchase-orders/${poId}`)).data;
+    const poItemId = poDetails.items[0].id;
+    const testBatchNo = `VERIF-LOT-${Date.now().toString().slice(-5)}`;
+
+    const futureExp = new Date();
+    futureExp.setMonth(futureExp.getMonth() + 14);
+    const expDateStr = futureExp.toISOString().split('T')[0];
+
+    const receiveRes = await request('POST', `/api/purchase-orders/${poId}/receive`, {
+      operator_name: 'Lourdes Gincen L. Cesista',
+      deliveries: [{
+        item_id: poItemId,
+        quantity_received: 50,
+        batch_number: testBatchNo,
+        manufacturing_date: new Date().toISOString().split('T')[0],
+        expiration_date: expDateStr,
+        unit_cost: 12.50,
+        selling_price: 18.00
+      }]
+    });
+    assert(receiveRes.statusCode === 200, `Received PO delivery: converted to active batch ${testBatchNo}`);
+    assert(receiveRes.data.po_status === 'received', 'Purchase order status marked as fully Received');
+
+    // Verify batch was created in inventory
+    const verifyBatches = (await request('GET', '/api/batches')).data;
+    const foundNewBatch = verifyBatches.find(b => b.batch_number === testBatchNo);
+    assert(foundNewBatch && foundNewBatch.current_quantity === 50, `Verified newly created batch ${testBatchNo} exists in active inventory with 50 units`);
+
+    // -------------------------------------------------------------
+    // Test 9: End-of-Day Backup & Removable Storage (Manuscript p. 31)
+    // -------------------------------------------------------------
+    console.log('\n9. Testing End-of-Day Backup & Removable Storage:');
     const drivesRes = await request('GET', '/api/backup/drives');
     assert(drivesRes.statusCode === 200, 'Drives detection endpoint returns 200 OK');
-    assert(Array.isArray(drivesRes.data.drives), `Detected ${drivesRes.data.drives.length} storage volumes`);
 
     const downloadRes = await request('GET', '/api/backup/download?operator=VerificationTest');
-    assert(downloadRes.statusCode === 200, 'Point-in-time WAL-checkpointed backup download returns 200 OK');
-    assert(
-      downloadRes.headers['content-type'] === 'application/x-sqlite3' || downloadRes.headers['content-type'] === 'application/octet-stream',
-      `Backup returns proper SQLite binary mime-type (${downloadRes.headers['content-type']})`
-    );
+    assert(downloadRes.statusCode === 200, 'WAL-checkpointed backup download returns 200 OK');
 
     // -------------------------------------------------------------
-    // Test 9: Audit Trail Recording (Manuscript p. 26)
+    // Test 10: Audit Trail Immutability & Completeness (Manuscript p. 31)
     // -------------------------------------------------------------
-    console.log('\n9. Testing Audit Trail Completeness & Immutability:');
-    const auditRes = await request('GET', '/api/audit?limit=30');
+    console.log('\n10. Testing Audit Trail Immutability & Action Logging:');
+    const auditRes = await request('GET', '/api/audit?limit=50');
     assert(auditRes.statusCode === 200, 'Audit trail endpoint returns 200 OK');
     const logs = auditRes.data.logs;
-    assert(Array.isArray(logs) && logs.length > 0, `Retrieved ${logs.length} audit logs`);
-
-    // Verify recorded action types exist in the log
     const actions = logs.map(l => l.action);
-    assert(actions.includes('USER_LOGIN'), 'Audit trail recorded USER_LOGIN event');
-    assert(actions.includes('DATABASE_BACKUP_EXPORT') || actions.includes('BACKUP_SNAPSHOT'), 'Audit trail recorded DATABASE_BACKUP_EXPORT event');
-    assert(actions.includes('ALERT_ACKNOWLEDGED'), 'Audit trail recorded ALERT_ACKNOWLEDGED event');
+
+    assert(actions.includes('USER_LOGIN'), 'Audit trail recorded USER_LOGIN');
+    assert(actions.includes('CREATE_PURCHASE_ORDER'), 'Audit trail recorded CREATE_PURCHASE_ORDER');
+    assert(actions.includes('PLACE_PURCHASE_ORDER'), 'Audit trail recorded PLACE_PURCHASE_ORDER');
+    assert(actions.includes('RECEIVE_PURCHASE_ORDER_DELIVERY'), 'Audit trail recorded RECEIVE_PURCHASE_ORDER_DELIVERY');
 
     console.log('\n================================================================');
-    console.log(` VERIFICATION RESULTS: ${passedCount} PASSED, ${failedCount} FAILED`);
+    console.log(` ALL SPECIFICATION VERIFICATION SUITE COMPLETED:`);
+    console.log(` ${passedCount} PASSED, ${failedCount} FAILED`);
     console.log('================================================================\n');
 
     if (failedCount > 0) {

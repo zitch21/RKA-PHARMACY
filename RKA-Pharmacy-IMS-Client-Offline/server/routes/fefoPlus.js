@@ -2,17 +2,19 @@ const express = require('express');
 const router = express.Router();
 const { db, logAudit, calculateDaysToExpiry, getExpiryTier, getLocalDateString, getSettingsMap } = require('../db');
 
-// Comprehensive FEFO+ analysis handler
+// Comprehensive FEFO+ analysis handler with configurable window and Cold-Start Rule
 const handleAnalysis = (req, res) => {
   try {
     const today = new Date();
     const todayStr = getLocalDateString();
     const settings = getSettingsMap();
 
-    // Read configured history window (default 30 days)
-    const historyDays = parseInt(settings.history_days_fefo_plus || '30', 10) || 30;
+    // Read configurable observation window N (10, 20, or 30 days; default 30)
+    const rawWindow = parseInt(settings.forecasting_window_days || settings.history_days_fefo_plus || '30', 10);
+    const validWindows = [10, 20, 30];
+    const N = validWindows.includes(rawWindow) ? rawWindow : 30;
 
-    // Check how many days of stock-out history exist in system
+    // Check how many operational stock-out days exist in system
     const historyStats = db.prepare(`
       SELECT 
         MIN(DATE(created_at)) as oldest_tx,
@@ -28,37 +30,19 @@ const handleAnalysis = (req, res) => {
       totalHistorySpanDays = Math.max(1, Math.abs(oldestDays));
     }
 
-    const hasEnoughData = totalHistorySpanDays >= historyDays;
+    // Cold-Start Rule (Manuscript p. 27):
+    // If elapsed transaction history t < N, the system suppresses automated forecasting
+    // and operates under standard FEFO dispatching and manual reorder points.
+    const isColdStart = totalHistorySpanDays < N;
+    const hasEnoughData = !isColdStart;
 
     // Fetch all medicines
     const medicines = db.prepare('SELECT * FROM medicines ORDER BY brand_name ASC').all();
-
-    // Bound the analysis window by the configured historyDays setting
-    const analysisWindowDays = totalHistorySpanDays >= historyDays 
-      ? historyDays 
-      : Math.max(totalHistorySpanDays, 1);
 
     const medicineAnalysis = [];
     const atRiskBatches = [];
 
     for (const med of medicines) {
-      // Stock sold in configured moving window
-      const salesQuery = db.prepare(`
-        SELECT COALESCE(SUM(quantity), 0) as total_sold
-        FROM transactions
-        WHERE medicine_id = ? AND transaction_type = 'stock_out'
-          AND created_at >= DATE('now', '-' || ? || ' days')
-      `).get(med.id, analysisWindowDays);
-
-      const totalSold = salesQuery ? salesQuery.total_sold : 0;
-      const adqs = parseFloat((totalSold / analysisWindowDays).toFixed(2));
-
-      // Calculate suggested reorder level
-      // Suggested = ADQS * (Lead Time + Buffer Days)
-      const leadTime = med.supplier_lead_time_days || 5;
-      const bufferDays = med.buffer_days || parseInt(settings.default_buffer_days || '3', 10) || 3;
-      const suggestedReorder = Math.ceil(adqs * (leadTime + bufferDays));
-
       // Fetch active unexpired batches in FEFO order
       const batches = db.prepare(`
         SELECT * FROM batches
@@ -67,74 +51,158 @@ const handleAnalysis = (req, res) => {
       `).all(med.id, todayStr);
 
       const totalCurrentStock = batches.reduce((sum, b) => sum + b.current_quantity, 0);
+      const leadTime = med.supplier_lead_time_days || 5;
+      const bufferDays = med.buffer_days || parseInt(settings.default_buffer_days || '3', 10) || 3;
 
-      // Evaluate batches cumulatively along the FEFO dispatch queue
-      let cumulativeStock = 0;
-      const evaluatedBatches = batches.map(b => {
-        cumulativeStock += b.current_quantity;
-        const daysToExpiry = calculateDaysToExpiry(b.expiration_date, today);
-        const tier = getExpiryTier(daysToExpiry, settings);
+      if (isColdStart) {
+        // COLD-START BASELINE ACTIVE:
+        // Suppress automated forecasting; use standard FEFO and manual reorder threshold
+        const evaluatedBatches = batches.map(b => {
+          const daysToExpiry = calculateDaysToExpiry(b.expiration_date, today);
+          const tier = getExpiryTier(daysToExpiry, settings);
 
-        let daysToConsume = null;
-        let expiryRiskMargin = null;
-        let isAtWasteRisk = false;
+          return {
+            ...b,
+            medicine_code: med.code,
+            brand_name: med.brand_name,
+            generic_name: med.generic_name,
+            unit_of_measure: med.unit_of_measure,
+            adqs: null,
+            days_to_expiry: daysToExpiry,
+            days_to_consume: null,
+            expiry_risk_margin: null,
+            q_waste: 0,
+            expiry_tier: tier,
+            is_at_waste_risk: false,
+            risk_status: 'COLD_START_STANDARD_FEFO'
+          };
+        });
 
-        if (adqs > 0) {
-          daysToConsume = parseFloat((cumulativeStock / adqs).toFixed(1));
-          expiryRiskMargin = parseFloat((daysToExpiry - daysToConsume).toFixed(1));
-          // Negative margin = unlikely to be consumed before expiry!
-          isAtWasteRisk = expiryRiskMargin < 0;
-        } else {
-          // Zero sales velocity -> high risk if expiring within warning/critical range
-          daysToConsume = 9999;
-          expiryRiskMargin = daysToExpiry - 9999;
-          isAtWasteRisk = daysToExpiry <= 90;
-        }
+        medicineAnalysis.push({
+          medicine: med,
+          total_stock: totalCurrentStock,
+          adqs: null,
+          analysis_window_days: N,
+          is_cold_start: true,
+          suggested_reorder_level: null,
+          suggested_purchase_quantity: totalCurrentStock <= med.reorder_threshold
+            ? Math.max(0, (med.reorder_threshold * 2) - totalCurrentStock)
+            : 0,
+          lead_time_days: leadTime,
+          buffer_days: bufferDays,
+          current_threshold: med.reorder_threshold,
+          threshold_diff: 0,
+          is_low_stock: totalCurrentStock <= med.reorder_threshold,
+          batches: evaluatedBatches
+        });
+      } else {
+        // PREDICTIVE ENGINE ACTIVE (t >= N):
+        // Formula: D_hat_i = (1 / N) * SUM(S_i,t) over N operational days
+        const salesQuery = db.prepare(`
+          SELECT COALESCE(SUM(quantity), 0) as total_sold
+          FROM transactions
+          WHERE medicine_id = ? AND transaction_type = 'stock_out'
+            AND created_at >= DATE('now', '-' || ? || ' days')
+        `).get(med.id, N);
 
-        const batchObj = {
-          ...b,
-          medicine_code: med.code,
-          brand_name: med.brand_name,
-          generic_name: med.generic_name,
-          unit_of_measure: med.unit_of_measure,
+        const totalSold = salesQuery ? salesQuery.total_sold : 0;
+        const adqs = parseFloat((totalSold / N).toFixed(2));
+
+        // Dynamic Reorder Point: R_i = (D_hat_i * L_i) + (D_hat_i * K_buffer)
+        const suggestedReorder = Math.ceil(adqs * (leadTime + bufferDays));
+
+        // Suggested purchase quantity when replenishment is needed
+        const suggestedPurchaseQty = totalCurrentStock <= suggestedReorder
+          ? Math.max(1, Math.ceil((suggestedReorder * 2) - totalCurrentStock))
+          : 0;
+
+        // Evaluate batches along FEFO dispatch queue
+        let cumulativeStock = 0;
+        const evaluatedBatches = batches.map(b => {
+          cumulativeStock += b.current_quantity;
+          const daysToExpiry = calculateDaysToExpiry(b.expiration_date, today);
+          const tier = getExpiryTier(daysToExpiry, settings);
+
+          let daysToConsume = null;
+          let expiryRiskMargin = null;
+          let isAtWasteRisk = false;
+          let qWaste = 0;
+
+          if (adqs > 0) {
+            // T_consume = Q_i,b / D_hat_i (Manuscript p. 28)
+            // Using cumulative stock along queue accounts for batches waiting behind earlier stock
+            daysToConsume = parseFloat((cumulativeStock / adqs).toFixed(1));
+            // Delta T_i,b = T_expiry - T_consume
+            expiryRiskMargin = parseFloat((daysToExpiry - daysToConsume).toFixed(1));
+            isAtWasteRisk = expiryRiskMargin < 0;
+
+            // Q_waste = Q_i,b - (D_hat_i * T_expiry) (Manuscript p. 28)
+            if (isAtWasteRisk && daysToExpiry > 0) {
+              const expectedUnitsSoldBeforeExpiry = adqs * daysToExpiry;
+              qWaste = Math.max(0, Math.round(b.current_quantity - expectedUnitsSoldBeforeExpiry));
+              if (qWaste === 0 && isAtWasteRisk) qWaste = 1;
+            }
+          } else {
+            // Zero demand velocity -> high risk if expiring within warning/critical range
+            daysToConsume = 9999;
+            expiryRiskMargin = daysToExpiry - 9999;
+            isAtWasteRisk = daysToExpiry <= 90;
+            if (isAtWasteRisk && daysToExpiry > 0) {
+              qWaste = b.current_quantity;
+            }
+          }
+
+          const batchObj = {
+            ...b,
+            medicine_code: med.code,
+            brand_name: med.brand_name,
+            generic_name: med.generic_name,
+            unit_of_measure: med.unit_of_measure,
+            adqs,
+            days_to_expiry: daysToExpiry,
+            days_to_consume: daysToConsume,
+            expiry_risk_margin: expiryRiskMargin,
+            q_waste: qWaste,
+            expiry_tier: tier,
+            is_at_waste_risk: isAtWasteRisk,
+            risk_status: isAtWasteRisk ? 'NEGATIVE_MARGIN' : 'SAFE_MARGIN'
+          };
+
+          if (isAtWasteRisk && daysToExpiry > 0) {
+            atRiskBatches.push(batchObj);
+          }
+
+          return batchObj;
+        });
+
+        medicineAnalysis.push({
+          medicine: med,
+          total_stock: totalCurrentStock,
           adqs,
-          days_to_expiry: daysToExpiry,
-          days_to_consume: daysToConsume,
-          expiry_risk_margin: expiryRiskMargin,
-          expiry_tier: tier,
-          is_at_waste_risk: isAtWasteRisk,
-          risk_status: isAtWasteRisk ? 'NEGATIVE_MARGIN' : 'SAFE_MARGIN'
-        };
-
-        if (isAtWasteRisk && daysToExpiry > 0) {
-          atRiskBatches.push(batchObj);
-        }
-
-        return batchObj;
-      });
-
-      medicineAnalysis.push({
-        medicine: med,
-        total_stock: totalCurrentStock,
-        adqs,
-        analysis_window_days: analysisWindowDays,
-        suggested_reorder_level: suggestedReorder,
-        lead_time_days: leadTime,
-        buffer_days: bufferDays,
-        current_threshold: med.reorder_threshold,
-        threshold_diff: suggestedReorder - med.reorder_threshold,
-        is_low_stock: totalCurrentStock <= med.reorder_threshold,
-        batches: evaluatedBatches
-      });
+          analysis_window_days: N,
+          is_cold_start: false,
+          suggested_reorder_level: suggestedReorder,
+          suggested_purchase_quantity: suggestedPurchaseQty,
+          lead_time_days: leadTime,
+          buffer_days: bufferDays,
+          current_threshold: med.reorder_threshold,
+          threshold_diff: suggestedReorder - med.reorder_threshold,
+          is_low_stock: totalCurrentStock <= med.reorder_threshold,
+          is_dynamically_low: totalCurrentStock <= suggestedReorder,
+          batches: evaluatedBatches
+        });
+      }
     }
 
     // Sort at-risk batches by lowest/most negative margin
     atRiskBatches.sort((a, b) => a.expiry_risk_margin - b.expiry_risk_margin);
 
     res.json({
+      is_cold_start: isColdStart,
       has_enough_data: hasEnoughData,
+      forecasting_window_days: N,
       history_days_recorded: totalHistorySpanDays,
-      history_days_required: historyDays,
+      history_days_required: N,
       at_risk_batches: atRiskBatches,
       medicine_analysis: medicineAnalysis
     });
@@ -150,7 +218,7 @@ router.get('/analysis', handleAnalysis);
 router.post('/apply-suggested-threshold/:id', (req, res) => {
   try {
     const medId = req.params.id;
-    const { suggested_value } = req.body;
+    const { suggested_value } = req.body || {};
 
     const med = db.prepare('SELECT * FROM medicines WHERE id = ?').get(medId);
     if (!med) {
@@ -179,6 +247,59 @@ router.post('/apply-suggested-threshold/:id', (req, res) => {
     res.json({
       message: `Reorder threshold for ${med.brand_name} updated to computed value of ${newThreshold} units.`,
       new_threshold: newThreshold
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk apply suggested reorder levels
+router.post('/bulk-apply-suggested', (req, res) => {
+  try {
+    const { updates = [], operator_name = 'Lourdes Gincen L. Cesista' } = req.body || {};
+
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return res.status(400).json({ error: 'Array of updates with medicine_id and suggested_value is required.' });
+    }
+
+    const applied = [];
+    const bulkTx = db.transaction((list) => {
+      const updateStmt = db.prepare('UPDATE medicines SET reorder_threshold = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?');
+      for (const item of list) {
+        const val = parseInt(item.suggested_value, 10);
+        if (isNaN(val) || val < 0) continue;
+        const med = db.prepare('SELECT id, brand_name, reorder_threshold FROM medicines WHERE id = ?').get(item.medicine_id);
+        if (med) {
+          updateStmt.run(val, med.id);
+          applied.push({
+            medicine_id: med.id,
+            brand_name: med.brand_name,
+            old_threshold: med.reorder_threshold,
+            new_threshold: val
+          });
+        }
+      }
+
+      if (applied.length > 0) {
+        logAudit(
+          'BULK_UPDATE_REORDER_THRESHOLDS',
+          'MEDICINE',
+          null,
+          {
+            items_count: applied.length,
+            updates: applied
+          },
+          operator_name
+        );
+      }
+    });
+
+    bulkTx(updates);
+
+    res.json({
+      message: `Successfully applied dynamic reorder thresholds to ${applied.length} medicines.`,
+      count: applied.length,
+      applied
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

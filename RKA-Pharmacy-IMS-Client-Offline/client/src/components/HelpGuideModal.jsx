@@ -22,7 +22,9 @@ import {
   ShieldCheck,
   RotateCcw,
   Sliders,
-  DollarSign
+  DollarSign,
+  FileText,
+  PackageCheck
 } from 'lucide-react';
 
 export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
@@ -33,19 +35,21 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
 
   // Version 1: Counter & Emergency Quick Guide
   const v1Topics = [
-    { id: 'dispense', num: '1', title: 'Sell / Dispense', sub: '5 Easy Steps', icon: ShoppingCart, color: 'emerald' },
-    { id: 'expired', num: '2', title: 'Expired Medicine', sub: 'Safety Block', icon: ShieldAlert, color: 'red' },
-    { id: 'stockin', num: '3', title: 'Receive Deliveries', sub: 'Stock-In Intake', icon: ArrowDownToLine, color: 'blue' },
-    { id: 'alerts', num: '4', title: 'Warning Colors', sub: 'Status Meanings', icon: AlertTriangle, color: 'amber' },
-    { id: 'contacts', num: '5', title: 'Clinic Contacts', sub: 'Emergency Info', icon: Phone, color: 'purple' },
+    { id: 'dispense', num: '1', title: 'Sell / Dispense', sub: 'FEFO Queue & Multi-Batch', icon: ShoppingCart, color: 'emerald' },
+    { id: 'purchase_orders', num: '2', title: 'Purchase Orders', sub: 'Create, Place & Receive', icon: FileText, color: 'blue' },
+    { id: 'stockin', num: '3', title: 'Stock-In Intake', sub: 'Batch & Expiry Intake', icon: ArrowDownToLine, color: 'teal' },
+    { id: 'expired', num: '4', title: 'Expired Medicine', sub: 'Strict Safety Lockout', icon: ShieldAlert, color: 'red' },
+    { id: 'alerts', num: '5', title: 'Warning Colors', sub: 'Status Meanings', icon: AlertTriangle, color: 'amber' },
+    { id: 'contacts', num: '6', title: 'Clinic Contacts', sub: 'Emergency & System Info', icon: Phone, color: 'purple' },
   ];
 
-  // Version 2: Advanced System & Research Guide
+  // Version 2: Advanced System & Management Guide
   const v2Topics = [
-    { id: 'fefo_intelligence', num: '1', title: 'FEFO+ Intelligence', sub: 'Risk Margin & Velocity', icon: TrendingUp, color: 'emerald' },
-    { id: 'audit_trail', num: '2', title: 'Audit Trail', sub: 'Overrides & Ledger', icon: History, color: 'indigo' },
-    { id: 'simulation', num: '3', title: 'Policy Simulation', sub: 'FIFO vs FEFO vs FEFO+', icon: FlaskConical, color: 'purple' },
-    { id: 'settings_guide', num: '4', title: 'Settings Guide', sub: 'Tiers & Default Config', icon: Settings, color: 'blue' },
+    { id: 'fefo_intelligence', num: '1', title: 'FEFO+ Intelligence', sub: 'Risk Margin & Waste Prediction', icon: TrendingUp, color: 'emerald' },
+    { id: 'po_lifecycle', num: '2', title: 'PO Procurement', sub: 'Replenishment & Receipts', icon: FileText, color: 'blue' },
+    { id: 'audit_trail', num: '3', title: 'Audit Trail', sub: 'Overrides & Ledger', icon: History, color: 'indigo' },
+    { id: 'simulation', num: '4', title: 'Policy Simulation', sub: 'FIFO vs FEFO vs FEFO+', icon: FlaskConical, color: 'purple' },
+    { id: 'settings_guide', num: '5', title: 'Settings & Baseline', sub: 'Window N & Default Config', icon: Settings, color: 'slate' },
   ];
 
   const currentTopics = guideVersion === 'v1' ? v1Topics : v2Topics;
@@ -70,15 +74,15 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold tracking-tight">R.K.A Pharmacy IMS Help & User Manual</h2>
+                <h2 className="text-lg font-bold tracking-tight">R.K.A Pharmacy IMS User Operating Manual</h2>
                 <span className="bg-emerald-500 text-slate-950 font-extrabold text-[10px] px-2 py-0.5 rounded-full uppercase">
-                  {guideVersion === 'v1' ? 'Quick Counter V1' : 'Advanced System V2'}
+                  {guideVersion === 'v1' ? 'Quick Counter Guide' : 'Advanced Operations'}
                 </span>
               </div>
               <p className="text-xs text-slate-400">
                 {guideVersion === 'v1'
-                  ? 'Simple step-by-step operating instructions for emergency staff or counter handovers'
-                  : 'Comprehensive reference for FEFO+ mathematical algorithms, audit compliance, and policy simulations'}
+                  ? 'Simple step-by-step operating instructions for dispensary counter workflows and emergency handovers'
+                  : 'Comprehensive operational manual for FEFO+ inventory analytics, procurement lifecycles, and audit compliance'}
               </p>
             </div>
           </div>
@@ -95,7 +99,7 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Version 1 (Counter)
+                Quick Counter
               </button>
               <button
                 type="button"
@@ -106,7 +110,7 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Version 2 (Advanced)
+                Advanced Operations
               </button>
             </div>
 
@@ -122,7 +126,7 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
 
         {/* Topic Selector Tabs */}
         <div className={`grid gap-2 p-3 bg-slate-100 border-b border-slate-200 ${
-          guideVersion === 'v1' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5' : 'grid-cols-2 sm:grid-cols-4'
+          guideVersion === 'v1' ? 'grid-cols-2 sm:grid-cols-3 md:grid-cols-6' : 'grid-cols-2 sm:grid-cols-3 md:grid-cols-5'
         }`}>
           {currentTopics.map((t) => {
             const Icon = t.icon;
@@ -163,10 +167,10 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                   <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl">
                     <h3 className="font-bold text-sm text-emerald-900 flex items-center gap-2">
                       <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
-                      <span>How to Sell / Dispense Medicine to a Customer (5 Easy Steps)</span>
+                      <span>How to Sell / Dispense Medicine (FEFO Rule & Multi-Batch Auto-Split)</span>
                     </h3>
                     <p className="text-xs text-emerald-800 mt-1">
-                      You do not need to memorize medical rules. The computer automatically picks the safest medicine box that expires first (FEFO rule). Prices are fixed from batch records and cannot be accidentally modified during checkout.
+                      The system automatically selects the earliest unexpired batch (FEFO rule). If a customer orders more units than what is available in the earliest batch, the system automatically splits the order across the next earliest batches so you do not have to calculate split lots manually.
                     </p>
                   </div>
 
@@ -174,9 +178,9 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
                       <div>
-                        <strong className="text-xs text-slate-900">Open Dispensing:</strong>
+                        <strong className="text-xs text-slate-900">Open Dispense View:</strong>
                         <p className="text-xs text-slate-600 mt-0.5">
-                          Click the <strong>"Dispense (FEFO)"</strong> tab at the top, or press the <strong>F2 key</strong> on the keyboard.
+                          Click the <strong>"Dispense"</strong> tab at the top or press the <strong>F2 key</strong>.
                         </p>
                       </div>
                     </li>
@@ -184,9 +188,9 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
                       <div>
-                        <strong className="text-xs text-slate-900">Scan or Search the Item:</strong>
+                        <strong className="text-xs text-slate-900">Scan Barcode or Search Medicine:</strong>
                         <p className="text-xs text-slate-600 mt-0.5">
-                          Aim the handheld barcode scanner at the product barcode, or select the medicine from the dropdown list.
+                          Scan the product barcode with the handheld scanner, or select the medicine from the dropdown list.
                         </p>
                       </div>
                     </li>
@@ -194,9 +198,9 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
                       <div>
-                        <strong className="text-xs text-slate-900">System Auto-Selects the Safest Batch:</strong>
+                        <strong className="text-xs text-slate-900">Automated Batch Queue & Multi-Batch Split:</strong>
                         <p className="text-xs text-slate-600 mt-0.5">
-                          The system pre-selects the earliest unexpired batch in <span className="font-bold text-emerald-700 bg-emerald-100 px-1 rounded">green</span> with its verified selling price locked.
+                          The earliest batch is highlighted. Enter the requested quantity. If the quantity exceeds the first lot, the system fills from the first lot and takes the remainder from the next batch automatically.
                         </p>
                       </div>
                     </li>
@@ -204,19 +208,9 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">4</span>
                       <div>
-                        <strong className="text-xs text-slate-900">Type Quantity & Add:</strong>
+                        <strong className="text-xs text-slate-900">Add to Cart & Complete Sale:</strong>
                         <p className="text-xs text-slate-600 mt-0.5">
-                          Enter the requested quantity and click <strong>"Add to Dispensing Slip"</strong>.
-                        </p>
-                      </div>
-                    </li>
-
-                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="w-6 h-6 rounded-full bg-emerald-600 text-white font-bold text-xs flex items-center justify-center shrink-0">5</span>
-                      <div>
-                        <strong className="text-xs text-slate-900">Complete & Hand to Patient:</strong>
-                        <p className="text-xs text-slate-600 mt-0.5">
-                          Click <strong>"Complete Dispense & Print Receipt"</strong> to finalize the sale and print the slip.
+                          Click <strong>"Add to Dispensing Slip"</strong>. When ready, click <strong>"Complete Dispense & Print Receipt"</strong> to finalize the transaction and update stock immediately.
                         </p>
                       </div>
                     </li>
@@ -231,19 +225,120 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                       className="w-full py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-xl flex items-center justify-center gap-2 shadow-sm transition"
                     >
                       <ArrowUpFromLine className="w-4 h-4" />
-                      <span>Go to Dispensing Screen Now</span>
+                      <span>Go to Dispense View</span>
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* Topic 2: Expired Items */}
+              {/* Topic 2: Purchase Orders */}
+              {activeTopic === 'purchase_orders' && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <h3 className="font-bold text-sm text-blue-900 flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-blue-600 shrink-0" />
+                      <span>How to Manage Purchase Orders & Supplier Deliveries</span>
+                    </h3>
+                    <p className="text-xs text-blue-800 mt-1">
+                      Create, track, and receive official purchase orders directly into active inventory batches.
+                    </p>
+                  </div>
+
+                  <ol className="space-y-3 text-xs">
+                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
+                      <div>
+                        <strong className="text-slate-900">Review Replenishment Recommendations:</strong>
+                        <p className="text-slate-600 mt-0.5">
+                          Open <strong>"Purchase Orders"</strong> to view items that have fallen below their reorder points. Click <strong>"Create PO from All Suggestions"</strong> to generate a ready-to-order draft order.
+                        </p>
+                      </div>
+                    </li>
+
+                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
+                      <div>
+                        <strong className="text-slate-900">Place Order with Supplier:</strong>
+                        <p className="text-slate-600 mt-0.5">
+                          Once confirmed, click <strong>"Place Order with Supplier"</strong>. Click <strong>"Print PO Slip"</strong> to generate an official printed procurement voucher.
+                        </p>
+                      </div>
+                    </li>
+
+                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
+                      <div>
+                        <strong className="text-slate-900">Receive Delivery into Active Batches:</strong>
+                        <p className="text-slate-600 mt-0.5">
+                          When physical cartons arrive from the distributor, click <strong>"Receive Delivery"</strong>. Enter the batch number, expiration date, and selling price. The system automatically creates active batches and logs a stock-in audit entry.
+                        </p>
+                      </div>
+                    </li>
+                  </ol>
+
+                  <div className="pt-2">
+                    <button
+                      onClick={() => {
+                        onNavigate('purchase-orders');
+                        onClose();
+                      }}
+                      className="w-full py-2.5 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 rounded-xl flex items-center justify-center gap-2 shadow-sm transition"
+                    >
+                      <FileText className="w-4 h-4" />
+                      <span>Go to Purchase Orders</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {/* Topic 3: Stock-In */}
+              {activeTopic === 'stockin' && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-teal-50 border border-teal-200 rounded-xl">
+                    <h3 className="font-bold text-sm text-teal-900 flex items-center gap-2">
+                      <ArrowDownToLine className="w-5 h-5 text-teal-600 shrink-0" />
+                      <span>Direct Batch Stock-In Intake</span>
+                    </h3>
+                    <p className="text-xs text-teal-800 mt-1">
+                      For direct supplier deliveries received outside of pre-planned purchase orders.
+                    </p>
+                  </div>
+
+                  <ol className="space-y-3 text-xs">
+                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="w-6 h-6 rounded-full bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
+                      <div>
+                        <strong className="text-slate-900">Select Item & Batch Number:</strong>
+                        <p className="text-slate-600 mt-0.5">Select the medicine from the list, enter the batch/lot number, manufacturing date, and expiration date.</p>
+                      </div>
+                    </li>
+
+                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="w-6 h-6 rounded-full bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
+                      <div>
+                        <strong className="text-slate-900">Set Cost & Selling Price:</strong>
+                        <p className="text-slate-600 mt-0.5">Enter the supplier wholesale unit cost and clinic retail selling price. Selling prices are locked at the counter.</p>
+                      </div>
+                    </li>
+
+                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <span className="w-6 h-6 rounded-full bg-teal-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
+                      <div>
+                        <strong className="text-slate-900">Print Shelf Barcode:</strong>
+                        <p className="text-slate-600 mt-0.5">Click <strong>"Record Batch Stock-In"</strong> and click <strong>"Print Label"</strong> if you need a Code 128 barcode sticker for repacked supplies.</p>
+                      </div>
+                    </li>
+                  </ol>
+                </div>
+              )}
+
+              {/* Topic 4: Expired Items */}
               {activeTopic === 'expired' && (
                 <div className="space-y-4">
                   <div className="p-4 bg-red-50 border border-red-200 rounded-xl">
                     <h3 className="font-bold text-sm text-red-900 flex items-center gap-2">
                       <ShieldAlert className="w-5 h-5 text-red-600 shrink-0" />
-                      <span>CRITICAL SAFETY RULE: What To Do If an Item is Expired</span>
+                      <span>CRITICAL SAFETY: What To Do If an Item is Expired</span>
                     </h3>
                     <p className="text-xs text-red-800 mt-1">
                       Expired medicine is strictly blocked by the system to safeguard patient health.
@@ -254,12 +349,12 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <h4 className="font-bold text-slate-900 mb-1">1. System Lockout:</h4>
                       <p className="text-slate-600">
-                        Batches with 0 or negative days remaining are tagged <span className="font-bold text-red-700 bg-red-100 px-1 py-0.5 rounded">Blocked (Expired)</span> and cannot be added to the cart.
+                        Batches with 0 or negative days remaining are tagged <span className="font-bold text-red-700 bg-red-100 px-1 py-0.5 rounded">Blocked (Expired)</span> and cannot be selected or dispensed under any circumstance.
                       </p>
                     </div>
 
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <h4 className="font-bold text-slate-900 mb-1">2. Physical Action:</h4>
+                      <h4 className="font-bold text-slate-900 mb-1">2. Physical Quarantine:</h4>
                       <p className="text-slate-600">
                         Remove the box from the retail shelf immediately and place it in the designated <strong>Quarantine / Disposal Bin</strong>.
                       </p>
@@ -268,103 +363,60 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <h4 className="font-bold text-slate-900 mb-1">3. Safe Disposal Record:</h4>
                       <p className="text-slate-600">
-                        In <strong>"Medicines & Batches"</strong>, click the trash icon next to the expired batch to log safe disposal with an audit note.
+                        In <strong>"Inventory"</strong>, click the disposal icon next to the expired batch to log safe removal with a permanent audit note.
                       </p>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Topic 3: Stock-In */}
-              {activeTopic === 'stockin' && (
-                <div className="space-y-4">
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                    <h3 className="font-bold text-sm text-blue-900 flex items-center gap-2">
-                      <ArrowDownToLine className="w-5 h-5 text-blue-600 shrink-0" />
-                      <span>How to Receive Deliveries (Stock-In Intake)</span>
-                    </h3>
-                    <p className="text-xs text-blue-800 mt-1">
-                      Whenever new inventory arrives from suppliers (e.g. Unilab), record the batch number, expiration date, cost, and selling price.
-                    </p>
-                  </div>
-
-                  <ol className="space-y-3 text-xs">
-                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">1</span>
-                      <div>
-                        <strong className="text-slate-900">Select Medicine & Enter Batch:</strong>
-                        <p className="text-slate-600 mt-0.5">Scan barcode or pick the medicine from catalog. Type the batch/lot number printed on the carton.</p>
-                      </div>
-                    </li>
-
-                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">2</span>
-                      <div>
-                        <strong className="text-slate-900">Pricing Source (New Feature):</strong>
-                        <p className="text-slate-600 mt-0.5">
-                          Use the <strong>"Pricing"</strong> dropdown to either copy the cost and selling price from a previous delivery, or enter custom pricing. Cost and price must be greater than ₱0.00.
-                        </p>
-                      </div>
-                    </li>
-
-                    <li className="flex items-start gap-3 p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <span className="w-6 h-6 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center justify-center shrink-0">3</span>
-                      <div>
-                        <strong className="text-slate-900">Save & Print Barcode:</strong>
-                        <p className="text-slate-600 mt-0.5">Click <strong>"Record Batch Stock-In"</strong>. If repacking, click <strong>"Print Label"</strong> to generate a Code128 shelf sticker.</p>
-                      </div>
-                    </li>
-                  </ol>
-                </div>
-              )}
-
-              {/* Topic 4: Alerts */}
+              {/* Topic 5: Alerts */}
               {activeTopic === 'alerts' && (
                 <div className="space-y-4">
                   <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl">
                     <h3 className="font-bold text-sm text-amber-900 flex items-center gap-2">
                       <AlertTriangle className="w-5 h-5 text-amber-600 shrink-0" />
-                      <span>Understanding Warning Colors & Countdown Badges</span>
+                      <span>Understanding Expiry Warning Colors & Countdown Tiers</span>
                     </h3>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
                     <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
                       <span className="font-bold text-emerald-900">Safe Tier (&gt; 180 Days)</span>
-                      <p className="text-slate-600 mt-1">Sufficient shelf life. Full stock safe for dispensing.</p>
+                      <p className="text-slate-600 mt-1">Sufficient shelf life. Full stock safe for standard dispensing.</p>
                     </div>
                     <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl">
                       <span className="font-bold text-blue-900">Monitor Tier (91–180 Days)</span>
-                      <p className="text-slate-600 mt-1">Moderate shelf life. Monitor sales velocity.</p>
+                      <p className="text-slate-600 mt-1">Moderate shelf life. Monitor consumption velocity.</p>
                     </div>
                     <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
                       <span className="font-bold text-amber-900">Warning Tier (31–90 Days)</span>
-                      <p className="text-slate-600 mt-1">Approaching expiration. Prioritize dispensing.</p>
+                      <p className="text-slate-600 mt-1">Approaching expiration. Prioritize dispensing at counter.</p>
                     </div>
                     <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl">
                       <span className="font-bold text-rose-900">Critical Tier (1–30 Days)</span>
-                      <p className="text-slate-600 mt-1">Urgent action required. Halt incoming orders.</p>
+                      <p className="text-slate-600 mt-1">Urgent action required. Pause restocks and accelerate clearance.</p>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Topic 5: Contacts */}
+              {/* Topic 6: Contacts */}
               {activeTopic === 'contacts' && (
                 <div className="space-y-4">
                   <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl">
                     <h3 className="font-bold text-sm text-purple-900 flex items-center gap-2">
                       <Phone className="w-5 h-5 text-purple-600 shrink-0" />
-                      <span>Clinic Administration & Support Contacts</span>
+                      <span>Clinic Administration & System Information</span>
                     </h3>
                   </div>
 
                   <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs space-y-2">
-                    <div><strong>Pharmacy:</strong> R.K.A Pharmacy</div>
-                    <div><strong>Location:</strong> San Antonio, Agoo, La Union</div>
-                    <div><strong>Proprietor:</strong> Lourdes Gincen L. Cesista</div>
-                    <div><strong>Lead Researcher:</strong> Hadriane Jerwin G. Estepa</div>
-                    <div><strong>Institution:</strong> DMMMSU South La Union Campus, College of Computer Science</div>
+                    <div><strong>Pharmacy Name:</strong> R.K.A Pharmacy</div>
+                    <div><strong>Clinic Location:</strong> San Antonio, Agoo, La Union</div>
+                    <div><strong>Sole Proprietor:</strong> Lourdes Gincen L. Cesista</div>
+                    <div><strong>System Platform:</strong> R.K.A Pharmacy IMS (Offline-First Edition)</div>
+                    <div><strong>Security:</strong> Scrypt Native Hashing & SQLite WAL Engine</div>
                   </div>
                 </div>
               )}
@@ -383,46 +435,98 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                       <span>Enhanced First-Expiry-First-Out (FEFO+) Intelligence</span>
                     </h3>
                     <p className="text-xs text-emerald-800 mt-1">
-                      Traditional FEFO only considers the expiration date. FEFO+ combines remaining shelf life with actual clinical sales velocity to predict waste before it happens.
+                      Traditional FEFO only considers the expiration date. FEFO+ combines remaining shelf life with actual consumption velocity to predict inventory waste before it occurs.
                     </p>
                   </div>
 
                   <div className="space-y-3 text-xs">
                     <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                      <h4 className="font-bold text-slate-900 mb-1">1. Expiry Risk Margin (ERM) Formula</h4>
+                      <h4 className="font-bold text-slate-900 mb-1">1. Expiry Risk Margin Formula</h4>
                       <p className="text-slate-600 mb-2">
                         The Expiry Risk Margin determines whether current stock will sell out before expiration:
                       </p>
                       <div className="bg-white p-3 rounded-lg border border-slate-300 font-mono text-[11px] text-slate-800 space-y-1">
-                        <div>Days to Expiry (DTE) = Batch Expiration Date - Current Date</div>
-                        <div>Days to Consume (DTC) = Current Batch Stock / Average Daily Quantity Sold (ADQS)</div>
+                        <div>Days to Expiry = Batch Expiration Date − Current Date</div>
+                        <div>Days to Depletion = Current Batch Stock ÷ Average Daily Demand</div>
                         <div className="font-bold text-emerald-800 pt-1 border-t border-slate-200">
-                          Expiry Risk Margin (ERM) = DTE - DTC
+                          Expiry Risk Margin = Days to Expiry − Days to Depletion
                         </div>
                       </div>
                       <div className="mt-2 text-slate-600">
-                        • <strong>ERM &gt; 0 (Safe Margin):</strong> Medicine is expected to completely sell out before expiring.<br />
-                        • <strong>ERM &lt; 0 (High Waste Risk):</strong> Sales speed is too slow; some units will expire on the shelf unless proactive action is taken.
+                        • <strong>Margin &gt; 0 (Safe Margin):</strong> Stock is predicted to completely sell out before expiring.<br />
+                        • <strong>Margin &lt; 0 (High Waste Risk):</strong> Sales speed is too slow; some units will expire unless prioritized.
                       </div>
                     </div>
 
                     <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
-                      <h4 className="font-bold text-slate-900 mb-1">2. Dynamic Suggested Reorder Level</h4>
+                      <h4 className="font-bold text-slate-900 mb-1">2. Predicted Expired Waste Volume</h4>
                       <p className="text-slate-600 mb-2">
-                        Instead of arbitrary manual thresholds, the engine computes optimal restock points based on supplier delivery time and safety buffers:
+                        For at-risk batches, the system computes the exact predicted number of spoiled units:
                       </p>
-                      <div className="bg-white p-3 rounded-lg border border-slate-300 font-mono text-[11px] text-purple-900 font-bold">
-                        Suggested Reorder Level = ADQS × (Supplier Lead Time + Safety Buffer Days)
+                      <div className="bg-white p-3 rounded-lg border border-slate-300 font-mono text-[11px] text-rose-900 font-bold">
+                        Predicted Waste = Batch Stock − (Daily Demand × Days to Expiry)
                       </div>
                       <p className="text-slate-500 mt-2">
-                        The suggested level appears side-by-side with the owner's manual threshold in the FEFO+ tab with a 1-click synchronization button.
+                        This metric enables proactive counter clearance or wholesale returns before financial loss occurs.
+                      </p>
+                    </div>
+
+                    <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                      <h4 className="font-bold text-slate-900 mb-1">3. Dynamic Suggested Reorder Level</h4>
+                      <p className="text-slate-600 mb-2">
+                        The engine computes optimal restock points based on supplier delivery lead times and safety buffers:
+                      </p>
+                      <div className="bg-white p-3 rounded-lg border border-slate-300 font-mono text-[11px] text-purple-900 font-bold">
+                        Suggested Reorder Level = Daily Demand × (Supplier Lead Time + Safety Buffer Days)
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Topic V2-2: PO Lifecycle */}
+              {activeTopic === 'po_lifecycle' && (
+                <div className="space-y-4">
+                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
+                    <h3 className="font-bold text-sm text-blue-900 flex items-center gap-2">
+                      <FileText className="w-5 h-5 text-blue-600 shrink-0" />
+                      <span>Purchase Order Lifecycle & Procurement Architecture</span>
+                    </h3>
+                    <p className="text-xs text-blue-800 mt-1">
+                      Complete end-to-end purchasing workflow from replenishment recommendation to delivery intake into active inventory batches.
+                    </p>
+                  </div>
+
+                  <div className="space-y-3 text-xs">
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <h4 className="font-bold text-slate-900 mb-1">1. Status Progression:</h4>
+                      <p className="text-slate-600">
+                        • <strong>Draft:</strong> Order created and editable. Can be reviewed, modified, or deleted.<br />
+                        • <strong>Placed:</strong> Order sent to distributor. Cannot be deleted without cancellation.<br />
+                        • <strong>Partially Received:</strong> Some items received into batches; outstanding balance remains.<br />
+                        • <strong>Received:</strong> All ordered units delivered and converted to active inventory batches.<br />
+                        • <strong>Cancelled:</strong> Outstanding balance closed with a mandatory audit reason.
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <h4 className="font-bold text-slate-900 mb-1">2. Automatic Batch Intake:</h4>
+                      <p className="text-slate-600">
+                        Receiving deliveries on a purchase order automatically creates physical records in <code>batches</code> and generates <code>stock_in</code> transaction records linked directly to the purchase order reference number.
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <h4 className="font-bold text-slate-900 mb-1">3. Printable Vouchers:</h4>
+                      <p className="text-slate-600">
+                        Click <strong>"Print PO Slip"</strong> on any purchase order to generate a clean, official procurement voucher complete with item specifications, quantities, costs, and signature spaces.
                       </p>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Topic V2-2: Audit Trail */}
+              {/* Topic V2-3: Audit Trail */}
               {activeTopic === 'audit_trail' && (
                 <div className="space-y-4">
                   <div className="p-4 bg-indigo-50 border border-indigo-200 rounded-xl">
@@ -446,21 +550,21 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <h4 className="font-bold text-slate-900 mb-1">Batch Pricing Revisions:</h4>
                       <p className="text-slate-600">
-                        Selling prices can no longer be edited during counter checkout. Price revisions are strictly managed via <strong>"Medicines & Batches"</strong>, where every cost and selling price adjustment is logged with old values, new values, and operator reason.
+                        Selling prices can no longer be edited during counter checkout. Price revisions are strictly managed via <strong>"Inventory"</strong>, where every cost and selling price adjustment is logged with old values, new values, and operator reason.
                       </p>
                     </div>
 
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <h4 className="font-bold text-slate-900 mb-1">Audit Ledger CSV Export:</h4>
                       <p className="text-slate-600">
-                        In the <strong>"Audit Trail"</strong> view, click <strong>"Export CSV Report"</strong> to generate a timestamped audit spreadsheet for clinic accounting or FDA inspection.
+                        In the <strong>"Audit Trail"</strong> view, click <strong>"Export CSV Report"</strong> to generate a timestamped audit spreadsheet for clinic accounting or regulatory review.
                       </p>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Topic V2-3: Policy Simulation */}
+              {/* Topic V2-4: Policy Simulation */}
               {activeTopic === 'simulation' && (
                 <div className="space-y-4">
                   <div className="p-4 bg-purple-50 border border-purple-200 rounded-xl">
@@ -469,7 +573,7 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                       <span>Policy Simulation Engine (FIFO vs FEFO vs FEFO+)</span>
                     </h3>
                     <p className="text-xs text-purple-800 mt-1">
-                      Scientific comparative evaluation engine demonstrating research efficacy across three inventory dispatch policies.
+                      Comparative evaluation engine demonstrating operational efficacy across three inventory dispatch policies.
                     </p>
                   </div>
 
@@ -489,32 +593,46 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                       </div>
                     </div>
 
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <h4 className="font-bold text-slate-900 mb-1">Key Evaluation Metrics:</h4>
                       <p className="text-slate-600">
                         • <strong>Expired Spoilage Rate (%):</strong> Percentage of purchased stock lost to expiration.<br />
                         • <strong>Stockout Incidents:</strong> Number of times customers requested medicine when stock was 0.<br />
-                        • <strong>Capital Loss (₱):</strong> Exact financial loss in Philippine Pesos from disposed expired stock.
+                        • <strong>Capital Loss (₱):</strong> Financial loss in Philippine Pesos from disposed expired stock.
                       </p>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Topic V2-4: Settings Guide */}
+              {/* Topic V2-5: Settings Guide */}
               {activeTopic === 'settings_guide' && (
                 <div className="space-y-4">
-                  <div className="p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                    <h3 className="font-bold text-sm text-blue-900 flex items-center gap-2">
-                      <Settings className="w-5 h-5 text-blue-600 shrink-0" />
-                      <span>System Configuration, Parameters & Default Settings</span>
+                  <div className="p-4 bg-slate-100 border border-slate-300 rounded-xl">
+                    <h3 className="font-bold text-sm text-slate-900 flex items-center gap-2">
+                      <Settings className="w-5 h-5 text-slate-700 shrink-0" />
+                      <span>System Configuration, Observation Window N, & Cold-Start Rule</span>
                     </h3>
-                    <p className="text-xs text-blue-800 mt-1">
-                      Guide to all configurable countdown tiers, algorithm parameters, clinic identity, and factory restoration.
+                    <p className="text-xs text-slate-700 mt-1">
+                      Guide to configurable observation baselines, countdown tiers, clinic identity, and database backups.
                     </p>
                   </div>
 
                   <div className="space-y-3 text-xs">
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <h4 className="font-bold text-slate-900 mb-1">Forecasting Baseline Window Selector:</h4>
+                      <p className="text-slate-600">
+                        Operators can configure the moving average observation window between <strong>10 Days</strong>, <strong>20 Days</strong>, or <strong>30 Days (Default)</strong> directly in the Settings view.
+                      </p>
+                    </div>
+
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
+                      <h4 className="font-bold text-slate-900 mb-1">Cold-Start Suppression Rule:</h4>
+                      <p className="text-slate-600">
+                        If elapsed operational history is less than the configured window N, automated predictive forecasting is gracefully suppressed. The system operates under standard FEFO dispatching and manual owner reorder thresholds until sufficient history is recorded.
+                      </p>
+                    </div>
+
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
                       <h4 className="font-bold text-slate-900 mb-1">Default Configuration Parameters:</h4>
                       <div className="grid grid-cols-2 gap-2 mt-2 font-mono text-[11px] text-slate-700">
@@ -523,22 +641,8 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                         <div>Warning Threshold: 31–90 days</div>
                         <div>Critical Threshold: 1–30 days</div>
                         <div>Safety Buffer: 3 days</div>
-                        <div>Sales History: 30 days</div>
+                        <div>Baseline Window: 30 days (default)</div>
                       </div>
-                    </div>
-
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <h4 className="font-bold text-slate-900 mb-1">"Default Settings" Button:</h4>
-                      <p className="text-slate-600">
-                        Located in the Settings view. Restores all expiration risk thresholds and algorithm buffers to their verified research defaults. If settings are already default, the system displays a notice: <em>"Already in default settings"</em>.
-                      </p>
-                    </div>
-
-                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200">
-                      <h4 className="font-bold text-slate-900 mb-1">Clinic Profile Settings:</h4>
-                      <p className="text-slate-600">
-                        Allows setting the Pharmacy Name (R.K.A Pharmacy), Clinic Location (San Antonio, Agoo, La Union), and Sole Proprietor (Lourdes Gincen L. Cesista). These automatically format all thermal receipts and printable barcode tags.
-                      </p>
                     </div>
                   </div>
                 </div>
@@ -549,7 +653,7 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
 
         {/* Footer */}
         <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between text-xs text-slate-500">
-          <span>R.K.A Pharmacy IMS • Educational & Operational Documentation</span>
+          <span>R.K.A Pharmacy IMS • Operational & Staff Documentation</span>
           <button
             onClick={onClose}
             className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg transition"

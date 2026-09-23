@@ -24,6 +24,7 @@ app.use('/api/simulation', require('./routes/simulation'));
 app.use('/api/audit', require('./routes/audit'));
 app.use('/api/settings', require('./routes/settings'));
 app.use('/api/evaluations', require('./routes/evaluations'));
+app.use('/api/purchase-orders', require('./routes/purchaseOrders'));
 app.use('/api/backup', require('./routes/backup'));
 
 // Serve frontend static build in production

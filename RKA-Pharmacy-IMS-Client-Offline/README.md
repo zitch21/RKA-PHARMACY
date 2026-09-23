@@ -5,7 +5,7 @@
 [![Platform: Windows 10 / 11](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-blue.svg)](#system-requirements)
 [![Architecture: Offline-First](https://img.shields.io/badge/Architecture-Offline--First%20%7C%20SQLite%20WAL-success.svg)](#system-overview--key-features)
 [![Security: Scrypt Hashing](https://img.shields.io/badge/Security-Scrypt%20Hashed%20Auth-purple.svg)](#-operator-authentication--security)
-[![Verification Suite: 38/38 Passed](https://img.shields.io/badge/Verification%20Suite-38%2F38%20Passed%20(100%25)-emerald.svg)](#-automated-verification-suite)
+[![Verification Suite: 42/42 Passed](https://img.shields.io/badge/Verification%20Suite-42%2F42%20Passed%20(100%25)-emerald.svg)](#-automated-verification-suite)
 [![License: Academic Research](https://img.shields.io/badge/License-Academic%20Research%20Project-orange.svg)](#-project--research-attribution)
 
 ---
@@ -42,9 +42,12 @@ The **R.K.A Pharmacy Inventory Management System** is a mission-critical, standa
   * **Safe** (> 180 days) & **Monitor** (91–180 days): Direct release.
   * **Warning** (31–90 days), **Critical** (1–30 days), & **At-Risk**: Requires explicit user confirmation before release.
   * **Expired** ($\le 0$ days): **Strictly blocked** from selection and dispensing.
-* 🧠 **Expiry Risk Margin (ERM) Intelligence**: Compares actual consumption velocity (ADC) against remaining shelf life to identify batches at high risk of expiry waste before they expire.
+  * **Multi-Batch Auto-Allocation**: Large dispensing orders automatically split sequentially across earliest-expiring active batches when a single batch has insufficient quantity.
+* 🧠 **Demand Forecasting & Expiry Risk Margin (FEFO+)**: Computes moving average daily demand over a configurable baseline window ($N \in \{10, 20, 30\}$ operational days). Quantifies Days to Depletion, Expiry Risk Margin, and Predicted Expired Waste.
+* 🛡️ **Cold-Start Suppression Rule**: When transactional history is below the configured window ($t < N$), automated algorithmic reorder generation is safely suppressed with an informative banner, falling back to manual clinic reorder thresholds and standard FEFO allocation.
+* 📑 **Purchase Orders & Procurement Lifecycle**: Complete procurement tracking from 1-click reorder drafts to placed supplier orders, receiving into active inventory batches, and printable voucher slips.
 * 📈 **Dynamic Suggested Reorder Planner**: Dynamically calculates replenishment reorder points:
-  $$\text{Reorder Point (ROP)} = (\text{ADC} \times \text{Lead Time}) + \text{Safety Stock}$$
+  $$\text{Reorder Point (ROP)} = (\text{Daily Demand} \times \text{Lead Time}) + \text{Safety Buffer}$$
 * 🔔 **Persistent Stock & Expiry Alert Acknowledgment**: Active alerts remain visible on the dashboard and notification center until explicitly acknowledged by an operator, with all acknowledgments logged in the audit trail.
 * 🔒 **Operator Authentication & Scrypt Password Security**: Multi-tier operator accounts with passwords hashed using Node.js native `scrypt` cryptographic key derivation. Station auto-locks behind an authentication screen when unauthenticated.
 * 🛡️ **Locked Counter Pricing & Immutable Audit Trail**: Dispensing prices are strictly locked at register level to prevent unauthorized alteration. Any non-FEFO batch overrides require mandatory justification notes.
@@ -99,14 +102,18 @@ The system enforces authentication to protect clinical inventory and pricing dat
 
 ## 🧪 Automated Verification Suite
 
-The repository includes a self-contained automated test suite validating all thesis manuscript requirements:
+The repository includes a self-contained automated test suite validating all clinic and thesis specifications (42/42 tests passing):
 - Scrypt authentication and session validation
 - Countdown tier classification and live date calculation
 - Strict blocking of expired batches from dispensing
 - FEFO override enforcement and mandatory justification logging
 - Warning/Critical release status confirmation
+- Multi-batch FEFO automatic splitting across inventory batches
 - Persistent alert acknowledgment and audit trail logging
-- FEFO+ Expiry Risk Margin (ERM) and dynamic reorder points
+- FEFO+ Expiry Risk Margin, Days to Depletion, and predicted expired waste
+- Configurable demand observation window ($N \in \{10, 20, 30\}$ days)
+- Cold-Start rule ($t < N$) reorder suppression and fallback
+- Purchase order lifecycle: Draft creation, placing, receiving, and cancellation
 - End-of-day USB removable storage backup and WAL truncate checkpoints
 - Policy simulation comparison (FIFO vs FEFO vs FEFO+)
 
@@ -122,7 +129,8 @@ RKA-PHARMACY/
     ├── RKA-Pharmacy-IMS.exe           # Native C# launcher (silent background server + app mode)
     ├── Setup-Desktop-Shortcut.bat     # Client-level shortcut installer (OneDrive compatible)
     ├── start-app.bat                  # Client-level batch launcher
-    ├── verify_all_specs.js            # Automated thesis specification verification suite
+    ├── verify_all_specs.js            # Automated thesis specification verification suite (42 tests)
+    ├── stress_test_error_handling.js  # Concurrency, edge cases & robustness test suite
     ├── app-icon.ico                   # Application icon
     ├── runtime/                       # Bundled portable Node.js v24.14.0 LTS runtime
     │   └── node.exe
@@ -136,11 +144,12 @@ RKA-PHARMACY/
     │   │   ├── alerts.js              # Stock & expiry alerts with manual acknowledgment
     │   │   ├── batches.js             # Batch-level inventory tracking & barcode tags
     │   │   ├── medicines.js           # Medicine catalog & price management
-    │   │   ├── transactions.js        # Stock-out POS, FEFO enforcement, override auditing
-    │   │   ├── fefoPlus.js            # FEFO+ Expiry Risk Margin & reorder formulas
+    │   │   ├── purchaseOrders.js      # Purchase orders procurement & receiving lifecycle
+    │   │   ├── transactions.js        # Stock-out POS, FEFO enforcement, multi-batch split
+    │   │   ├── fefoPlus.js            # FEFO+ Daily demand, Days to Depletion & reorder formulas
     │   │   ├── audit.js               # Immutable audit trail ledger & CSV export
     │   │   ├── simulation.js          # FIFO vs FEFO vs FEFO+ policy simulation
-    │   │   ├── settings.js            # Threshold configuration store
+    │   │   ├── settings.js            # Baseline window (N), threshold & clinic config store
     │   │   └── evaluations.js         # System Usability Scale (SUS) survey engine
     │   └── data/                      # Embedded database & rolling backups
     │       ├── pharmacy_inventory.db  # SQLite database in Write-Ahead Logging (WAL) mode
@@ -148,7 +157,7 @@ RKA-PHARMACY/
     ├── client/
     │   ├── src/                       # Complete React 19 + Tailwind CSS source code
     │   │   ├── components/            # Modals, Navbar, Alert Dropdowns, Barcode Scanner
-    │   │   ├── views/                 # Dashboard, Inventory, Stock-In, Stock-Out, FEFO+, etc.
+    │   │   ├── views/                 # Dashboard, Inventory, Purchase Orders, FEFO+, etc.
     │   │   └── App.jsx                # Main workstation shell & authentication guard
     │   └── dist/                      # Precompiled production bundle served by Express
     └── node_modules/                  # Bundled production dependencies (better-sqlite3 x64 native)
@@ -161,11 +170,12 @@ RKA-PHARMACY/
 * **Dashboard**: Key operational metrics, daily sales totals, active inventory value, 5-tier expiry countdown breakdown, and persistent priority alert banner.
 * **Medicines & Batches**: Master catalog management, batch intake, batch cost/price adjustments, and printable Code 128 shelf labels.
 * **Stock In (Intake)**: Intake workflow with pricing validation, previous batch price inheritance, and expiration date preview.
-* **Stock Out (Dispensing / POS)**: Real-time barcode scanning, automated FEFO batch allocation, Warning/Critical confirmation modal, mandatory override justifications, locked counter pricing, and printable receipts.
-* **FEFO+ Risk & Reorder**: Consumption velocity analysis, Days to Expiry (DTE), Days of Supply, Expiry Risk Margin (ERM), and 1-click Suggested Reorder synchronization.
-* **Audit Trail**: Tamper-evident ledger logging dispensing overrides, batch price adjustments, alert acknowledgments, backups, and user logins with CSV export.
+* **Purchase Orders**: Full procurement management lifecycle. Convert suggested reorders into draft POs, place orders with suppliers, print formal PO slip vouchers with authorized signature blocks, receive delivered items into active inventory batches, and manage cancellations.
+* **Stock Out (Dispensing / POS)**: Real-time barcode scanning, automated multi-batch FEFO allocation, Warning/Critical confirmation modal, mandatory override justifications, locked counter pricing, and printable receipts.
+* **FEFO+ Risk & Reorder**: Daily demand moving average, Days to Expiry, Days to Depletion, Expiry Risk Margin, Cold-Start threshold banner, and 1-click Suggested Reorder synchronization into Purchase Orders.
+* **Audit Trail**: Tamper-evident ledger logging dispensing overrides, batch price adjustments, alert acknowledgments, baseline window modifications, purchase order actions, backups, and user logins with CSV export.
 * **Policy Simulation**: Comparative historical evaluation between FIFO, standard FEFO, and FEFO+ models demonstrating waste reduction.
-* **Settings**: Configurable expiration countdown tiers, supplier lead time, safety buffer days, removable USB storage backup export, and operator password management.
+* **Settings**: Configurable baseline observation window ($N \in \{10, 20, 30\}$ days), expiration countdown tiers, supplier lead time, safety buffer days, removable USB storage backup export, and operator password management.
 
 ---
 

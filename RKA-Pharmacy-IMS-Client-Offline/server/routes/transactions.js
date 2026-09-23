@@ -58,7 +58,7 @@ router.get('/', (req, res) => {
 // Supports single or batch items
 router.post('/stock-out', (req, res) => {
   try {
-    const { items, reference_no, notes, operator_name = 'Lourdes Gincen L. Cesista' } = req.body;
+    const { items, reference_no, notes, operator_name = 'Lourdes Gincen L. Cesista' } = req.body || {};
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Please provide at least one item to dispense.' });
@@ -107,15 +107,15 @@ router.post('/stock-out', (req, res) => {
         }
 
         const fefoBatch = unexpiredBatches[0];
-        let targetBatchId = batch_id;
         let isOverride = 0;
         let finalReason = null;
+        const allocations = [];
 
-        // If batch_id was explicitly provided, verify whether it matches FEFO recommendation
-        if (targetBatchId) {
-          const selectedBatch = db.prepare('SELECT * FROM batches WHERE id = ?').get(targetBatchId);
+        // Check if user explicitly selected a non-FEFO batch (Manual Override)
+        if (batch_id) {
+          const selectedBatch = db.prepare('SELECT * FROM batches WHERE id = ?').get(batch_id);
           if (!selectedBatch) {
-            throw new Error(`Selected batch ${targetBatchId} not found.`);
+            throw new Error(`Selected batch ${batch_id} not found.`);
           }
 
           // Strict block on expired batches (Expired <= 0 days -> Blocked from release)
@@ -123,100 +123,117 @@ router.post('/stock-out', (req, res) => {
             throw new Error(`Batch ${selectedBatch.batch_number} expired on ${selectedBatch.expiration_date} and is BLOCKED from release!`);
           }
 
-          if (selectedBatch.current_quantity < qtyToDispense) {
-            throw new Error(`Batch ${selectedBatch.batch_number} only has ${selectedBatch.current_quantity} units available.`);
-          }
-
           if (selectedBatch.id !== fefoBatch.id) {
-            // User selected non-FEFO batch
+            // User selected non-FEFO batch -> requires override justification
             if (!override_reason || override_reason.trim() === '') {
               throw new Error(
                 `Override required: Batch ${selectedBatch.batch_number} is not the earliest-expiring batch (Earliest is ${fefoBatch.batch_number}, exp: ${fefoBatch.expiration_date}). Please provide an override reason.`
               );
             }
+            if (selectedBatch.current_quantity < qtyToDispense) {
+              throw new Error(`Batch ${selectedBatch.batch_number} only has ${selectedBatch.current_quantity} units available.`);
+            }
             isOverride = 1;
             finalReason = override_reason.trim();
+            allocations.push({ batch: selectedBatch, qty: qtyToDispense });
           }
-        } else {
-          // No batch provided -> auto-assign FEFO batch
-          targetBatchId = fefoBatch.id;
         }
 
-        const targetBatch = db.prepare('SELECT * FROM batches WHERE id = ?').get(targetBatchId);
-        if (targetBatch.current_quantity < qtyToDispense) {
-          throw new Error(`Insufficient stock in batch ${targetBatch.batch_number}. Available: ${targetBatch.current_quantity}`);
+        // Standard FEFO workflow (Auto-assigned or earliest batch selected)
+        // Manuscript Figure 2: "Issue from the earliest batch, if not enough proceed with the next batch until requested quantity is filled"
+        if (allocations.length === 0) {
+          const totalAvailable = unexpiredBatches.reduce((acc, b) => acc + b.current_quantity, 0);
+          if (totalAvailable < qtyToDispense) {
+            throw new Error(`Insufficient stock for ${med.brand_name}. Requested ${qtyToDispense} units, but only ${totalAvailable} available across all unexpired batches.`);
+          }
+
+          let remainingNeeded = qtyToDispense;
+          for (const b of unexpiredBatches) {
+            if (remainingNeeded <= 0) break;
+            const take = Math.min(b.current_quantity, remainingNeeded);
+            if (take > 0) {
+              allocations.push({ batch: b, qty: take });
+              remainingNeeded -= take;
+            }
+          }
         }
 
-        const remainingQty = targetBatch.current_quantity - qtyToDispense;
-        const newStatus = remainingQty === 0 ? 'consumed' : 'active';
+        // Process each batch allocation
+        for (const alloc of allocations) {
+          const targetBatch = alloc.batch;
+          const allocQty = alloc.qty;
+          const remainingQty = targetBatch.current_quantity - allocQty;
+          const newStatus = remainingQty === 0 ? 'consumed' : 'active';
 
-        // Update batch
-        db.prepare(`
-          UPDATE batches 
-          SET current_quantity = ?, status = ?
-          WHERE id = ?
-        `).run(remainingQty, newStatus, targetBatchId);
+          // Update batch stock
+          db.prepare(`
+            UPDATE batches 
+            SET current_quantity = ?, status = ?
+            WHERE id = ?
+          `).run(remainingQty, newStatus, targetBatch.id);
 
-        // Record transaction - POS Price Lockdown: strictly enforce approved batch selling price
-        const lastTx = db.prepare('SELECT id FROM transactions ORDER BY id DESC LIMIT 1').get();
-        const txCode = `TX-OUT-${Date.now()}-${Math.floor(Math.random() * 10000)}-${lastTx ? lastTx.id + 1 : 1}`;
-        const unitPrice = parseFloat(targetBatch.selling_price);
-        if (isNaN(unitPrice) || unitPrice <= 0) {
-          throw new Error(`Batch ${targetBatch.batch_number} does not have a valid selling price configured.`);
-        }
-        const totalAmount = qtyToDispense * unitPrice;
+          // Record transaction - POS Price Lockdown: strictly enforce approved batch selling price
+          const lastTx = db.prepare('SELECT id FROM transactions ORDER BY id DESC LIMIT 1').get();
+          const txCode = `TX-OUT-${Date.now()}-${Math.floor(Math.random() * 10000)}-${lastTx ? lastTx.id + 1 : 1}`;
+          const unitPrice = parseFloat(targetBatch.selling_price);
+          if (isNaN(unitPrice) || unitPrice <= 0) {
+            throw new Error(`Batch ${targetBatch.batch_number} does not have a valid selling price configured.`);
+          }
+          const totalAmount = allocQty * unitPrice;
 
-        db.prepare(`
-          INSERT INTO transactions (
-            transaction_code, transaction_type, medicine_id, batch_id,
-            quantity, unit_price, total_amount, reference_no,
-            is_override, override_reason, operator_name, notes
-          ) VALUES (?, 'stock_out', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        `).run(
-          txCode,
-          medicine_id,
-          targetBatchId,
-          qtyToDispense,
-          unitPrice,
-          totalAmount,
-          receiptNo,
-          isOverride,
-          finalReason,
-          operator_name,
-          notes || 'Clinic stock-out'
-        );
+          db.prepare(`
+            INSERT INTO transactions (
+              transaction_code, transaction_type, medicine_id, batch_id,
+              quantity, unit_price, total_amount, reference_no,
+              is_override, override_reason, operator_name, notes
+            ) VALUES (?, 'stock_out', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          `).run(
+            txCode,
+            medicine_id,
+            targetBatch.id,
+            allocQty,
+            unitPrice,
+            totalAmount,
+            receiptNo,
+            isOverride,
+            finalReason,
+            operator_name,
+            notes || (allocations.length > 1 ? `Multi-batch FEFO split (${targetBatch.batch_number})` : 'Clinic stock-out')
+          );
 
-        // Record audit
-        logAudit(
-          isOverride ? 'STOCK_OUT_OVERRIDE' : 'STOCK_OUT',
-          'TRANSACTION',
-          txCode,
-          {
-            receipt_no: receiptNo,
+          // Record audit log
+          logAudit(
+            isOverride ? 'STOCK_OUT_OVERRIDE' : 'STOCK_OUT',
+            'TRANSACTION',
+            txCode,
+            {
+              receipt_no: receiptNo,
+              medicine: med.brand_name,
+              batch_number: targetBatch.batch_number,
+              quantity: allocQty,
+              unit_price: unitPrice,
+              total_amount: totalAmount,
+              is_override: isOverride === 1,
+              override_reason: finalReason,
+              status_confirmed: !!status_confirmed,
+              expiry_status: expiry_status || null,
+              remaining_batch_qty: remainingQty,
+              is_multi_batch_split: allocations.length > 1
+            },
+            operator_name
+          );
+
+          processedTransactions.push({
+            tx_code: txCode,
             medicine: med.brand_name,
             batch_number: targetBatch.batch_number,
-            quantity: qtyToDispense,
+            quantity: allocQty,
             unit_price: unitPrice,
             total_amount: totalAmount,
             is_override: isOverride === 1,
-            override_reason: finalReason,
-            status_confirmed: !!status_confirmed,
-            expiry_status: expiry_status || null,
-            remaining_batch_qty: remainingQty
-          },
-          operator_name
-        );
-
-        processedTransactions.push({
-          tx_code: txCode,
-          medicine: med.brand_name,
-          batch_number: targetBatch.batch_number,
-          quantity: qtyToDispense,
-          unit_price: unitPrice,
-          total_amount: totalAmount,
-          is_override: isOverride === 1,
-          override_reason: finalReason
-        });
+            override_reason: finalReason
+          });
+        }
       }
 
       return { receipt_no: receiptNo, transactions: processedTransactions };
@@ -235,7 +252,7 @@ router.post('/stock-out', (req, res) => {
 // POST Stock Adjustment (Count reconciliation or damage)
 router.post('/adjustment', (req, res) => {
   try {
-    const { batch_id, actual_quantity, reason, notes, operator_name = 'Lourdes Gincen L. Cesista' } = req.body;
+    const { batch_id, actual_quantity, reason, notes, operator_name = 'Lourdes Gincen L. Cesista' } = req.body || {};
 
     if (!batch_id || actual_quantity === undefined || !reason) {
       return res.status(400).json({ error: 'Batch ID, actual quantity, and reason are required.' });

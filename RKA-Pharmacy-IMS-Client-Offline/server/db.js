@@ -136,6 +136,35 @@ function initSchema() {
       acknowledged_at DATETIME DEFAULT CURRENT_TIMESTAMP
     );
 
+    CREATE TABLE IF NOT EXISTS purchase_orders (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      po_number TEXT UNIQUE NOT NULL,
+      supplier_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'placed', 'partially_received', 'received', 'cancelled')),
+      order_date DATE DEFAULT (DATE('now')),
+      placed_date DATE,
+      received_date DATE,
+      total_amount REAL NOT NULL DEFAULT 0,
+      notes TEXT,
+      cancellation_reason TEXT,
+      created_by TEXT NOT NULL DEFAULT 'Lourdes Gincen L. Cesista',
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+      updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
+    CREATE TABLE IF NOT EXISTS purchase_order_items (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      po_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+      medicine_id INTEGER NOT NULL REFERENCES medicines(id),
+      quantity_ordered INTEGER NOT NULL,
+      quantity_received INTEGER NOT NULL DEFAULT 0,
+      unit_cost REAL NOT NULL,
+      total_cost REAL NOT NULL,
+      status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending', 'partial', 'received', 'cancelled')),
+      notes TEXT,
+      created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    );
+
     CREATE INDEX IF NOT EXISTS idx_batches_med_status ON batches(medicine_id, status);
     CREATE INDEX IF NOT EXISTS idx_batches_expiry ON batches(expiration_date);
     CREATE INDEX IF NOT EXISTS idx_medicines_barcode ON medicines(barcode);
@@ -144,6 +173,9 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_transactions_created ON transactions(created_at);
     CREATE INDEX IF NOT EXISTS idx_audit_timestamp ON audit_logs(timestamp);
     CREATE INDEX IF NOT EXISTS idx_alert_ack_key ON alert_acknowledgments(alert_key);
+    CREATE INDEX IF NOT EXISTS idx_po_status ON purchase_orders(status);
+    CREATE INDEX IF NOT EXISTS idx_po_items_po ON purchase_order_items(po_id);
+    CREATE INDEX IF NOT EXISTS idx_po_items_med ON purchase_order_items(medicine_id);
   `);
 
   // Run SQLite Query Optimizer
@@ -178,7 +210,9 @@ function initSchema() {
     ['warning_threshold_days', '31', 'Days threshold for Warning classification (31 to 90 days)'],
     ['critical_threshold_days', '1', 'Days threshold for Critical classification (1 to 30 days)'],
     ['default_buffer_days', '3', 'Default buffer days for suggested reorder calculation'],
-    ['history_days_fefo_plus', '30', 'Days of sales history required for full FEFO+ consumption calculation']
+    ['history_days_fefo_plus', '30', 'Days of sales history required for full FEFO+ consumption calculation'],
+    ['forecasting_window_days', '30', 'Rolling observation window N days for demand forecasting (10, 20, or 30 days)'],
+    ['po_drafting_mode', 'manual', 'Purchase Order drafting mode: manual (review before draft) or instant_auto (save direct to draft PO)']
   ];
 
   for (const [key, value, desc] of defaultSettings) {

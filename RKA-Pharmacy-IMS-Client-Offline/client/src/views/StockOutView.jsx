@@ -15,13 +15,14 @@ import {
 } from 'lucide-react';
 import OverrideModal from '../components/OverrideModal';
 import BatchStatusConfirmModal from '../components/BatchStatusConfirmModal';
+import HelperText from '../components/HelperText';
 
 export default function StockOutView({
   medicines,
   batches,
   onRefresh,
   _onNavigate,
-  _uiMode = 'minimalist',
+  uiMode = 'clean',
   onOpenHelp,
   currentUser
 }) {
@@ -120,136 +121,133 @@ export default function StockOutView({
     return () => window.removeEventListener('keydown', handleGlobalKeyDown);
   }, [medList]);
 
+  // Handle medicine dropdown selection
   const handleSelectMedicine = (med) => {
     setSelectedMedId(med.id);
-    setQuantityInput(1);
-
-    // Find active batches
-    const avail = batchList.filter(
+    const activeBatches = batchList.filter(
       b => b.medicine_id === med.id && b.status === 'active' && b.current_quantity > 0
     ).sort((a, b) => new Date(a.expiration_date) - new Date(b.expiration_date));
 
-    const earliestUnexpired = avail.find(b => b.days_to_expiry > 0);
-    if (earliestUnexpired) {
-      setSelectedBatchId(earliestUnexpired.id);
+    // Pre-select earliest unexpired batch (FEFO)
+    const early = activeBatches.find(b => b.days_to_expiry > 0);
+    if (early) {
+      setSelectedBatchId(early.id);
+    } else if (activeBatches.length > 0) {
+      setSelectedBatchId(activeBatches[0].id);
     } else {
       setSelectedBatchId('');
     }
+    setQuantityInput(1);
+    setError(null);
   };
 
-  // Add item to dispensing slip / cart
+  // Add Item to Dispensing Cart
   const handleAddToCart = () => {
-    if (!selectedMed || !selectedBatchId) {
-      setError('Please select a medicine and an active batch.');
-      return;
-    }
-
-    const batch = medBatches.find(b => b.id === parseInt(selectedBatchId));
-    if (!batch) {
-      setError('Selected batch not found.');
-      return;
-    }
-
-    // Safety check: Block expired batch
-    if (batch.days_to_expiry <= 0) {
-      setError(`CRITICAL SAFETY BLOCK: Batch ${batch.batch_number} expired on ${batch.expiration_date} and CANNOT be released!`);
+    if (!selectedMed || !currentSelectedBatch) {
+      setError('Please select a medicine and active batch.');
       return;
     }
 
     const qty = parseInt(quantityInput);
-    const alreadyInCart = cart.filter(item => item.batch_id === batch.id).reduce((sum, i) => sum + i.quantity, 0);
-    const availableLeft = batch.current_quantity - alreadyInCart;
+    if (isNaN(qty) || qty <= 0) {
+      setError('Please enter a valid quantity greater than zero.');
+      return;
+    }
 
-    if (qty <= 0 || qty > availableLeft) {
-      setError(
-        alreadyInCart > 0
-          ? `Cannot add ${qty} units. Only ${availableLeft} remaining units available for batch ${batch.batch_number} (${alreadyInCart} already in cart).`
-          : `Quantity must be between 1 and available stock (${batch.current_quantity} units).`
-      );
+    if (qty > currentSelectedBatch.current_quantity) {
+      setError(`Cannot dispense ${qty} items. Only ${currentSelectedBatch.current_quantity} remaining in batch ${currentSelectedBatch.batch_number}.`);
+      return;
+    }
+
+    // Check if batch is strictly expired
+    if (currentSelectedBatch.days_to_expiry <= 0) {
+      setError(`STRICT BLOCK: Batch ${currentSelectedBatch.batch_number} is EXPIRED (${currentSelectedBatch.expiration_date}). Patient release is forbidden.`);
       return;
     }
 
     // Check if user is overriding FEFO
-    const isFefoCandidate = fefoBatch && fefoBatch.id === batch.id;
-    if (!isFefoCandidate) {
-      // Prompt for override justification
+    const isOverride = fefoBatch && currentSelectedBatch.id !== fefoBatch.id;
+    if (isOverride) {
       setPendingOverrideItem({
         medicine: selectedMed,
-        selectedBatch: batch,
+        selectedBatch: currentSelectedBatch,
         fefoBatch: fefoBatch,
-        quantity: qty,
-        unitPrice: batch.selling_price
+        quantity: qty
       });
       setOverrideModalOpen(true);
       return;
     }
 
-    // FEFO Expiry Risk Verification: If earliest expiring batch is Warning, Critical, or At-risk, require user confirmation
-    const isAtRiskOrWarning = batch.expiry_tier === 'Critical' || batch.expiry_tier === 'Warning' || batch.is_at_waste_risk || batch.days_to_expiry <= 90;
-    if (isAtRiskOrWarning) {
+    // Check status confirmation for Warning (31-90d) or Critical (1-30d) tiers
+    if (currentSelectedBatch.expiry_tier === 'Warning' || currentSelectedBatch.expiry_tier === 'Critical') {
       setPendingStatusConfirmItem({
         medicine: selectedMed,
-        batch,
-        quantity: qty
+        selectedBatch: currentSelectedBatch,
+        quantity: qty,
+        unitPrice: currentSelectedBatch.selling_price
       });
       setStatusConfirmModalOpen(true);
       return;
     }
 
-    // Standard FEFO release
+    // Safe direct add
     addItemToCartInternal({
       medicine: selectedMed,
-      batch,
+      batch: currentSelectedBatch,
       quantity: qty,
-      unitPrice: batch.selling_price,
+      unitPrice: currentSelectedBatch.selling_price,
       isOverride: false,
       overrideReason: null,
       statusConfirmed: false,
-      expiryStatus: batch.expiry_tier
+      expiryStatus: currentSelectedBatch.expiry_tier
     });
   };
 
-  const handleConfirmStatusRelease = () => {
-    if (!pendingStatusConfirmItem) return;
-    addItemToCartInternal({
-      medicine: pendingStatusConfirmItem.medicine,
-      batch: pendingStatusConfirmItem.batch,
-      quantity: pendingStatusConfirmItem.quantity,
-      unitPrice: pendingStatusConfirmItem.batch.selling_price,
-      isOverride: false,
-      overrideReason: null,
-      statusConfirmed: true,
-      expiryStatus: pendingStatusConfirmItem.batch.expiry_tier
-    });
-    setStatusConfirmModalOpen(false);
-    setPendingStatusConfirmItem(null);
-  };
+  const addItemToCartInternal = ({ medicine, batch, quantity, unitPrice, isOverride, overrideReason, statusConfirmed, expiryStatus }) => {
+    const existingIndex = cart.findIndex(i => i.batch_id === batch.id);
 
-  const addItemToCartInternal = (itemData) => {
-    setCart(prev => [
-      ...prev,
-      {
-        id: Date.now(),
-        medicine_id: itemData.medicine.id,
-        brand_name: itemData.medicine.brand_name,
-        generic_name: itemData.medicine.generic_name,
-        dosage_strength: itemData.medicine.dosage_strength,
-        unit_of_measure: itemData.medicine.unit_of_measure,
-        batch_id: itemData.batch.id,
-        batch_number: itemData.batch.batch_number,
-        expiration_date: itemData.batch.expiration_date,
-        days_to_expiry: itemData.batch.days_to_expiry,
-        quantity: itemData.quantity,
-        unit_price: itemData.batch.selling_price,
-        subtotal: itemData.quantity * itemData.batch.selling_price,
-        is_override: itemData.isOverride,
-        override_reason: itemData.overrideReason,
-        status_confirmed: itemData.statusConfirmed || false,
-        expiry_status: itemData.expiryStatus || null
+    if (existingIndex >= 0) {
+      const existing = cart[existingIndex];
+      const newQty = existing.quantity + quantity;
+      if (newQty > batch.current_quantity) {
+        setError(`Cannot add ${quantity} more. Exceeds batch total stock (${batch.current_quantity}).`);
+        return;
       }
-    ]);
+      const updatedCart = [...cart];
+      updatedCart[existingIndex] = {
+        ...existing,
+        quantity: newQty,
+        subtotal: newQty * unitPrice,
+        is_override: isOverride || existing.is_override,
+        override_reason: overrideReason || existing.override_reason,
+        status_confirmed: statusConfirmed || existing.status_confirmed
+      };
+      setCart(updatedCart);
+    } else {
+      setCart(prev => [
+        ...prev,
+        {
+          id: Date.now(),
+          medicine_id: medicine.id,
+          batch_id: batch.id,
+          brand_name: medicine.brand_name,
+          generic_name: medicine.generic_name,
+          dosage_strength: medicine.dosage_strength,
+          batch_number: batch.batch_number,
+          expiration_date: batch.expiration_date,
+          days_to_expiry: batch.days_to_expiry,
+          unit_price: unitPrice,
+          quantity: quantity,
+          subtotal: quantity * unitPrice,
+          is_override: isOverride,
+          override_reason: overrideReason,
+          status_confirmed: statusConfirmed,
+          expiry_status: expiryStatus
+        }
+      ]);
+    }
 
-    // Reset selection inputs
+    // Reset current selection form
     setSelectedMedId('');
     setSelectedBatchId('');
     setQuantityInput(1);
@@ -347,9 +345,9 @@ export default function StockOutView({
             <ArrowUpFromLine className="w-5 h-5 text-emerald-600" />
             <span>Stock-Out & Dispensing (FEFO Prioritized)</span>
           </h2>
-          <p className="text-xs text-slate-500">
+          <HelperText uiMode={uiMode} className="text-xs text-slate-500">
             Automatic earliest-expiration batch deduction with audit-verified user override
-          </p>
+          </HelperText>
         </div>
 
         <div className="flex items-center gap-2">
@@ -393,7 +391,7 @@ export default function StockOutView({
             type="submit"
             className="w-full sm:w-auto px-5 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition shadow-xs"
           >
-            Scan / Enter
+            {uiMode === 'clean' ? 'Scan' : 'Scan / Enter'}
           </button>
         </form>
       </div>
@@ -412,7 +410,9 @@ export default function StockOutView({
         <div className="lg:col-span-7 bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
           <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center justify-between">
             <span>1. Select Medicine & Batch</span>
-            <span className="text-xs font-normal text-slate-400">Step 1 of 2</span>
+            <HelperText uiMode={uiMode} as="span" className="text-xs font-normal text-slate-400">
+              Step 1 of 2
+            </HelperText>
           </h3>
 
           {/* Medicine Select with Search Filter */}
@@ -470,9 +470,9 @@ export default function StockOutView({
                   <label className="text-xs font-semibold uppercase text-slate-700">
                     Available Batches (FEFO Sorted)
                   </label>
-                  <span className="text-[11px] text-emerald-700 font-medium">
+                  <HelperText uiMode={uiMode} as="span" className="text-[11px] text-emerald-700 font-medium">
                     Earliest expiring batch automatically recommended
-                  </span>
+                  </HelperText>
                 </div>
 
                 {medBatches.length > 0 ? (
@@ -575,14 +575,14 @@ export default function StockOutView({
                       {/* Quick Qty Buttons */}
                       <div className="flex flex-wrap items-center gap-1 mt-1.5">
                         <span className="text-[10px] text-slate-400 font-medium mr-0.5">Quick:</span>
-                        {[1, 5, 10].map(n => (
+                        {[1, 5, 10].map(amount => (
                           <button
-                            key={n}
+                            key={amount}
                             type="button"
-                            onClick={() => setQuantityInput(Math.min(n, currentSelectedBatch.current_quantity))}
+                            onClick={() => setQuantityInput(prev => Math.min(currentSelectedBatch.current_quantity, (parseInt(prev, 10) || 0) + amount))}
                             className="px-1.5 py-0.5 text-[10px] font-bold bg-white border border-slate-200 text-slate-700 rounded hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300 transition"
                           >
-                            +{n}
+                            +{amount}
                           </button>
                         ))}
                         <button
@@ -604,7 +604,9 @@ export default function StockOutView({
                       </label>
                       <div className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-100 font-bold text-slate-900 flex items-center justify-between">
                         <span>₱{Number(currentSelectedBatch.selling_price || 0).toFixed(2)}</span>
-                        <span className="text-[10px] text-slate-400 font-normal">Batch Record</span>
+                        <HelperText uiMode={uiMode} as="span" className="text-[10px] text-slate-400 font-normal">
+                          Batch Record
+                        </HelperText>
                       </div>
                       <span className="text-[10px] text-slate-500 mt-0.5 block">
                         Subtotal: ₱{((parseInt(quantityInput) || 0) * (Number(currentSelectedBatch.selling_price) || 0)).toFixed(2)}
@@ -628,7 +630,7 @@ export default function StockOutView({
                     className="w-full py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition flex items-center justify-center gap-2"
                   >
                     <ShoppingCart className="w-4 h-4" />
-                    <span>Add to Dispensing Slip</span>
+                    <span>{uiMode === 'clean' ? 'Add to Cart' : 'Add to Dispensing Slip'}</span>
                   </button>
                 </div>
               )}
@@ -757,7 +759,13 @@ export default function StockOutView({
               className="w-full py-3 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition disabled:opacity-50 flex items-center justify-center gap-2"
             >
               <ArrowUpFromLine className="w-4 h-4" />
-              {loading ? 'Recording Transactions...' : 'Complete Dispense & Print Receipt'}
+              <span>
+                {loading
+                  ? 'Recording Transactions...'
+                  : uiMode === 'clean'
+                  ? 'Complete Dispense'
+                  : 'Complete Dispense & Print Receipt'}
+              </span>
             </button>
           </div>
         </div>
@@ -782,57 +790,75 @@ export default function StockOutView({
 
             {/* Printable Receipt Paper */}
             <div className="p-6 font-mono text-xs text-slate-800 printable-area bg-white">
-              <div className="text-center border-b border-slate-300 pb-3 mb-3">
-                <div className="font-bold text-sm">R.K.A PHARMACY</div>
-                <div className="text-[10px] text-slate-500">San Antonio, Agoo, La Union</div>
-                <div className="text-[10px] text-slate-500">Owner: Lourdes Gincen L. Cesista</div>
-                <div className="text-[10px] text-slate-500 mt-1">Receipt: {lastReceipt.receipt_no}</div>
-                <div className="text-[10px] text-slate-500">{lastReceipt.date}</div>
+              <div className="text-center pb-3 border-b border-dashed border-slate-300 mb-3">
+                <h4 className="font-extrabold text-sm uppercase">R.K.A PHARMACY</h4>
+                <p className="text-[11px] text-slate-500">San Antonio, Agoo, La Union</p>
+                <p className="text-[10px] text-slate-400">Clinic Pharmacy Supplies IMS</p>
               </div>
 
-              {lastReceipt.reference && (
-                <div className="text-[10px] mb-2 pb-2 border-b border-slate-200">
-                  Patient/Ref: {lastReceipt.reference}
+              <div className="space-y-1 text-[11px] border-b border-dashed border-slate-300 pb-3 mb-3">
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Receipt #:</span>
+                  <span className="font-bold">{lastReceipt.receipt_no}</span>
                 </div>
-              )}
+                <div className="flex justify-between">
+                  <span className="text-slate-500">Date:</span>
+                  <span>{lastReceipt.date}</span>
+                </div>
+                {lastReceipt.reference && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Ref / Patient:</span>
+                    <span className="font-bold">{lastReceipt.reference}</span>
+                  </div>
+                )}
+                {currentUser && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-500">Dispenser:</span>
+                    <span>{currentUser.full_name || 'Lourdes Gincen L. Cesista'}</span>
+                  </div>
+                )}
+              </div>
 
-              <div className="space-y-1.5 mb-3 border-b border-slate-300 pb-3">
-                {lastReceipt.items.map((it, i) => (
-                  <div key={i} className="flex justify-between items-start text-[11px]">
+              <div className="space-y-2 border-b border-dashed border-slate-300 pb-3 mb-3">
+                {lastReceipt.items.map((item, idx) => (
+                  <div key={idx} className="flex justify-between items-start">
                     <div>
-                      <div className="font-bold">{it.brand_name}</div>
-                      <div className="text-[9px] text-slate-500">{it.batch_number} • {it.quantity} x ₱{it.unit_price.toFixed(2)}</div>
+                      <div className="font-bold">{item.brand_name}</div>
+                      <div className="text-[10px] text-slate-500">
+                        {item.quantity}x @ ₱{item.unit_price.toFixed(2)} (Lot: {item.batch_number})
+                      </div>
                     </div>
-                    <div className="font-bold">₱{it.subtotal.toFixed(2)}</div>
+                    <span className="font-bold">₱{item.subtotal.toFixed(2)}</span>
                   </div>
                 ))}
               </div>
 
-              <div className="flex justify-between items-center font-bold text-sm mb-4">
+              <div className="flex justify-between items-center text-sm font-black pt-1 mb-4">
                 <span>TOTAL:</span>
                 <span>₱{lastReceipt.total.toFixed(2)}</span>
               </div>
 
-              <div className="text-center text-[9px] text-slate-400 border-t border-slate-200 pt-2">
-                Thank you for choosing R.K.A Pharmacy!
-                <br />
-                Supplies managed via FEFO+ Inventory System
+              <div className="text-center text-[10px] text-slate-500 space-y-1">
+                <p>Thank you for choosing R.K.A Pharmacy!</p>
+                <p>FEFO-Tracked for Safety & Quality</p>
               </div>
             </div>
 
-            <div className="p-3 bg-slate-50 border-t border-slate-100 flex justify-end gap-2 no-print">
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex gap-2 no-print">
               <button
-                onClick={() => setLastReceipt(null)}
-                className="px-3 py-1.5 text-xs text-slate-600 hover:bg-slate-200 rounded"
+                type="button"
+                onClick={() => window.print()}
+                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs"
               >
-                Done
+                <Printer className="w-4 h-4" />
+                <span>Print Receipt</span>
               </button>
               <button
-                onClick={() => window.print()}
-                className="px-4 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded flex items-center gap-1.5 shadow-sm"
+                type="button"
+                onClick={() => setLastReceipt(null)}
+                className="px-4 py-2 border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold transition"
               >
-                <Printer className="w-3.5 h-3.5" />
-                Print Slip
+                Done
               </button>
             </div>
           </div>
@@ -842,24 +868,43 @@ export default function StockOutView({
       {/* Override Modal */}
       <OverrideModal
         isOpen={overrideModalOpen}
-        onClose={() => setOverrideModalOpen(false)}
+        onClose={() => {
+          setOverrideModalOpen(false);
+          setPendingOverrideItem(null);
+        }}
+        onConfirm={handleConfirmOverride}
         fefoBatch={pendingOverrideItem?.fefoBatch}
         selectedBatch={pendingOverrideItem?.selectedBatch}
-        medicineName={pendingOverrideItem?.medicine?.brand_name}
-        onConfirmOverride={handleConfirmOverride}
+        medicine={pendingOverrideItem?.medicine}
+        currentUser={currentUser}
       />
 
-      {/* Batch Expiry Status Confirmation Modal */}
+      {/* Near Expiry / Status Confirmation Modal */}
       <BatchStatusConfirmModal
         isOpen={statusConfirmModalOpen}
         onClose={() => {
           setStatusConfirmModalOpen(false);
           setPendingStatusConfirmItem(null);
         }}
-        batch={pendingStatusConfirmItem?.batch}
+        onConfirm={() => {
+          if (!pendingStatusConfirmItem) return;
+          addItemToCartInternal({
+            medicine: pendingStatusConfirmItem.medicine,
+            batch: pendingStatusConfirmItem.selectedBatch,
+            quantity: pendingStatusConfirmItem.quantity,
+            unitPrice: pendingStatusConfirmItem.unitPrice,
+            isOverride: false,
+            overrideReason: null,
+            statusConfirmed: true,
+            expiryStatus: pendingStatusConfirmItem.selectedBatch.expiry_tier
+          });
+          setStatusConfirmModalOpen(false);
+          setPendingStatusConfirmItem(null);
+        }}
+        batch={pendingStatusConfirmItem?.selectedBatch}
         medicine={pendingStatusConfirmItem?.medicine}
         quantity={pendingStatusConfirmItem?.quantity}
-        onConfirm={handleConfirmStatusRelease}
+        currentUser={currentUser}
       />
     </div>
   );

@@ -11,8 +11,9 @@ import {
   Sparkles
 } from 'lucide-react';
 import BarcodeModal from '../components/BarcodeModal';
+import HelperText from '../components/HelperText';
 
-export default function StockInView({ medicines, batches = [], onRefresh, onOpenAddMedicine, _uiMode = 'minimalist' }) {
+export default function StockInView({ medicines, batches = [], onRefresh, onOpenAddMedicine, uiMode = 'clean' }) {
   const [barcodeInput, setBarcodeInput] = useState('');
   const [selectedMedId, setSelectedMedId] = useState('');
   const [batchNumber, setBatchNumber] = useState('');
@@ -234,9 +235,9 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
             <ArrowDownToLine className="w-5 h-5 text-emerald-600" />
             <span>Stock-In Intake & Batch Receiving</span>
           </h2>
-          <p className="text-xs text-slate-500">
+          <HelperText uiMode={uiMode} className="text-xs text-slate-500">
             Scan barcode or select medicine to register incoming batches with expiration dates
-          </p>
+          </HelperText>
         </div>
 
         <button
@@ -269,7 +270,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
             type="submit"
             className="w-full sm:w-auto px-4 py-2 text-xs font-bold bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg transition"
           >
-            Find Item
+            {uiMode === 'clean' ? 'Find' : 'Find Item'}
           </button>
         </form>
       </div>
@@ -376,9 +377,35 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-              Expiration Date *
-            </label>
+            <div className="flex items-center justify-between mb-1">
+              <label className="block text-xs font-semibold uppercase text-slate-700">
+                Expiration Date *
+              </label>
+              <div className="flex items-center gap-1">
+                {[
+                  { label: '+6 Mos', months: 6 },
+                  { label: '+1 Yr', months: 12 },
+                  { label: '+2 Yrs', months: 24 },
+                  { label: '+3 Yrs', months: 36 }
+                ].map(pill => (
+                  <button
+                    key={pill.label}
+                    type="button"
+                    onClick={() => {
+                      const d = new Date();
+                      d.setMonth(d.getMonth() + pill.months);
+                      const yyyy = d.getFullYear();
+                      const mm = String(d.getMonth() + 1).padStart(2, '0');
+                      const dd = String(d.getDate()).padStart(2, '0');
+                      setExpDate(`${yyyy}-${mm}-${dd}`);
+                    }}
+                    className="px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 hover:bg-emerald-100 hover:text-emerald-800 hover:border-emerald-300 border border-slate-200 text-slate-600 rounded transition"
+                  >
+                    {pill.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <input
               type="date"
               required
@@ -414,9 +441,9 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
               <span className="text-xs font-bold uppercase text-slate-800 tracking-wider">
                 Batch Pricing & Quantity
               </span>
-              <span className="text-[11px] text-slate-500 block">
+              <HelperText uiMode={uiMode} as="span" className="text-[11px] text-slate-500 block">
                 Cost and selling price are mandatory and must be greater than ₱0.00 before saving.
-              </span>
+              </HelperText>
             </div>
 
             {selectedMed && (
@@ -425,14 +452,14 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
                 <select
                   value={pricingSource}
                   onChange={(e) => handlePricingSourceChange(e.target.value)}
-                  className="px-2.5 py-1 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white font-medium text-slate-800"
+                  className="px-2 py-1 text-xs border border-slate-300 rounded bg-white font-medium"
                 >
-                  <option value="custom">✍ Custom Price (Manual Entry)</option>
+                  <option value="custom">Manual Custom Pricing</option>
                   {(batches || [])
                     .filter(b => b.medicine_id === selectedMed.id)
-                    .map((b) => (
+                    .map(b => (
                       <option key={b.id} value={b.id}>
-                        Batch {b.batch_number} — Cost: ₱{Number(b.unit_cost || 0).toFixed(2)} | Sell: ₱{Number(b.selling_price || 0).toFixed(2)}
+                        Adopt Batch {b.batch_number} (Cost: ₱{b.unit_cost} / Price: ₱{b.selling_price})
                       </option>
                     ))}
                 </select>
@@ -440,7 +467,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
                 Quantity Received *
@@ -452,21 +479,13 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
                 placeholder="e.g. 100"
                 value={quantity}
                 onChange={(e) => setQuantity(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white font-bold text-slate-900"
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white font-bold"
               />
-              <span className="text-[10px] text-slate-400 mt-0.5 block">
-                Unit: {selectedMed ? selectedMed.unit_of_measure : 'Item'}
-              </span>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold uppercase text-slate-700 mb-1 flex items-center justify-between">
-                <span>Unit Cost (₱) *</span>
-                {pricingSource !== 'custom' && (
-                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-1.5 rounded">
-                    From Prev Batch
-                  </span>
-                )}
+              <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
+                Unit Cost (₱) *
               </label>
               <input
                 type="number"
@@ -475,137 +494,96 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
                 required
                 placeholder="e.g. 5.50"
                 value={unitCost}
-                onChange={(e) => {
-                  setUnitCost(e.target.value);
-                  setPricingSource('custom');
-                }}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white font-bold text-slate-900"
+                onChange={(e) => setUnitCost(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
               />
-              <span className="text-[10px] text-slate-500 mt-0.5 block">
-                Acquisition cost per {selectedMed ? selectedMed.unit_of_measure : 'unit'}
-              </span>
             </div>
 
             <div>
-              <label className="block text-xs font-semibold uppercase text-slate-700 mb-1 flex items-center justify-between">
-                <span>Selling Price (₱) *</span>
-                {pricingSource !== 'custom' && (
-                  <span className="text-[10px] text-emerald-700 font-bold bg-emerald-100 px-1.5 rounded">
-                    From Prev Batch
-                  </span>
-                )}
+              <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
+                Selling Price (₱) *
               </label>
               <input
                 type="number"
                 step="0.01"
                 min="0.01"
                 required
-                placeholder="e.g. 10.00"
+                placeholder="e.g. 8.00"
                 value={sellingPrice}
-                onChange={(e) => {
-                  setSellingPrice(e.target.value);
-                  setPricingSource('custom');
-                }}
-                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white font-bold text-slate-900"
+                onChange={(e) => setSellingPrice(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white font-bold text-emerald-800"
               />
-              <span className="text-[10px] text-slate-500 mt-0.5 block">
-                Dispense price per {selectedMed ? selectedMed.unit_of_measure : 'unit'}
-              </span>
             </div>
           </div>
-
-          {/* Real-time Profit Margin & Delivery Value Calculation */}
-          {parseFloat(unitCost) > 0 && parseFloat(sellingPrice) > 0 && (
-            <div className={`p-3 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 animate-in fade-in ${
-              parseFloat(sellingPrice) <= parseFloat(unitCost)
-                ? 'bg-rose-50 border-rose-200 text-rose-900'
-                : 'bg-emerald-50/80 border-emerald-200 text-emerald-900'
-            }`}>
-              <div className="flex items-center gap-2">
-                <span className="font-bold">Estimated Profit Markup:</span>
-                <span className={`font-extrabold text-sm ${
-                  parseFloat(sellingPrice) <= parseFloat(unitCost) ? 'text-rose-700' : 'text-emerald-700'
-                }`}>
-                  {parseFloat(sellingPrice) >= parseFloat(unitCost)
-                    ? `+₱${(parseFloat(sellingPrice) - parseFloat(unitCost)).toFixed(2)} (+${(((parseFloat(sellingPrice) - parseFloat(unitCost)) / parseFloat(unitCost)) * 100).toFixed(1)}%)`
-                    : `-₱${(parseFloat(unitCost) - parseFloat(sellingPrice)).toFixed(2)} (Negative Margin)`}
-                </span>
-                {parseFloat(sellingPrice) <= parseFloat(unitCost) && (
-                  <span className="text-[10px] font-bold bg-rose-200 text-rose-800 px-1.5 py-0.5 rounded">
-                    ⚠ Warning: Price ≤ Cost
-                  </span>
-                )}
-              </div>
-              {parseInt(quantity) > 0 && (
-                <span className="text-[11px] text-slate-600 font-medium">
-                  Total Delivery Retail: <strong>₱{(parseInt(quantity) * parseFloat(sellingPrice)).toFixed(2)}</strong>
-                </span>
-              )}
-            </div>
-          )}
         </div>
 
-        {/* Supplier & Receipt info */}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {/* Supplier & Invoice References */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-              Supplier Name
+              Supplier / Distributor
             </label>
             <input
               type="text"
-              placeholder="e.g. United Laboratories (Unilab)"
+              placeholder="e.g. United Laboratories, Zuellig Pharma"
               value={supplierName}
               onChange={(e) => setSupplierName(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
             />
           </div>
 
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-              Delivery Receipt / Invoice #
+              Delivery Invoice / DR Reference
             </label>
             <input
               type="text"
-              placeholder="e.g. DR-88912"
+              placeholder="e.g. INV-89241"
               value={referenceNo}
               onChange={(e) => setReferenceNo(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+              className="w-full px-3 py-2 text-sm font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
             />
           </div>
         </div>
 
+        {/* Receiving Notes */}
         <div>
           <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-            Receiving Notes
+            Receiving Notes / Quality Inspection
           </label>
-          <textarea
-            rows="2"
-            placeholder="Condition on arrival, delivery temperature, shelf location..."
+          <input
+            type="text"
+            placeholder="e.g. Box intact, seal unbroken, stored in air-conditioned dispensary cabinet"
             value={notes}
             onChange={(e) => setNotes(e.target.value)}
-            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+            className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
           />
         </div>
 
-        {/* Submit */}
-        <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
-          <button
-            type="submit"
-            disabled={loading || !selectedMedId}
-            className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition disabled:opacity-50"
-          >
-            <ArrowDownToLine className="w-4 h-4" />
-            {loading ? 'Recording...' : 'Record Batch Stock-In'}
-          </button>
-        </div>
+        {/* Submit Button */}
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl shadow-sm transition flex items-center justify-center gap-2"
+        >
+          <ArrowDownToLine className="w-5 h-5" />
+          <span>
+            {loading
+              ? 'Saving Intake Record...'
+              : uiMode === 'clean'
+              ? 'Receive Batch'
+              : 'Confirm & Save Batch Receiving'}
+          </span>
+        </button>
       </form>
 
       {/* Barcode Print Modal */}
-      <BarcodeModal
-        medicine={barcodeMedicine}
-        isOpen={Boolean(barcodeMedicine)}
-        onClose={() => setBarcodeMedicine(null)}
-      />
+      {barcodeMedicine && (
+        <BarcodeModal
+          medicine={barcodeMedicine}
+          onClose={() => setBarcodeMedicine(null)}
+        />
+      )}
     </div>
   );
 }

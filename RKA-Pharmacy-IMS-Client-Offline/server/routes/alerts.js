@@ -145,7 +145,7 @@ router.get('/', (req, res) => {
 // Acknowledge an alert manually (with immutable audit trail logging)
 router.post('/acknowledge', (req, res) => {
   try {
-    const { alert_key, alert_type, entity_id, operator_name = 'Lourdes Gincen L. Cesista' } = req.body;
+    const { alert_key, alert_type, entity_id, operator_name = 'Lourdes Gincen L. Cesista' } = req.body || {};
 
     if (!alert_key) {
       return res.status(400).json({ error: 'Alert key is required.' });

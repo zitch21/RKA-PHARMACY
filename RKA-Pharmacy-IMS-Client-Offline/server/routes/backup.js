@@ -82,7 +82,7 @@ router.get('/drives', (req, res) => {
 // Directly copy backup to detected removable USB drive
 router.post('/export-removable', (req, res) => {
   try {
-    const { drive_letter, operator_name = 'Lourdes Gincen L. Cesista' } = req.body;
+    const { drive_letter, operator_name = 'Lourdes Gincen L. Cesista' } = req.body || {};
 
     if (!drive_letter) {
       return res.status(400).json({ error: 'Drive letter is required.' });

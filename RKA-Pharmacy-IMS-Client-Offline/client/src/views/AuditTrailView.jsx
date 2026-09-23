@@ -9,7 +9,7 @@ import {
   UserCheck
 } from 'lucide-react';
 
-export default function AuditTrailView({ _uiMode = 'minimalist' }) {
+export default function AuditTrailView({ uiMode = 'clean' }) {
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');

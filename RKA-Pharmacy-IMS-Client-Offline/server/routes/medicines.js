@@ -143,7 +143,7 @@ router.post('/', (req, res) => {
       buffer_days,
       supplier_name,
       description
-    } = req.body;
+    } = req.body || {};
 
     if (!brand_name || !generic_name || !dosage_strength || !dosage_form) {
       return res.status(400).json({ error: 'Please provide brand name, generic name, dosage, and form.' });
@@ -230,7 +230,7 @@ router.put('/:id', (req, res) => {
       supplier_name,
       description,
       barcode
-    } = req.body;
+    } = req.body || {};
 
     // Validate barcode uniqueness across other medicines
     if (barcode && barcode.trim() !== '') {

@@ -18,17 +18,19 @@ This guide is designed specifically for you. It explains how this system works, 
 1. [The 30-Second Mental Model (How Everything Connects)](#1-the-30-second-mental-model-how-everything-connects)
 2. [Beginner's Day 1: Running the App in 5 Minutes](#2-beginners-day-1-running-the-app-in-5-minutes)
 3. [The Complete Codebase Tour (Where Does Everything Live?)](#3-the-complete-codebase-tour-where-does-everything-live)
-4. [Follow the Data: 4 Step-by-Step Request Traces](#4-follow-the-data-4-step-by-step-request-traces)
+4. [Follow the Data: 5 Step-by-Step Request Traces](#4-follow-the-data-5-step-by-step-request-traces)
    - [Trace 1: User Authentication & Workstation Lock](#trace-1-user-authentication--workstation-lock)
-   - [Trace 2: Barcode Scanning & FEFO Dispensing](#trace-2-barcode-scanning--fefo-dispensing)
-   - [Trace 3: FEFO+ Expiry Risk Calculation](#trace-3-fefo-expiry-risk-calculation)
+   - [Trace 2: Barcode Scanning & Multi-Batch FEFO Dispensing](#trace-2-barcode-scanning--multi-batch-fefo-dispensing)
+   - [Trace 3: Demand Forecasting & Expiry Risk Calculation](#trace-3-demand-forecasting--expiry-risk-calculation)
    - [Trace 4: End-of-Day USB Removable Storage Backup](#trace-4-end-of-day-usb-removable-storage-backup)
-5. [The 5 Core Architectural Concepts Explained Simply](#5-the-5-core-architectural-concepts-explained-simply)
-   - [Concept 1: The FEFO+ Mathematical Formulas](#concept-1-the-fefo-mathematical-formulas)
+   - [Trace 5: Purchase Orders Procurement & Receiving Lifecycle](#trace-5-purchase-orders-procurement--receiving-lifecycle)
+5. [The 6 Core Architectural Concepts Explained Simply](#5-the-6-core-architectural-concepts-explained-simply)
+   - [Concept 1: Demand Forecasting & FEFO+ Risk Margin Intelligence](#concept-1-demand-forecasting--fefo-risk-margin-intelligence)
    - [Concept 2: 5-Tier Expiration Countdown & Confirmation Gate](#concept-2-5-tier-expiration-countdown--confirmation-gate)
    - [Concept 3: Crash-Proof Offline SQLite in WAL Mode](#concept-3-crash-proof-offline-sqlite-in-wal-mode)
    - [Concept 4: Scrypt Cryptographic Password Security](#concept-4-scrypt-cryptographic-password-security)
    - [Concept 5: The Immutable Audit Trail Ledger](#concept-5-the-immutable-audit-trail-ledger)
+   - [Concept 6: Procurement State Machine & Multi-Batch Auto-Allocation](#concept-6-procurement-state-machine--multi-batch-auto-allocation)
 6. [Beginner Developer Playbook: "How Do I Make Changes?"](#6-beginner-developer-playbook-how-do-i-make-changes)
    - [Recipe 1: Adding a New Backend REST Endpoint](#recipe-1-adding-a-new-backend-rest-endpoint)
    - [Recipe 2: Modifying the Database Schema](#recipe-2-modifying-the-database-schema)
@@ -108,7 +110,7 @@ When the app opens, you will be greeted by the workstation lock screen. Use the 
 * **Operator:** Lourdes Gincen L. Cesista
 
 ### Running the Automated Test Suite
-To verify that all 38 thesis manuscript specifications are functioning:
+To verify that all 42 thesis and clinic specifications are functioning:
 ```powershell
 cd RKA-Pharmacy-IMS-Client-Offline
 .\runtime\node.exe verify_all_specs.js
@@ -116,8 +118,13 @@ cd RKA-Pharmacy-IMS-Client-Offline
 You should see:
 ```text
 ================================================================
- VERIFICATION RESULTS: 38 PASSED, 0 FAILED
+ VERIFICATION RESULTS: 42 PASSED, 0 FAILED
 ================================================================
+```
+
+To run the comprehensive stress and edge-case test suite:
+```powershell
+.\runtime\node.exe stress_test_error_handling.js
 ```
 
 ---
@@ -148,11 +155,12 @@ RKA-Pharmacy-IMS-Client-Offline/
 │       ├── alerts.js           # Stock & expiry alerts with manual acknowledgment
 │       ├── batches.js          # Batch creation, quantity updates, barcode tag generation
 │       ├── medicines.js        # Medicine catalog, pricing, category management
-│       ├── transactions.js     # Dispensing (POS), FEFO enforcement, override logs
-│       ├── fefoPlus.js         # Consumption velocity, Days of Supply, Expiry Risk Margin
+│       ├── purchaseOrders.js   # Purchase order procurement, receiving, & cancellation
+│       ├── transactions.js     # Dispensing (POS), multi-batch FEFO split, override logs
+│       ├── fefoPlus.js         # Daily demand moving avg, Days to Depletion, Expiry Risk Margin
 │       ├── audit.js            # Immutable audit trail ledger & CSV export
 │       ├── simulation.js       # FIFO vs FEFO vs FEFO+ comparative simulation
-│       ├── settings.js         # Countdown tier thresholds and clinic profile
+│       ├── settings.js         # Baseline window (N), tier thresholds, clinic profile
 │       └── evaluations.js      # System Usability Scale (SUS) survey engine
 ├── client/
 │   ├── src/                    # React Source Code (Edit your UI here!)
@@ -166,17 +174,19 @@ RKA-Pharmacy-IMS-Client-Offline/
 │   │   │   ├── HelpGuideModal.jsx          # Dual-version beginner & advanced operating guide
 │   │   │   └── ExitConfirmModal.jsx        # Accidental exit prevention prompt
 │   │   ├── views/              # Full-page screens corresponding to navigation tabs
-│   │   │   ├── DashboardView.jsx   # Metrics, priority alert banner, countdown breakdown
-│   │   │   ├── InventoryView.jsx   # Medicine catalog, batch table, printable barcode labels
-│   │   │   ├── StockInView.jsx     # Intake workflow, cost inheritance, supplier tracking
-│   │   │   ├── StockOutView.jsx    # Dispensing POS, barcode scanner focus, cart, receipt
-│   │   │   ├── FefoPlusView.jsx    # Consumption velocity, ERM radar, 1-click reorder sync
-│   │   │   ├── AuditTrailView.jsx  # Immutable system logs with search and CSV export
-│   │   │   ├── SimulationView.jsx  # Historical replay comparing FIFO vs FEFO vs FEFO+
-│   │   │   └── SettingsView.jsx    # Threshold configuration, USB backups, password change
+│   │   │   ├── DashboardView.jsx       # Metrics, priority alert banner, countdown breakdown
+│   │   │   ├── InventoryView.jsx       # Medicine catalog, batch table, printable barcode labels
+│   │   │   ├── StockInView.jsx         # Intake workflow, cost inheritance, supplier tracking
+│   │   │   ├── PurchaseOrdersView.jsx  # Purchase orders lifecycle & printable slip vouchers
+│   │   │   ├── StockOutView.jsx        # Dispensing POS, multi-batch FEFO, barcode focus, cart
+│   │   │   ├── FefoPlusView.jsx        # Daily demand, ERM radar, 1-click reorder sync
+│   │   │   ├── AuditTrailView.jsx      # Immutable system logs with search and CSV export
+│   │   │   ├── SimulationView.jsx      # Historical replay comparing FIFO vs FEFO vs FEFO+
+│   │   │   └── SettingsView.jsx        # Configurable window (N), tiers, USB backup, security
 │   │   └── App.jsx             # Workstation shell, state orchestrator, auth guard
 │   └── dist/                   # Compiled HTML/CSS/JS served to the browser
-├── verify_all_specs.js         # Automated test suite validating all thesis requirements
+├── verify_all_specs.js         # Automated test suite validating all thesis requirements (42 tests)
+├── stress_test_error_handling.js # Concurrency, boundary & robustness test suite
 ├── Setup-Desktop-Shortcut.bat  # 1-click shortcut installer
 ├── start-app.bat               # Fallback launcher
 └── RKA-Pharmacy-IMS.exe        # Native Windows launcher
@@ -184,7 +194,7 @@ RKA-Pharmacy-IMS-Client-Offline/
 
 ---
 
-## 4. Follow the Data: 4 Step-by-Step Request Traces
+## 4. Follow the Data: 5 Step-by-Step Request Traces
 
 To truly understand how this system works, follow a piece of data from the user's action all the way down to the database and back.
 
@@ -219,7 +229,7 @@ What happens when the operator logs into the workstation?
 
 ---
 
-### Trace 2: Barcode Scanning & FEFO Dispensing
+### Trace 2: Barcode Scanning & Multi-Batch FEFO Dispensing
 What happens when the pharmacist scans a barcode to dispense medicine?
 
 ```
@@ -235,26 +245,29 @@ What happens when the pharmacist scans a barcode to dispense medicine?
 3. Frontend queries active batches for this medicine, sorted by expiration_date ASC.
        │
        ▼
-4. FEFO Check: Is the earliest expiring batch selected?
-   • If YES, but tier is Warning (31–90d), Critical (1–30d), or At-Risk:
+4. FEFO Allocation & Multi-Batch Auto-Splitting:
+   • If requested quantity fits in the earliest expiring batch: that batch is allocated.
+   • If requested quantity exceeds the earliest batch: the system automatically splits the
+     order across sequential FEFO batches until the entire quantity is fulfilled.
+   • If any allocated batch is in Warning (31–90d), Critical (1–30d), or At-Risk:
      BatchStatusConfirmModal opens -> Operator reviews countdown and clicks "Confirm".
-   • If NO (User manually picked a later batch):
+   • If user manually changes or overrides batch order:
      OverrideModal opens -> Operator must enter a mandatory justification note.
    • If EXPIRED (<= 0 days):
      Action is HARD-BLOCKED. An error banner displays: "Expired batch cannot be released!"
        │
        ▼
-5. Item enters Cart -> Pharmacist clicks "Complete Dispense".
+5. Items enter Cart -> Pharmacist clicks "Complete Dispense".
        │
        ▼
 6. POST /api/transactions/stock-out is called with:
-   { items: [{ batch_id: 2, quantity: 1, status_confirmed: true }] }
+   { items: [{ batch_id: 2, quantity: 10, status_confirmed: true }, { batch_id: 3, quantity: 5, status_confirmed: true }] }
        │
        ▼
 7. server/routes/transactions.js opens an atomic SQLite Transaction:
-   • Deducts quantity from batches table (updates status to 'consumed' if quantity reaches 0).
-   • Inserts record into transactions table with locked batch selling price.
-   • Inserts STOCK_OUT or STOCK_OUT_OVERRIDE record into audit_logs table.
+   • Deducts quantity from each allocated batch (sets status to 'consumed' if quantity reaches 0).
+   • Inserts records into transactions table with locked counter selling prices.
+   • Inserts STOCK_OUT or STOCK_OUT_OVERRIDE records into audit_logs table.
        │
        ▼
 8. Server returns 201 Created with printable receipt payload. Cart clears and focuses input for next scan.
@@ -262,28 +275,37 @@ What happens when the pharmacist scans a barcode to dispense medicine?
 
 ---
 
-### Trace 3: FEFO+ Expiry Risk Calculation
-How does the system figure out that a batch is "At-Risk" of expiring on the shelf?
+### Trace 3: Demand Forecasting & Expiry Risk Calculation
+How does the system calculate daily demand and identify batches at risk of expiring on the shelf?
 
 ```
 1. Frontend requests GET /api/fefo-plus/analysis.
        │
        ▼
-2. server/routes/fefoPlus.js queries transactions over past 30 days:
-   Average Daily Consumption (ADC) = Total Units Sold / 30 Days
+2. server/routes/fefoPlus.js reads the user-configured baseline window:
+   N = config.forecasting_window_days (10, 20, or 30 operational days; default: 30).
        │
        ▼
-3. For each active batch:
-   Days to Expiry (DTE) = Expiration Date - Today
-   Days of Supply (DOS) = Current Batch Quantity / ADC
+3. Cold-Start Rule Check:
+   Elapsed transaction history (t) is measured across distinct operational dates.
+   • If t < N: The system identifies a Cold-Start condition. Automated algorithmic reorder
+     generation is safely suppressed, and an informational banner alerts the operator:
+     "Cold-Start Baseline Gathering: Falling back to clinic manual thresholds."
+   • If t >= N: Demand forecasting activates fully:
+     Daily Demand = (Sum of confirmed stock-out units over N days) / N
        │
        ▼
-4. Expiry Risk Margin (ERM) = Days to Expiry - Days of Supply - Buffer Days
+4. For each active batch:
+   Days to Expiry (T_expiry) = Expiration Date - Today
+   Days to Depletion (T_consume) = Current Batch Quantity / Daily Demand
+   Expiry Risk Margin (ΔT) = T_expiry - T_consume - Buffer Days
+   Predicted Expired Waste (Q_waste) = max(0, Batch Quantity - (Daily Demand * T_expiry))
        │
        ▼
-5. If ERM < 0:
-   The batch is flagged as "At-Risk" (will expire before normal clinic demand can consume it).
-   The frontend renders an orange/red alert badge on Dashboard and FEFO+ tab.
+5. Risk Classification:
+   • If ΔT < 0: Batch is flagged as "At-Risk" (will expire before clinic demand can deplete it).
+   • Dynamic Reorder Point: ROP = (Daily Demand * Lead Time) + Safety Stock.
+   • If Current Stock <= ROP: Added to Suggested Reorder list with 1-click PO sync!
 ```
 
 ---
@@ -319,25 +341,87 @@ How does the system back up the clinic database to a physical USB flash drive?
 
 ---
 
-## 5. The 5 Core Architectural Concepts Explained Simply
+### Trace 5: Purchase Orders Procurement & Receiving Lifecycle
+How does the system manage reordering supplies from pharmaceutical distributors?
 
-### Concept 1: The FEFO+ Mathematical Formulas
+```
+[Operator clicks "Sync to PO" in FEFO+ Reorder Planner or "New Purchase Order" in PO Tab]
+       │
+       ▼
+1. POST /api/purchase-orders/draft is called with supplier info and line items:
+   { supplier_name: "Metro Drug Inc.", items: [{ medicine_id: 1, quantity_ordered: 100, unit_cost: 4.50 }] }
+   • Creates record in purchase_orders table with status 'DRAFT' and generated PO number (e.g. PO-20260923-0001).
+   • Inserts line items into purchase_order_items table.
+   • Logs PURCHASE_ORDER_CREATE in audit_logs.
+       │
+       ▼
+2. Review & Placement:
+   • Operator reviews quantities, distributor info, and total estimated cost in PurchaseOrdersView.jsx.
+   • Clicks "Place Order" -> POST /api/purchase-orders/:id/place updates status to 'PLACED' and sets placed_at timestamp.
+       │
+       ▼
+3. Printable Voucher Generation:
+   • Operator clicks "Print PO Slip" -> Opens voucher modal isolated with CSS .printable-area.
+   • Browser triggers window.print(), generating an official clinic procurement order slip complete
+     with itemized costs, supplier details, delivery instructions, and authorized signature lines.
+       │
+       ▼
+4. Delivery Receiving & Batch Registration:
+   • Distributor delivers medicines to clinic counter. Operator clicks "Receive Delivery".
+   • Operator enters invoice number, actual delivered quantities, batch numbers, and expiry dates.
+   • POST /api/purchase-orders/:id/receive runs inside an atomic SQLite transaction:
+     - Updates purchase_order_items with received quantities.
+     - Automatically creates and activates new inventory batches in batches table.
+     - Updates purchase_orders status to 'RECEIVED' and sets received_at timestamp.
+     - Logs PURCHASE_ORDER_RECEIVE in audit_logs.
+   • New stock is immediately available for barcode dispensing under FEFO rules!
+       │
+       ▼
+5. Cancellation (If distributor has stockouts):
+   • If an order cannot be fulfilled, operator clicks "Cancel Order" with an audit reason.
+   • POST /api/purchase-orders/:id/cancel sets status to 'CANCELLED' (strictly forbidden once received).
+```
+
+---
+
+## 5. The 6 Core Architectural Concepts Explained Simply
+
+### Concept 1: Demand Forecasting & FEFO+ Risk Margin Intelligence
 In traditional FIFO (First-In, First-Out), medicines are sold based on when the pharmacy *bought* them, regardless of expiry dates.  
-In standard FEFO (First-Expiry, First-Out), medicines are sold by expiration date, but the pharmacy has no idea if stock will actually finish before expiring.  
-**FEFO+ solves this by combining expiration dates with sales velocity:**
+In standard FEFO (First-Expiry, First-Out), medicines are sold strictly by expiration date, but the pharmacy has no early visibility into whether inventory velocity will exhaust a batch before its shelf life expires.  
+**FEFO+ combines actual consumption velocity with remaining shelf life and user-configurable forecasting parameters:**
 
-$$\text{Days to Expiry (DTE)} = \text{Expiration Date} - \text{Current Date}$$
+#### 1. Configurable Demand Observation Window ($N$)
+Unlike rigid systems with hardcoded historical windows, the operator can configure the baseline observation window ($N$) to **10, 20, or 30 operational days** (default: 30 days) in **Settings**. The moving average daily demand ($\hat{D}_i$) is computed dynamically:
 
-$$\text{Average Daily Consumption (ADC)} = \frac{\sum \text{Stock-Out Quantity Over 30 Days}}{30}$$
+$$\hat{D}_i = \frac{1}{N} \sum_{t=1}^{N} S_{i,t}$$
 
-$$\text{Days of Supply (DOS)} = \frac{\text{Current Batch Quantity}}{\text{ADC}}$$
+Where $S_{i,t}$ represents confirmed stock-out units on operational day $t$.
 
-$$\text{Expiry Risk Margin (ERM)} = \text{DTE} - \text{DOS} - \text{Safety Buffer Days}$$
+#### 2. Cold-Start Suppression Rule ($t < N$)
+When a new system is deployed or insufficient transaction history is available ($t < N$ distinct operational days), computing an automated moving average could yield premature or distorted replenishment orders. The system enforces an automated **Cold-Start Rule**:
+- Algorithmic ROP generation is safely suppressed.
+- An informative notification banner is displayed: *"Cold-Start Baseline Gathering: Falling back to clinic manual thresholds."*
+- Dispensing continues safely using standard FEFO allocation.
+- Reorder planning gracefully falls back to the clinic's manually configured minimum stock levels ($R_i$).
 
-* **If ERM $\ge 0$:** The batch is safe. It will be fully consumed before expiring.
-* **If ERM $< 0$:** The batch is **At-Risk**. The clinic will not sell out in time, creating financial waste unless proactive discounts or doctor advisories are issued.
+#### 3. Expiry Risk Margin ($\Delta T$) & Days to Depletion
+For each active batch $b$ of medicine $i$:
 
-$$\text{Reorder Point (ROP)} = (\text{ADC} \times \text{Supplier Lead Time}) + (\text{ADC} \times \text{Safety Buffer Days})$$
+$$\text{Days to Expiry: } T_{\text{expiry}} = \text{Expiration Date} - \text{Current Date}$$
+
+$$\text{Days to Depletion: } T_{\text{consume}} = \frac{Q_{i,b}}{\hat{D}_i}$$
+
+$$\text{Expiry Risk Margin: } \Delta T_{i,b} = T_{\text{expiry}} - T_{\text{consume}} - \text{Safety Buffer Days}$$
+
+* **If $\Delta T \ge 0$:** The batch is safe. Normal clinic demand will consume all units prior to expiration.
+* **If $\Delta T < 0$:** The batch is **At-Risk**. Current sales velocity is too slow to exhaust the batch before expiry.
+* **Predicted Expired Waste Volume ($Q_{\text{waste}}$):**
+  $$Q_{\text{waste}} = \max\left(0,\, Q_{i,b} - (\hat{D}_i \times T_{\text{expiry}})\right)$$
+
+#### 4. Dynamic Suggested Reorder Point (ROP)
+$$\text{ROP}_i = (\hat{D}_i \times \text{Supplier Lead Time}) + (\hat{D}_i \times \text{Safety Buffer Days})$$
+If current total stock $\le \text{ROP}_i$, the item automatically appears in the Suggested Reorders list with 1-click Purchase Order synchronization.
 
 ---
 
@@ -398,10 +482,46 @@ Clinic pharmacies must maintain strict records for regulatory compliance (FDA / 
 * `STOCK_OUT_OVERRIDE` (Dispensing a non-FEFO batch with mandatory justification)
 * `ALERT_ACKNOWLEDGED` (Operator manual alert acknowledgment)
 * `PRICE_ADJUSTMENT` (Changing batch cost or selling price)
+* `PURCHASE_ORDER_CREATE` / `PURCHASE_ORDER_PLACE` / `PURCHASE_ORDER_RECEIVE` / `PURCHASE_ORDER_CANCEL`
+* `SETTINGS_UPDATE` (Modifying observation window N, safety buffer, or countdown tiers)
 * `DATABASE_BACKUP_EXPORT` (USB backup exports)
 
 > [!IMPORTANT]
 > The audit trail is **append-only**. There is no API route or UI button to edit or delete an audit log. Records can be filtered and exported to CSV anytime.
+
+---
+
+### Concept 6: Procurement State Machine & Multi-Batch Auto-Allocation
+
+#### The Purchase Order State Machine
+Clinic reordering follows a strict, traceable 4-state lifecycle:
+
+```
+[ SUGGESTED REORDERS ] 
+         │ 1-Click Sync
+         ▼
+     [ DRAFT ] ───────────► [ CANCELLED ] (Pre-delivery cancellation with audit note)
+         │
+         │ Place Order
+         ▼
+     [ PLACED ] ──────────► [ CANCELLED ]
+         │
+         │ Receive Delivery (Records invoice #, batch #, exp date, cost)
+         ▼
+    [ RECEIVED ] ──► (Generates active inventory batches; immutable)
+```
+
+1. **`DRAFT`**: Items and quantities can be added, modified, or removed freely.
+2. **`PLACED`**: The order has been transmitted to the supplier. A formal printable PO voucher can be printed with authorized clinic signature lines.
+3. **`RECEIVED`**: The goods have arrived. In a single atomic database transaction, received quantities are verified, new active batches are inserted into the `batches` table, and the PO is sealed.
+4. **`CANCELLED`**: Cancelled orders require a documented reason and cannot be edited or revived.
+
+#### Multi-Batch FEFO Auto-Allocation
+During dispensing (POS), when a customer requests a quantity greater than what is available in the earliest-expiring batch:
+* The system does **not** reject the sale or require manual calculations.
+* It automatically splits the line item across consecutive active batches sorted by `expiration_date ASC`.
+* Each allocated sub-batch enforces its respective countdown tier gate (Warning/Critical confirmation).
+* Prices are locked per batch to prevent counter discrepancies.
 
 ---
 
@@ -467,19 +587,13 @@ Suppose you want to edit the Dashboard to add a custom greeting:
 Whenever you edit anything inside `client/src/`, you must rebuild the bundle with Vite:
 
 ```powershell
-# 1. Navigate to the client source folder
-cd C:\Users\emman\.gemini\antigravity\scratch\rka-pharmacy-ims\client
+# 1. Navigate to the client directory
+cd "c:\Users\emman\OneDrive\Desktop\RKA PHARMACY\RKA-Pharmacy-IMS-Client-Offline\client"
 
 # 2. Run the Vite build command
 npm.cmd run build
-
-# 3. Copy the compiled dist folder to the offline client directory
-Copy-Item -Path "dist\*" -Destination "c:\Users\emman\OneDrive\Desktop\RKA PHARMACY\RKA-Pharmacy-IMS-Client-Offline\client\dist" -Recurse -Force
-
-# 4. Also keep client/src in sync
-Copy-Item -Path "src\*" -Destination "c:\Users\emman\OneDrive\Desktop\RKA PHARMACY\RKA-Pharmacy-IMS-Client-Offline\client\src" -Recurse -Force
 ```
-Refresh your browser (`Ctrl + F5` to clear browser cache), and your changes will appear immediately!
+The compiled files are automatically written into `client/dist/`, which the Express server serves immediately. Refresh your browser (`Ctrl + F5` to clear browser cache), and your changes will appear!
 
 ---
 
@@ -535,7 +649,7 @@ You do **not** need a physical scanner to develop or test:
 
 ### Pitfall 1: "I edited a React file, but my browser shows old code!"
 * **Cause:** The Express backend serves static assets from `client/dist/`, NOT from `client/src/`.
-* **Fix:** Rebuild the frontend bundle using `npm.cmd run build` inside the client folder and copy the `dist/` output over (see Recipe 4).
+* **Fix:** Rebuild the frontend bundle using `npm.cmd run build` inside `client/` (see Recipe 4).
 
 ### Pitfall 2: "Port 5000 is already in use (`EADDRINUSE`)!"
 * **Cause:** A previous instance of the Node server is still running in the background.
@@ -563,11 +677,15 @@ You do **not** need a physical scanner to develop or test:
 | :--- | :--- | :--- |
 | **FEFO** | First-Expiry, First-Out | Inventory strategy where medicines with the nearest expiration date are sold first to minimize spoilage. |
 | **FIFO** | First-In, First-Out | Older inventory strategy where items received first are sold first, regardless of expiration date. |
-| **FEFO+** | Enhanced FEFO | The custom algorithm designed in this thesis that pairs FEFO with sales velocity and Expiry Risk Margin. |
-| **ADC / ADQS** | Average Daily Consumption | The average number of units of a medicine sold per day over the last 30 days. |
-| **DTE** | Days to Expiry | Number of days remaining between today and a batch's expiration date. |
-| **DOS** | Days of Supply | How many days the current stock will last based on the current sales velocity (`Stock / ADC`). |
-| **ERM** | Expiry Risk Margin | A buffer metric (`DTE - DOS - Buffer`). If negative, the batch is at risk of expiring on the shelf. |
+| **FEFO+** | Enhanced FEFO | The custom algorithm combining FEFO with moving average daily demand and Expiry Risk Margin. |
+| **PO** | Purchase Order | Commercial procurement document issued to a supplier specifying medicine items, quantities, and costs. |
+| **$N$** | Observation Window | Configurable operational baseline window (10, 20, or 30 days) used to compute average daily demand. |
+| **Cold-Start** | Cold-Start Safeguard | Condition where transaction history $t < N$ days; automated reorders are suppressed in favor of manual thresholds. |
+| **ADC / Daily Demand** | Average Daily Demand | The moving average number of units of a medicine sold per operational day over the selected $N$-day window. |
+| **DTE / $T_{\text{expiry}}$** | Days to Expiry | Number of days remaining between today and a batch's expiration date. |
+| **DTC / $T_{\text{consume}}$** | Days to Depletion | How many days the current batch stock will last based on daily demand (`Batch Quantity / Daily Demand`). |
+| **ERM / $\Delta T$** | Expiry Risk Margin | Buffer metric ($T_{\text{expiry}} - T_{\text{consume}} - \text{Buffer}$). If negative, batch is at risk of expiring before depletion. |
+| **$Q_{\text{waste}}$** | Predicted Expired Waste | Estimated unit volume that will spoil if consumption velocity does not increase before expiration date. |
 | **ROP** | Reorder Point | The inventory level that automatically triggers placing a replenishment order with the supplier. |
 | **Lead Time** | Supplier Lead Time | The number of days it takes for a pharmaceutical distributor to deliver medicines after an order is placed. |
 | **Buffer Days** | Safety Buffer | Extra cushion days configured to absorb supplier delivery delays or sudden demand spikes. |
@@ -576,6 +694,6 @@ You do **not** need a physical scanner to develop or test:
 
 ---
 
-*Document Version:* 3.0.0 (Comprehensive Beginner Edition)  
+*Document Version:* 3.1.0 (Comprehensive Beginner Edition)  
 *Last Updated:* September 2026  
 *Target System:* R.K.A Pharmacy IMS (San Antonio, Agoo, La Union)

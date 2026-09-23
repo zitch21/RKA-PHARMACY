@@ -9,10 +9,12 @@ import FefoPlusView from './views/FefoPlusView';
 import AuditTrailView from './views/AuditTrailView';
 import SimulationView from './views/SimulationView';
 import SettingsView from './views/SettingsView';
+import PurchaseOrdersView from './views/PurchaseOrdersView';
 import HelpGuideModal from './components/HelpGuideModal';
 import ExitConfirmModal from './components/ExitConfirmModal';
 import LoginModal from './components/LoginModal';
 import ErrorBoundary from './components/ErrorBoundary';
+import { LanguageProvider } from './context/LanguageContext';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -24,6 +26,7 @@ export default function App() {
   const [isHelpOpen, setIsHelpOpen] = useState(false);
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
   const [loading, setLoading] = useState(true);
+  const [inventoryFilter, setInventoryFilter] = useState('All');
 
   // Authenticated Operator Session (Scrypt Security)
   const [currentUser, setCurrentUser] = useState(() => {
@@ -76,14 +79,30 @@ export default function App() {
     }
   };
 
-  // UI Mode: 'minimalist' (Clean) vs 'maximalist' (Full Clinical Telemetry)
+  // Navigation with optional parameters (e.g. { filter: 'low_stock' })
+  const handleNavigate = (tab, params) => {
+    if (params?.filter) {
+      setInventoryFilter(params.filter);
+    }
+    setActiveTab(tab);
+  };
+
+  // UI Mode: 'clean' (Clean & Simple Counter Mode) vs 'maximalist' (Full Advanced Mode)
+  // Persisted in localStorage under 'rka_ui_mode'
   const [uiMode, setUiMode] = useState(() => {
-    return localStorage.getItem('rka_ui_mode') || 'minimalist';
+    const saved = localStorage.getItem('rka_ui_mode');
+    if (saved === 'maximalist') return 'maximalist';
+    return 'clean';
   });
 
   const handleToggleUiMode = (specificMode) => {
     setUiMode(prev => {
-      const nextMode = specificMode || (prev === 'minimalist' ? 'maximalist' : 'minimalist');
+      let nextMode;
+      if (specificMode) {
+        nextMode = specificMode === 'maximalist' ? 'maximalist' : 'clean';
+      } else {
+        nextMode = prev === 'clean' ? 'maximalist' : 'clean';
+      }
       localStorage.setItem('rka_ui_mode', nextMode);
       return nextMode;
     });
@@ -147,155 +166,148 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800 antialiased selection:bg-emerald-500 selection:text-white">
-      <Navbar
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        alerts={alerts}
-        onQuickBarcodeScan={handleQuickBarcodeScan}
-        uiMode={uiMode}
-        onToggleUiMode={handleToggleUiMode}
-        onOpenHelp={() => setIsHelpOpen(true)}
-        onOpenExit={() => setIsExitModalOpen(true)}
-        isSystemLoaded={!loading}
-        currentUser={currentUser}
-        onLogout={handleLogout}
-        onAcknowledgeAlert={handleAcknowledgeAlert}
-      />
+    <LanguageProvider>
+      <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800 antialiased selection:bg-emerald-500 selection:text-white">
+        <Navbar
+          activeTab={activeTab}
+          setActiveTab={setActiveTab}
+          alerts={alerts}
+          onQuickBarcodeScan={handleQuickBarcodeScan}
+          uiMode={uiMode}
+          onToggleUiMode={handleToggleUiMode}
+          onOpenHelp={() => setIsHelpOpen(true)}
+          onOpenExit={() => setIsExitModalOpen(true)}
+          isSystemLoaded={!loading}
+          currentUser={currentUser}
+          onLogout={handleLogout}
+          onAcknowledgeAlert={handleAcknowledgeAlert}
+        />
 
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
-        {loading ? (
-          <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-            <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-3"></div>
-            <span className="text-xs font-semibold uppercase tracking-wider">Loading R.K.A Pharmacy Records...</span>
-          </div>
-        ) : (
-          <ErrorBoundary key={activeTab} onNavigateHome={() => setActiveTab('dashboard')}>
-            {activeTab === 'dashboard' && (
-              <DashboardView
-                medicines={medicines}
-                batches={batches}
-                alerts={alerts}
-                fefoData={fefoData}
-                onNavigate={setActiveTab}
-                onRefresh={loadData}
-                onOpenAddMedicine={() => setIsAddMedOpen(true)}
-                uiMode={uiMode}
-                onToggleUiMode={handleToggleUiMode}
-                onOpenHelp={() => setIsHelpOpen(true)}
-                onAcknowledgeAlert={handleAcknowledgeAlert}
-              />
-            )}
+        <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-24 text-slate-400">
+              <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+              <span className="text-xs font-semibold uppercase tracking-wider">Loading R.K.A Pharmacy Records...</span>
+            </div>
+          ) : (
+            <ErrorBoundary key={activeTab} onNavigateHome={() => setActiveTab('dashboard')}>
+              {activeTab === 'dashboard' && (
+                <DashboardView
+                  medicines={medicines}
+                  batches={batches}
+                  alerts={alerts}
+                  fefoData={fefoData}
+                  onNavigate={handleNavigate}
+                  onRefresh={loadData}
+                  onOpenAddMedicine={() => setIsAddMedOpen(true)}
+                  uiMode={uiMode}
+                  onToggleUiMode={handleToggleUiMode}
+                  onOpenHelp={() => setIsHelpOpen(true)}
+                  onAcknowledgeAlert={handleAcknowledgeAlert}
+                />
+              )}
 
-            {activeTab === 'inventory' && (
-              <InventoryView
-                medicines={medicines}
-                batches={batches}
-                onRefresh={loadData}
-                onOpenAddMedicine={() => setIsAddMedOpen(true)}
-                onNavigate={setActiveTab}
-                uiMode={uiMode}
-              />
-            )}
+              {activeTab === 'inventory' && (
+                <InventoryView
+                  medicines={medicines}
+                  batches={batches}
+                  onRefresh={loadData}
+                  onOpenAddMedicine={() => setIsAddMedOpen(true)}
+                  onNavigate={handleNavigate}
+                  uiMode={uiMode}
+                  initialFilter={inventoryFilter}
+                />
+              )}
 
-            {activeTab === 'stock-in' && (
-              <StockInView
-                medicines={medicines}
-                batches={batches}
-                onRefresh={loadData}
-                onOpenAddMedicine={() => setIsAddMedOpen(true)}
-                uiMode={uiMode}
-              />
-            )}
+              {activeTab === 'stock-in' && (
+                <StockInView
+                  medicines={medicines}
+                  batches={batches}
+                  onRefresh={loadData}
+                  onOpenAddMedicine={() => setIsAddMedOpen(true)}
+                  uiMode={uiMode}
+                />
+              )}
 
-            {activeTab === 'stock-out' && (
-              <StockOutView
-                medicines={medicines}
-                batches={batches}
-                onRefresh={loadData}
-                onNavigate={setActiveTab}
-                uiMode={uiMode}
-                onOpenHelp={() => setIsHelpOpen(true)}
-                currentUser={currentUser}
-              />
-            )}
+              {activeTab === 'purchase-orders' && (
+                <PurchaseOrdersView
+                  medicines={medicines}
+                  currentUser={currentUser}
+                  onRefreshInventory={loadData}
+                  uiMode={uiMode}
+                />
+              )}
 
-            {activeTab === 'fefo-plus' && (
-              <FefoPlusView
-                fefoData={fefoData}
-                onRefresh={loadData}
-                onNavigate={setActiveTab}
-                uiMode={uiMode}
-              />
-            )}
+              {activeTab === 'stock-out' && (
+                <StockOutView
+                  medicines={medicines}
+                  batches={batches}
+                  onRefresh={loadData}
+                  onOpenAddMedicine={() => setIsAddMedOpen(true)}
+                  onOpenHelp={() => setIsHelpOpen(true)}
+                  uiMode={uiMode}
+                  currentUser={currentUser}
+                />
+              )}
 
-            {activeTab === 'audit' && (
-              <AuditTrailView uiMode={uiMode} />
-            )}
+              {activeTab === 'fefo-plus' && (
+                <FefoPlusView
+                  fefoData={fefoData}
+                  onRefresh={loadData}
+                  onNavigate={handleNavigate}
+                  uiMode={uiMode}
+                />
+              )}
 
-            {activeTab === 'simulation' && (
-              <SimulationView uiMode={uiMode} />
-            )}
+              {activeTab === 'audit' && (
+                <AuditTrailView uiMode={uiMode} />
+              )}
 
-            {activeTab === 'settings' && (
-              <SettingsView
-                onRefresh={loadData}
-                uiMode={uiMode}
-                onToggleUiMode={handleToggleUiMode}
-                onOpenHelp={() => setIsHelpOpen(true)}
-                currentUser={currentUser}
-              />
-            )}
-          </ErrorBoundary>
+              {activeTab === 'simulation' && (
+                <SimulationView uiMode={uiMode} />
+              )}
+
+              {activeTab === 'settings' && (
+                <SettingsView
+                  onRefresh={loadData}
+                  uiMode={uiMode}
+                  onToggleUiMode={handleToggleUiMode}
+                  onOpenHelp={() => setIsHelpOpen(true)}
+                  currentUser={currentUser}
+                />
+              )}
+            </ErrorBoundary>
+          )}
+        </main>
+
+        {/* Global Modals */}
+        <AddMedicineModal
+          isOpen={isAddMedOpen}
+          onClose={() => setIsAddMedOpen(false)}
+          onMedicineAdded={loadData}
+        />
+
+        {/* Emergency Quick Help Guide Modal */}
+        <HelpGuideModal
+          isOpen={isHelpOpen}
+          onClose={() => setIsHelpOpen(false)}
+          onNavigate={(tab) => {
+            setActiveTab(tab);
+            setIsHelpOpen(false);
+          }}
+        />
+
+        {/* Exit Confirmation Modal */}
+        <ExitConfirmModal
+          isOpen={isExitModalOpen}
+          onClose={() => setIsExitModalOpen(false)}
+        />
+
+        {/* Scrypt Authentication / Station Lock Modal */}
+        {!currentUser && (
+          <LoginModal onLogin={handleLogin} />
         )}
-      </main>
-
-      {/* Footer */}
-      <footer className="bg-white border-t border-slate-200 py-4 px-6 text-center text-xs text-slate-500 no-print">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row justify-between items-center gap-2">
-          <span>
-            <strong>R.K.A Pharmacy</strong> • San Antonio, Agoo, La Union • Owner: Lourdes Gincen L. Cesista
-          </span>
-          <div className="flex items-center gap-3 text-slate-400">
-            <span>Mode: <strong>{uiMode === 'minimalist' ? 'Clean / Minimalist' : 'Maximalist (Full)'}</strong></span>
-            <span>•</span>
-            <button
-              onClick={() => setIsHelpOpen(true)}
-              className="text-emerald-700 hover:underline font-semibold"
-            >
-              Emergency Help Guide
-            </button>
-          </div>
-        </div>
-      </footer>
-
-      {/* Add Medicine Modal */}
-      <AddMedicineModal
-        isOpen={isAddMedOpen}
-        onClose={() => setIsAddMedOpen(false)}
-        onMedicineAdded={loadData}
-      />
-
-      {/* Emergency Quick Help Guide Modal */}
-      <HelpGuideModal
-        isOpen={isHelpOpen}
-        onClose={() => setIsHelpOpen(false)}
-        onNavigate={(tab) => {
-          setActiveTab(tab);
-          setIsHelpOpen(false);
-        }}
-      />
-
-      {/* Exit Confirmation Modal */}
-      <ExitConfirmModal
-        isOpen={isExitModalOpen}
-        onClose={() => setIsExitModalOpen(false)}
-      />
-
-      {/* Scrypt Authentication / Station Lock Modal */}
-      {!currentUser && (
-        <LoginModal onLogin={handleLogin} />
-      )}
-    </div>
+      </div>
+    </LanguageProvider>
   );
 }

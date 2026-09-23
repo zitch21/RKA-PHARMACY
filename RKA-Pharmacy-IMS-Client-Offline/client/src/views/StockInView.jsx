@@ -12,8 +12,10 @@ import {
 } from 'lucide-react';
 import BarcodeModal from '../components/BarcodeModal';
 import HelperText from '../components/HelperText';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function StockInView({ medicines, batches = [], onRefresh, onOpenAddMedicine, uiMode = 'clean' }) {
+  const { t } = useLanguage();
   const [barcodeInput, setBarcodeInput] = useState('');
   const [selectedMedId, setSelectedMedId] = useState('');
   const [batchNumber, setBatchNumber] = useState('');
@@ -227,16 +229,18 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-12">
+    <div className={uiMode === 'clean' ? 'max-w-4xl mx-auto space-y-4 pb-8' : 'max-w-4xl mx-auto space-y-6 pb-12'}>
       {/* Header */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className={`bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 ${
+        uiMode === 'clean' ? 'p-4' : 'p-5'
+      }`}>
         <div>
           <h2 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <ArrowDownToLine className="w-5 h-5 text-emerald-600" />
-            <span>Stock-In Intake & Batch Receiving</span>
+            <span>{t('stock_in_batch_receiving', 'Stock-In / Batch Receiving')}</span>
           </h2>
           <HelperText uiMode={uiMode} className="text-xs text-slate-500">
-            Scan barcode or select medicine to register incoming batches with expiration dates
+            {t('stockin_subtitle', 'Scan barcode or select medicine to register incoming batches with expiration dates')}
           </HelperText>
         </div>
 
@@ -245,7 +249,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
           className="text-xs text-emerald-700 hover:text-emerald-800 font-semibold flex items-center gap-1 self-start sm:self-auto"
         >
           <Sparkles className="w-3.5 h-3.5" />
-          <span>New Medicine Profile?</span>
+          <span>{t('btn_add_medicine', 'New Medicine Profile?')}</span>
         </button>
       </div>
 
@@ -254,13 +258,13 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
         <form onSubmit={handleBarcodeSubmit} className="flex flex-col sm:flex-row gap-3 items-center">
           <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-emerald-400 shrink-0">
             <Barcode className="w-5 h-5" />
-            <span>Barcode Scanner Input:</span>
+            <span>{t('stockin_scan_label', 'Barcode Scanner Input:')}</span>
           </div>
           <div className="relative flex-1 w-full">
             <input
               ref={barcodeInputRef}
               type="text"
-              placeholder="Scan barcode with handheld reader or type barcode and press Enter..."
+              placeholder={t('stockin_scan_placeholder', 'Scan barcode with handheld reader or type barcode and press Enter...')}
               value={barcodeInput}
               onChange={(e) => setBarcodeInput(e.target.value)}
               className="w-full px-3 py-2 text-xs bg-slate-800 text-white border border-slate-600 rounded-lg focus:ring-2 focus:ring-emerald-400 focus:outline-none placeholder:text-slate-400 font-mono"
@@ -281,7 +285,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
           <div className="flex items-center gap-2">
             <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
             <div className="text-xs">
-              <span className="font-bold">Stock-In Recorded! </span>
+              <span className="font-bold">{t('stockin_success', 'Stock-In Recorded!')} </span>
               Successfully received {successData.quantity} units of{' '}
               <strong>{successData.medicine.brand_name}</strong> (Batch: {successData.batch_number}, Exp: {successData.expDate}).
             </div>
@@ -291,7 +295,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
             className="text-xs bg-white text-emerald-800 border border-emerald-300 px-3 py-1 rounded-lg font-semibold hover:bg-emerald-100 transition flex items-center gap-1 shrink-0"
           >
             <Tag className="w-3.5 h-3.5" />
-            <span>Print Label</span>
+            <span>{t('btn_print_labels', 'Print Label')}</span>
           </button>
         </div>
       )}
@@ -309,7 +313,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
         {/* Medicine Selector */}
         <div>
           <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-            Select Medicine / Vitamin *
+            {t('stockin_select_med', 'Select Medicine / Vitamin *')}
           </label>
           <select
             value={selectedMedId}
@@ -338,7 +342,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
               <span className="font-bold text-slate-900">{selectedMed.brand_name}</span>
               <span className="text-slate-600 ml-1">({selectedMed.generic_name})</span>
               <div className="text-[11px] text-slate-500">
-                Current Total Stock: <span className="font-bold text-emerald-800">{selectedMed.total_stock} {selectedMed.unit_of_measure}s</span> | Reorder Threshold: {selectedMed.reorder_threshold}
+                {t('inv_col_total_stock', 'Current Total Stock')}: <span className="font-bold text-emerald-800">{selectedMed.total_stock} {selectedMed.unit_of_measure}s</span> | {t('inv_col_reorder_threshold', 'Reorder Threshold')}: {selectedMed.reorder_threshold}
               </div>
             </div>
             <div className="flex items-center gap-2 font-mono text-[11px] bg-white px-2 py-1 rounded border border-emerald-200 text-emerald-800">
@@ -352,7 +356,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-              Batch / Lot Number *
+              {t('stockin_batch_num', 'Batch / Lot Number *')}
             </label>
             <input
               type="text"
@@ -366,7 +370,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
 
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-              Manufacturing Date
+              {t('stockin_mfg_date', 'Manufacturing Date')}
             </label>
             <input
               type="date"
@@ -379,17 +383,17 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
           <div>
             <div className="flex items-center justify-between mb-1">
               <label className="block text-xs font-semibold uppercase text-slate-700">
-                Expiration Date *
+                {t('stockin_exp_date', 'Expiration Date *')}
               </label>
               <div className="flex items-center gap-1">
                 {[
-                  { label: '+6 Mos', months: 6 },
-                  { label: '+1 Yr', months: 12 },
-                  { label: '+2 Yrs', months: 24 },
-                  { label: '+3 Yrs', months: 36 }
+                  { key: 'pill_plus_6m', defaultLabel: '+6 Mos', months: 6 },
+                  { key: 'pill_plus_1y', defaultLabel: '+1 Yr', months: 12 },
+                  { key: 'pill_plus_2y', defaultLabel: '+2 Yrs', months: 24 },
+                  { key: 'pill_plus_3y', defaultLabel: '+3 Yrs', months: 36 }
                 ].map(pill => (
                   <button
-                    key={pill.label}
+                    key={pill.key}
                     type="button"
                     onClick={() => {
                       const d = new Date();
@@ -401,7 +405,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
                     }}
                     className="px-1.5 py-0.5 text-[10px] font-bold bg-slate-100 hover:bg-emerald-100 hover:text-emerald-800 hover:border-emerald-300 border border-slate-200 text-slate-600 rounded transition"
                   >
-                    {pill.label}
+                    {t(pill.key, pill.defaultLabel)}
                   </button>
                 ))}
               </div>
@@ -501,7 +505,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
 
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                Selling Price (₱) *
+                {t('stockin_selling_price', 'Selling Price (₱) *')}
               </label>
               <input
                 type="number"
@@ -521,7 +525,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-              Supplier / Distributor
+              {t('stockin_supplier', 'Supplier / Distributor')}
             </label>
             <input
               type="text"
@@ -534,7 +538,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
 
           <div>
             <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-              Delivery Invoice / DR Reference
+              {t('stockin_ref_no', 'Delivery Invoice / DR Reference')}
             </label>
             <input
               type="text"
@@ -549,7 +553,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
         {/* Receiving Notes */}
         <div>
           <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-            Receiving Notes / Quality Inspection
+            {t('stockin_notes', 'Receiving Notes / Quality Inspection')}
           </label>
           <input
             type="text"
@@ -570,9 +574,7 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
           <span>
             {loading
               ? 'Saving Intake Record...'
-              : uiMode === 'clean'
-              ? 'Receive Batch'
-              : 'Confirm & Save Batch Receiving'}
+              : t('stockin_submit_btn', 'Confirm & Register Batch')}
           </span>
         </button>
       </form>

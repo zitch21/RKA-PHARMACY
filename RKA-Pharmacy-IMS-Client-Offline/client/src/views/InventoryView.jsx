@@ -20,13 +20,16 @@ import EditMedicineModal from '../components/EditMedicineModal';
 import EditBatchModal from '../components/EditBatchModal';
 import { useLanguage } from '../context/LanguageContext';
 
+import HelperText from '../components/HelperText';
+
 export default function InventoryView({
   medicines,
   batches,
   onRefresh,
   onOpenAddMedicine,
   onNavigate,
-  initialFilter
+  initialFilter,
+  uiMode = 'clean'
 }) {
   const { t } = useLanguage();
   const [searchTerm, setSearchTerm] = useState('');
@@ -71,29 +74,31 @@ export default function InventoryView({
   const getTierBadge = (tier) => {
     switch (tier) {
       case 'Expired':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200">{t('tier_expired', 'Expired')}</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-red-100 text-red-800 border border-red-200">{t('tier_expired_label', 'Paso')}</span>;
       case 'Critical':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">{t('tier_critical', 'Critical (1-30d)')}</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-rose-100 text-rose-800 border border-rose-200">{t('tier_critical_label', 'Kritikal')}</span>;
       case 'Warning':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">{t('tier_warning', 'Warning (31-90d)')}</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">{t('tier_warning_label', 'Babala')}</span>;
       case 'Monitor':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">{t('tier_monitor', 'Monitor (91-180d)')}</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-blue-100 text-blue-800 border border-blue-200">{t('tier_monitor_label', 'Bantayan')}</span>;
       case 'Safe':
-        return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">{t('tier_safe', 'Safe (>180d)')}</span>;
+        return <span className="px-2 py-0.5 rounded text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">{t('tier_safe_label', 'Ligtas')}</span>;
       default:
         return <span className="px-2 py-0.5 rounded text-[10px] text-slate-400">No stock</span>;
     }
   };
 
   return (
-    <div className="space-y-4 pb-12">
+    <div className={uiMode === 'clean' ? 'space-y-3 pb-8' : 'space-y-4 pb-12'}>
       {/* Header & Controls */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-slate-200 shadow-xs">
+      <div className={`flex flex-col md:flex-row md:items-center justify-between gap-3 bg-white rounded-xl border border-slate-200 shadow-xs ${
+        uiMode === 'clean' ? 'p-3.5' : 'p-4'
+      }`}>
         <div>
-          <h2 className="text-lg font-bold text-slate-900 tracking-tight">Medicine & Vitamin Catalog</h2>
-          <p className="text-xs text-slate-500">
-            Batch-level records, barcodes, lead times, and expiration monitoring
-          </p>
+          <h2 className="text-lg font-bold text-slate-900 tracking-tight">{t('inv_catalog_title', 'Medicine & Vitamin Catalog')}</h2>
+          <HelperText uiMode={uiMode} className="text-xs text-slate-500">
+            {t('inv_catalog_subtitle', 'Batch-level records, barcodes, lead times, and expiration monitoring')}
+          </HelperText>
         </div>
 
         <div className="flex items-center gap-2">
@@ -116,7 +121,7 @@ export default function InventoryView({
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
-                placeholder="Search by brand, generic, barcode, or code..."
+                placeholder={t('inv_search_placeholder', 'Search by brand, generic, barcode, or code...')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
@@ -149,7 +154,8 @@ export default function InventoryView({
               onChange={(e) => setSelectedCategory(e.target.value)}
               className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white text-slate-700"
             >
-              {categories.map((c) => (
+              <option value="All">{t('inv_filter_all', 'All Categories')}</option>
+              {categories.filter(c => c !== 'All').map((c) => (
                 <option key={c} value={c}>{c}</option>
               ))}
             </select>
@@ -165,9 +171,9 @@ export default function InventoryView({
               <option value="All">{t('btn_all_items', 'All Stock & Expiry States')}</option>
               <option value="low_stock">{t('badge_low_stock', 'Low Stock (≤ Threshold)')}</option>
               <option value="out_of_stock">{t('badge_out_of_stock', 'Out of Stock')}</option>
-              <option value="critical">Critical Expiry (1-30 days)</option>
-              <option value="warning">Warning Expiry (31-90 days)</option>
-              <option value="expired">Expired Batches</option>
+              <option value="critical">{t('tier_critical', 'Critical (1-30d)')}</option>
+              <option value="warning">{t('tier_warning', 'Warning (31-90d)')}</option>
+              <option value="expired">{t('tier_expired', 'Expired (Blocked)')}</option>
             </select>
           </div>
         </div>
@@ -191,7 +197,7 @@ export default function InventoryView({
               className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-md transition"
             >
               <RotateCcw className="w-3 h-3" />
-              <span>Reset All Filters</span>
+              <span>{t('btn_clear_filter', 'Clear Filter')}</span>
             </button>
           )}
         </div>
@@ -203,14 +209,14 @@ export default function InventoryView({
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
-                <th className="py-3 px-4">Item & Generic</th>
-                <th className="py-3 px-3">Form / Category</th>
+                <th className="py-3 px-4">{t('inv_col_medicine', 'Medicine Name & Form')}</th>
+                <th className="py-3 px-3">{t('inv_col_category', 'Category')}</th>
                 <th className="py-3 px-3">Barcode</th>
-                <th className="py-3 px-3 text-center">Total Stock</th>
-                <th className="py-3 px-3 text-center">Threshold</th>
+                <th className="py-3 px-3 text-center">{t('inv_col_total_stock', 'Total Stock')}</th>
+                <th className="py-3 px-3 text-center">{t('inv_col_reorder_threshold', 'Reorder Threshold')}</th>
                 <th className="py-3 px-3">Earliest Expiry</th>
-                <th className="py-3 px-3 text-center">Expiry Tier</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+                <th className="py-3 px-3 text-center">{t('inv_col_expiry_status', 'Expiry Status')}</th>
+                <th className="py-3 px-4 text-right">{t('inv_col_actions', 'Actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -301,7 +307,7 @@ export default function InventoryView({
                             className="inline-flex items-center gap-1 text-xs font-semibold text-emerald-700 hover:text-emerald-900 bg-emerald-50 hover:bg-emerald-100 px-2.5 py-1 rounded-lg transition"
                           >
                             <Layers className="w-3.5 h-3.5" />
-                            <span>{isExpanded ? 'Hide Batches' : 'Batches'}</span>
+                            <span>{isExpanded ? (t('hide_batches', 'Hide Batches')) : t('inv_active_batches', 'Batches')}</span>
                             {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}
                           </button>
                         </div>
@@ -317,7 +323,7 @@ export default function InventoryView({
                               <div className="flex items-center gap-2">
                                 <Layers className="w-4 h-4 text-emerald-600" />
                                 <span className="font-bold text-xs text-slate-800 uppercase tracking-wide">
-                                  Batches for {m.brand_name} ({m.generic_name})
+                                  {t('inv_active_batches', 'Batches')} for {m.brand_name} ({m.generic_name})
                                 </span>
                               </div>
                               <span className="text-xs text-slate-500">
@@ -329,15 +335,15 @@ export default function InventoryView({
                               <table className="w-full text-left text-xs border-collapse">
                                 <thead>
                                   <tr className="border-b border-slate-200 text-slate-500 text-[10px] uppercase font-bold">
-                                    <th className="py-1.5 px-2">Batch #</th>
-                                    <th className="py-1.5 px-2">Mfg Date</th>
-                                    <th className="py-1.5 px-2">Exp Date</th>
+                                    <th className="py-1.5 px-2">{t('inv_batch_num', 'Batch #')}</th>
+                                    <th className="py-1.5 px-2">{t('inv_mfg_date', 'Mfg Date')}</th>
+                                    <th className="py-1.5 px-2">{t('inv_exp_date', 'Exp Date')}</th>
                                     <th className="py-1.5 px-2">Days Left</th>
-                                    <th className="py-1.5 px-2 text-center">Remaining</th>
-                                    <th className="py-1.5 px-2">Unit Cost</th>
-                                    <th className="py-1.5 px-2">Price</th>
-                                    <th className="py-1.5 px-2">Status</th>
-                                    <th className="py-1.5 px-2 text-right">Actions</th>
+                                    <th className="py-1.5 px-2 text-center">{t('inv_remaining', 'Remaining')}</th>
+                                    <th className="py-1.5 px-2">{t('inv_unit_cost', 'Unit Cost')}</th>
+                                    <th className="py-1.5 px-2">{t('inv_selling_price', 'Price')}</th>
+                                    <th className="py-1.5 px-2">{t('inv_status', 'Status')}</th>
+                                    <th className="py-1.5 px-2 text-right">{t('inv_col_actions', 'Actions')}</th>
                                   </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">

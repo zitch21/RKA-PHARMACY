@@ -17,6 +17,8 @@ import {
   RefreshCw,
   BookOpen
 } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
+import HelperText from '../components/HelperText';
 
 const DEFAULT_CONFIG = {
   safe_threshold_days: '180',
@@ -30,6 +32,7 @@ const DEFAULT_CONFIG = {
 };
 
 export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMode, onOpenHelp, currentUser }) {
+  const { t } = useLanguage();
   const [settings, setSettings] = useState({
     pharmacy_name: 'R.K.A Pharmacy',
     pharmacy_address: 'San Antonio, Agoo, La Union',
@@ -244,17 +247,17 @@ export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMo
   };
 
   return (
-    <div className="max-w-4xl mx-auto space-y-6 pb-12">
+    <div className={`max-w-4xl mx-auto pb-12 ${uiMode === 'clean' ? 'p-2 sm:p-4 space-y-4' : 'p-4 sm:p-6 space-y-6'}`}>
       {/* Header */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+      <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
         <div>
           <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
             <Settings className="w-5 h-5 text-slate-700" />
-            <span>System Configuration & Threshold Parameters</span>
+            <span>{t('set_title')}</span>
           </h2>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Configure expiry risk countdown tiers, buffer days, and clinic profile
-          </p>
+          <HelperText uiMode={uiMode} className="text-xs text-slate-500 mt-0.5">
+            {t('set_subtitle')}
+          </HelperText>
         </div>
 
         <button
@@ -265,7 +268,7 @@ export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMo
           title="Restore default countdown tiers and FEFO+ parameters"
         >
           <RotateCcw className="w-3.5 h-3.5 text-slate-600" />
-          <span>Default Settings</span>
+          <span>{t('set_reset_btn')}</span>
         </button>
       </div>
 
@@ -283,7 +286,7 @@ export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMo
       {saved && (
         <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-center gap-2 animate-in fade-in">
           <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-          <span>Settings saved and applied successfully across all inventory modules.</span>
+          <span>{t('toast_settings_saved') || 'Settings saved and applied successfully across all inventory modules.'}</span>
         </div>
       )}
 
@@ -295,21 +298,21 @@ export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMo
       )}
 
       {/* Emergency Help Guide Banner */}
-      <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-5 rounded-xl shadow-md border border-indigo-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className="bg-gradient-to-r from-slate-900 to-indigo-950 text-white p-4 sm:p-5 rounded-xl shadow-md border border-indigo-900 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-xl bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shrink-0">
             <BookOpen className="w-5 h-5" />
           </div>
           <div>
             <h3 className="font-bold text-sm text-white flex items-center gap-2">
-              <span>Need Help or Emergency Operating Guide?</span>
+              <span>{t('modal_help_title') || 'Need Help or Emergency Operating Guide?'}</span>
               <span className="bg-emerald-500 text-slate-950 text-[10px] font-extrabold px-2 py-0.5 rounded-full uppercase">
-                Simple Guide
+                {t('btn_how_to_use')}
               </span>
             </h3>
-            <p className="text-xs text-indigo-200 mt-0.5">
+            <HelperText uiMode={uiMode} className="text-xs text-indigo-200 mt-0.5">
               Clear 5-step instructions for non-technical staff or emergency counter handovers.
-            </p>
+            </HelperText>
           </div>
         </div>
         <button
@@ -318,7 +321,7 @@ export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMo
           className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold text-xs rounded-lg transition shrink-0 shadow-sm flex items-center justify-center gap-1.5"
         >
           <BookOpen className="w-4 h-4" />
-          <span>Open "How to Use" Guide</span>
+          <span>{t('btn_how_to_use')}</span>
         </button>
       </div>
 
@@ -651,15 +654,15 @@ export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMo
           <div className="flex items-center gap-2 border-b border-slate-100 pb-3">
             <Building className="w-4 h-4 text-slate-600" />
             <div>
-              <h3 className="font-bold text-slate-900 text-sm">Clinic Pharmacy Profile</h3>
-              <p className="text-xs text-slate-500">Appears on receipts, printable barcode tags, and audit reports</p>
+              <h3 className="font-bold text-slate-900 text-sm">{t('set_tab_profile') || 'Clinic Pharmacy Profile'}</h3>
+              <HelperText uiMode={uiMode} className="text-xs text-slate-500">Appears on receipts, printable barcode tags, and audit reports</HelperText>
             </div>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                Pharmacy Name
+                {t('set_pharmacy_name')}
               </label>
               <input
                 type="text"
@@ -672,7 +675,7 @@ export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMo
 
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                Address / Location
+                {t('set_address')}
               </label>
               <input
                 type="text"
@@ -685,7 +688,7 @@ export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMo
 
             <div>
               <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                Sole Proprietor / Administrator
+                {t('set_owner')}
               </label>
               <input
                 type="text"
@@ -705,7 +708,7 @@ export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMo
             className="inline-flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-sm transition disabled:opacity-50"
           >
             <Save className="w-4 h-4" />
-            <span>{loading ? 'Saving Settings...' : 'Save Configuration'}</span>
+            <span>{loading ? 'Saving Settings...' : t('set_save_btn')}</span>
           </button>
         </div>
       </form>

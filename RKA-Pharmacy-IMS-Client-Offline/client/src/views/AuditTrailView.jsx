@@ -8,8 +8,11 @@ import {
   RotateCcw,
   UserCheck
 } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
+import HelperText from '../components/HelperText';
 
 export default function AuditTrailView({ uiMode = 'clean' }) {
+  const { t } = useLanguage();
   const [logs, setLogs] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -72,22 +75,22 @@ export default function AuditTrailView({ uiMode = 'clean' }) {
   };
 
   return (
-    <div className="space-y-4 pb-12">
+    <div className={`pb-12 ${uiMode === 'clean' ? 'p-2 sm:p-4 space-y-3' : 'p-4 sm:p-6 space-y-4'}`}>
       {/* Header */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               <History className="w-5 h-5 text-indigo-600" />
-              <span>Centralized Audit Trail & Transaction Ledger</span>
+              <span>{t('audit_trail_ledger')}</span>
             </h2>
             <span className="bg-indigo-50 text-indigo-800 text-xs font-bold px-2 py-0.5 rounded-full border border-indigo-200">
-              Immutable
+              {t('badge_immutable') || 'Immutable'}
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Permanent record of stock additions, releases, adjustments, FEFO overrides, and disposals
-          </p>
+          <HelperText uiMode={uiMode} className="text-xs text-slate-500 mt-0.5">
+            {t('audit_subtitle')}
+          </HelperText>
         </div>
 
         <button
@@ -95,7 +98,7 @@ export default function AuditTrailView({ uiMode = 'clean' }) {
           className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-50 border border-slate-300 rounded-lg shadow-2xs transition self-start md:self-auto"
         >
           <Download className="w-4 h-4 text-emerald-600" />
-          <span>Export to CSV</span>
+          <span>{t('btn_export_csv')}</span>
         </button>
       </div>
 
@@ -107,7 +110,7 @@ export default function AuditTrailView({ uiMode = 'clean' }) {
               <Search className="w-4 h-4 text-slate-400 absolute left-3 top-2.5" />
               <input
                 type="text"
-                placeholder="Search by details, batch, medicine, receipt, or operator..."
+                placeholder={t('audit_search_placeholder')}
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none"
@@ -130,7 +133,7 @@ export default function AuditTrailView({ uiMode = 'clean' }) {
               }}
               className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-indigo-500 focus:outline-none bg-white text-slate-700"
             >
-              <option value="">All Action Types</option>
+              <option value="">{t('audit_filter_all') || 'All Action Types'}</option>
               <option value="STOCK_OUT">Stock-Out (FEFO Dispense)</option>
               <option value="STOCK_OUT_OVERRIDE">Stock-Out Overrides</option>
               <option value="STOCK_IN">Stock-In (Intake)</option>
@@ -155,7 +158,7 @@ export default function AuditTrailView({ uiMode = 'clean' }) {
               className="inline-flex items-center gap-1 text-xs font-semibold text-indigo-700 hover:text-indigo-900 bg-indigo-50 hover:bg-indigo-100 px-2.5 py-1 rounded-md transition"
             >
               <RotateCcw className="w-3 h-3" />
-              <span>Reset Search & Filters</span>
+              <span>{t('btn_clear_filter') || 'Reset Search & Filters'}</span>
             </button>
           </div>
         )}
@@ -167,11 +170,11 @@ export default function AuditTrailView({ uiMode = 'clean' }) {
           <table className="w-full text-left text-xs border-collapse">
             <thead>
               <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
-                <th className="py-3 px-4">Timestamp</th>
-                <th className="py-3 px-3">Action Type</th>
+                <th className="py-3 px-4">{t('audit_col_timestamp')}</th>
+                <th className="py-3 px-3">{t('audit_col_action')}</th>
                 <th className="py-3 px-3">Entity</th>
-                <th className="py-3 px-3">Operator</th>
-                <th className="py-3 px-4">Details & Justification</th>
+                <th className="py-3 px-3">{t('audit_col_operator')}</th>
+                <th className="py-3 px-4">{t('audit_col_details')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100 font-sans">

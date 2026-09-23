@@ -26,8 +26,10 @@ import {
   FileText,
   PackageCheck
 } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
+  const { t } = useLanguage();
   const [guideVersion, setGuideVersion] = useState('v1'); // 'v1' (Counter Quick Guide) | 'v2' (Advanced System Guide)
   const [activeTopic, setActiveTopic] = useState('dispense');
 
@@ -74,9 +76,9 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
             </div>
             <div>
               <div className="flex items-center gap-2">
-                <h2 className="text-lg font-bold tracking-tight">R.K.A Pharmacy IMS User Operating Manual</h2>
+                <h2 className="text-lg font-bold tracking-tight">{t('modal_help_title')}</h2>
                 <span className="bg-emerald-500 text-slate-950 font-extrabold text-[10px] px-2 py-0.5 rounded-full uppercase">
-                  {guideVersion === 'v1' ? 'Quick Counter Guide' : 'Advanced Operations'}
+                  {guideVersion === 'v1' ? (t('modal_help_counter_guide') || 'Quick Counter Guide') : (t('modal_help_advanced_guide') || 'Advanced Operations')}
                 </span>
               </div>
               <p className="text-xs text-slate-400">
@@ -99,7 +101,7 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Quick Counter
+                {t('modal_help_counter_guide') || 'Quick Counter'}
               </button>
               <button
                 type="button"
@@ -110,7 +112,7 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
                     : 'text-slate-400 hover:text-white'
                 }`}
               >
-                Advanced Operations
+                {t('modal_help_advanced_guide') || 'Advanced Operations'}
               </button>
             </div>
 
@@ -658,7 +660,7 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
             onClick={onClose}
             className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg transition"
           >
-            Close Guide
+            {t('btn_cancel') || 'Close Guide'}
           </button>
         </div>
       </div>

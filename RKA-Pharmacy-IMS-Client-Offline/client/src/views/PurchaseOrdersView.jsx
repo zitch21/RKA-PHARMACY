@@ -20,8 +20,10 @@ import {
   ExternalLink
 } from 'lucide-react';
 import HelperText from '../components/HelperText';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function PurchaseOrdersView({ medicines, currentUser, onRefreshInventory, uiMode = 'clean' }) {
+  const { t } = useLanguage();
   const [orders, setOrders] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [recomMeta, setRecomMeta] = useState(null);
@@ -361,21 +363,23 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
   const receivedCount = orders.filter(o => o.status === 'received').length;
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className={uiMode === 'clean' ? 'space-y-4 pb-8' : 'space-y-6 pb-12'}>
       {/* Header */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+      <div className={`bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
+        uiMode === 'clean' ? 'p-4' : 'p-5'
+      }`}>
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               <FileText className="w-5 h-5 text-emerald-600" />
-              <span>Purchase Order (PO) Procurement Ledger</span>
+              <span>{t('purchase_orders_title', 'Purchase Orders (PO)')}</span>
             </h2>
             <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
               Clinic Procurement Standard
             </span>
           </div>
           <HelperText uiMode={uiMode} className="text-xs text-slate-500 mt-1">
-            Internal procurement tracking ledger for R.K.A Pharmacy (Draft → Placed → Delivery Receipt into Batches)
+            {t('po_subtitle', 'Manage replenishment orders, supplier purchase slips, and stock intake')}
           </HelperText>
         </div>
 
@@ -385,12 +389,12 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
             className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition"
           >
             <Plus className="w-4 h-4" />
-            <span>{uiMode === 'clean' ? 'Create PO' : 'Create Purchase Order'}</span>
+            <span>{t('btn_create_po', 'Create Purchase Order')}</span>
           </button>
           <button
             onClick={fetchOrdersAndRecommendations}
             className="p-2 text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition"
-            title="Refresh"
+            title={t('btn_refresh', 'Refresh')}
           >
             <RefreshCw className="w-4 h-4" />
           </button>
@@ -420,19 +424,19 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
       {/* Metrics Bar */}
       <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-slate-500 text-xs font-semibold uppercase tracking-wider block">Total POs Recorded</span>
+          <span className="text-slate-500 text-xs font-semibold uppercase tracking-wider block">Total POs</span>
           <span className="text-2xl font-black text-slate-900 mt-1 block">{orders.length}</span>
         </div>
         <div className="bg-amber-50/60 p-4 rounded-xl border border-amber-200 shadow-2xs">
-          <span className="text-amber-800 text-xs font-semibold uppercase tracking-wider block">Placed (Pending Delivery)</span>
+          <span className="text-amber-800 text-xs font-semibold uppercase tracking-wider block">{t('po_filter_sent', 'Placed / Sent')}</span>
           <span className="text-2xl font-black text-amber-950 mt-1 block">{placedCount}</span>
         </div>
         <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-slate-600 text-xs font-semibold uppercase tracking-wider block">Draft Orders</span>
+          <span className="text-slate-600 text-xs font-semibold uppercase tracking-wider block">{t('po_filter_draft', 'Draft Orders')}</span>
           <span className="text-2xl font-black text-slate-800 mt-1 block">{draftCount}</span>
         </div>
         <div className="bg-emerald-50/60 p-4 rounded-xl border border-emerald-200 shadow-2xs">
-          <span className="text-emerald-800 text-xs font-semibold uppercase tracking-wider block">Fully Received</span>
+          <span className="text-emerald-800 text-xs font-semibold uppercase tracking-wider block">{t('po_filter_received', 'Received / Delivered')}</span>
           <span className="text-2xl font-black text-emerald-950 mt-1 block">{receivedCount}</span>
         </div>
       </div>
@@ -444,13 +448,11 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
             <div className="flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-emerald-700" />
               <h3 className="font-bold text-slate-900 text-sm">
-                Replenishment Recommendations Available ({recommendations.length} Items Below Reorder Point)
+                {t('po_recom_title', 'Dynamic Replenishment Recommendations')} ({recommendations.length} Items)
               </h3>
             </div>
             <HelperText uiMode={uiMode} className="text-xs text-slate-600">
-              {recomMeta?.is_cold_start
-                ? 'Baseline Mode: Recommendations calculated based on manual thresholds.'
-                : `FEFO+ Dynamic Engine: Recommendations calculated based on ${recomMeta?.forecasting_window_days}-day moving average sales velocity and lead times.`}
+              {t('po_recom_subtitle', 'Based on daily demand velocity and supplier lead times')}
             </HelperText>
           </div>
 
@@ -459,24 +461,30 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
             className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition shrink-0"
           >
             <ShoppingBag className="w-4 h-4" />
-            <span>{uiMode === 'clean' ? 'Generate PO' : 'Generate PO for Low Stock Items'}</span>
+            <span>{t('btn_accept_all_draft_po', 'Accept All Suggested / Bulk Draft PO')}</span>
           </button>
         </div>
       )}
 
       {/* Filter Tabs */}
       <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
-        {['all', 'draft', 'placed', 'partially_received', 'received', 'cancelled'].map(f => (
+        {[
+          { key: 'all', label: t('po_filter_all', 'All Orders') },
+          { key: 'draft', label: t('po_filter_draft', 'Draft Orders') },
+          { key: 'placed', label: t('po_filter_sent', 'Placed / Sent') },
+          { key: 'received', label: t('po_filter_received', 'Received / Delivered') },
+          { key: 'cancelled', label: t('po_filter_cancelled', 'Cancelled') }
+        ].map(tab => (
           <button
-            key={f}
-            onClick={() => setStatusFilter(f)}
+            key={tab.key}
+            onClick={() => setStatusFilter(tab.key)}
             className={`px-3 py-1.5 text-xs font-semibold rounded-lg capitalize transition ${
-              statusFilter === f
+              statusFilter === tab.key
                 ? 'bg-slate-800 text-white shadow-xs'
                 : 'text-slate-600 hover:bg-slate-200/70'
             }`}
           >
-            {f.replace('_', ' ')}
+            {tab.label}
           </button>
         ))}
       </div>

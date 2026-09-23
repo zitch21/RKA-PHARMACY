@@ -90,7 +90,7 @@ export default function Navbar({
               : 'bg-amber-950/90 text-amber-300 border border-amber-500/50'
           }`}>
             <span className={`w-1.5 h-1.5 rounded-full ${isSystemLoaded ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'}`}></span>
-            <span>{isSystemLoaded ? 'DB Online • FEFO+ Active' : 'Connecting DB...'}</span>
+            <span>{isSystemLoaded ? t('db_online', 'DB Online • FEFO+ Active') : t('connecting_db', 'Connecting DB...')}</span>
           </span>
 
           <div className="hidden sm:flex items-center gap-1 text-slate-300 bg-slate-800/80 px-2 py-0.5 rounded">
@@ -136,7 +136,7 @@ export default function Navbar({
             {isLangOpen && (
               <div className="absolute right-0 mt-1.5 w-44 bg-white rounded-xl shadow-xl border border-slate-200 py-1 z-50 animate-in fade-in zoom-in-95">
                 <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100">
-                  Select Language
+                  {t('select_language', 'Select Language')}
                 </div>
                 {languages.map(l => (
                   <button
@@ -184,7 +184,7 @@ export default function Navbar({
           >
             <LayoutTemplate className="w-3.5 h-3.5 shrink-0" />
             <span>
-              {uiMode === 'clean' ? '⚡ Maximalist / Full' : '🌿 Clean & Simple'}
+              {uiMode === 'clean' ? t('btn_switch_maximalist_btn', '⚡ Maximalist / Full') : t('btn_switch_clean', '🌿 Clean & Simple')}
             </span>
           </button>
 
@@ -251,7 +251,9 @@ export default function Navbar({
       </div>
 
       {/* Navigation Tabs */}
-      <nav className="px-2 sm:px-4 md:px-6 flex items-center gap-0.5 sm:gap-1 overflow-x-auto border-t border-slate-100">
+      <nav className={`px-2 sm:px-4 md:px-6 flex items-center gap-0.5 sm:gap-1 overflow-x-auto border-t border-slate-100 ${
+        uiMode === 'clean' ? 'justify-center' : 'justify-start'
+      }`}>
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeTab === item.id;

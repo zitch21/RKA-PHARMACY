@@ -1,7 +1,9 @@
 import React from 'react';
 import { AlertCircle, AlertTriangle, Clock, X, ArrowRight, Check } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onNavigate, onAcknowledgeAlert }) {
+  const { t } = useLanguage();
   if (!isOpen || !alerts) return null;
 
   const { summary, expired, critical, warning, low_stock, out_of_stock } = alerts;
@@ -11,7 +13,7 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
       <div className="flex items-center justify-between px-4 py-3 bg-slate-900 text-white border-b border-slate-800">
         <div className="flex items-center gap-2 font-bold text-sm">
           <AlertCircle className="w-4 h-4 text-amber-400" />
-          <span>Active Stock & Expiry Alerts</span>
+          <span>{t('modal_alert_title')}</span>
         </div>
         <span className="text-xs bg-red-600 text-white font-bold px-2 py-0.5 rounded-full">
           {summary.total_alerts} Total
@@ -24,7 +26,7 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
           <div className="p-3 bg-red-50/50">
             <div className="flex items-center gap-1.5 font-bold text-red-800 uppercase tracking-wider mb-2">
               <span className="w-2 h-2 rounded-full bg-red-600"></span>
-              <span>Expired Batches ({expired.length}) - Dispensing Blocked</span>
+              <span>{t('tier_expired')} ({expired.length})</span>
             </div>
             <div className="space-y-1.5">
               {expired.map(b => (
@@ -47,7 +49,7 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
           <div className="p-3 bg-rose-50/40">
             <div className="flex items-center gap-1.5 font-bold text-rose-800 uppercase tracking-wider mb-2">
               <span className="w-2 h-2 rounded-full bg-rose-500"></span>
-              <span>Critical Expiry 1-30 Days ({critical.length})</span>
+              <span>{t('tier_critical')} ({critical.length})</span>
             </div>
             <div className="space-y-1.5">
               {critical.map(b => (
@@ -62,7 +64,7 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
                     </span>
                     {b.is_acknowledged ? (
                       <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                        ✓ Ack
+                        ✓ {t('btn_ack') || 'Ack'}
                       </span>
                     ) : (
                       <button
@@ -75,7 +77,7 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
                         title="Acknowledge alert and log to audit trail"
                       >
                         <Check className="w-2.5 h-2.5" />
-                        <span>Ack</span>
+                        <span>{t('btn_ack') || 'Ack'}</span>
                       </button>
                     )}
                   </div>
@@ -90,7 +92,7 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
           <div className="p-3 bg-amber-50/30">
             <div className="flex items-center gap-1.5 font-bold text-amber-800 uppercase tracking-wider mb-2">
               <span className="w-2 h-2 rounded-full bg-amber-500"></span>
-              <span>Warning Expiry 31-90 Days ({warning.length})</span>
+              <span>{t('tier_warning')} ({warning.length})</span>
             </div>
             <div className="space-y-1.5">
               {warning.slice(0, 3).map(b => (
@@ -105,7 +107,7 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
                     </span>
                     {b.is_acknowledged ? (
                       <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                        ✓ Ack
+                        ✓ {t('btn_ack') || 'Ack'}
                       </span>
                     ) : (
                       <button
@@ -118,7 +120,7 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
                         title="Acknowledge alert and log to audit trail"
                       >
                         <Check className="w-2.5 h-2.5" />
-                        <span>Ack</span>
+                        <span>{t('btn_ack') || 'Ack'}</span>
                       </button>
                     )}
                   </div>
@@ -138,7 +140,7 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
           <div className="p-3 bg-red-100/60">
             <div className="flex items-center gap-1.5 font-bold text-red-900 uppercase tracking-wider mb-2">
               <span className="w-2 h-2 rounded-full bg-red-700"></span>
-              <span>Completely Out of Stock ({out_of_stock.length})</span>
+              <span>{t('badge_out_of_stock')} ({out_of_stock.length})</span>
             </div>
             <div className="space-y-1.5">
               {out_of_stock.map(m => (
@@ -161,7 +163,7 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
           <div className="p-3 bg-blue-50/30">
             <div className="flex items-center gap-1.5 font-bold text-blue-800 uppercase tracking-wider mb-2">
               <span className="w-2 h-2 rounded-full bg-blue-500"></span>
-              <span>Low Stock Alerts ({low_stock.length})</span>
+              <span>{t('badge_low_stock')} ({low_stock.length})</span>
             </div>
             <div className="space-y-1.5">
               {low_stock.map(m => (
@@ -176,7 +178,7 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
                     </span>
                     {m.is_acknowledged ? (
                       <span className="text-[9px] font-bold text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded">
-                        ✓ Ack
+                        ✓ {t('btn_ack') || 'Ack'}
                       </span>
                     ) : (
                       <button
@@ -189,7 +191,7 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
                         title="Acknowledge alert and log to audit trail"
                       >
                         <Check className="w-2.5 h-2.5" />
-                        <span>Ack</span>
+                        <span>{t('btn_ack') || 'Ack'}</span>
                       </button>
                     )}
                   </div>
@@ -217,14 +219,14 @@ export default function AlertNotificationDropdown({ alerts, isOpen, onClose, onN
           }}
           className="text-[11px] font-semibold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 px-2 py-1"
         >
-          <span>View FEFO+ Risk Analysis</span>
+          <span>{t('nav_fefo_risk') || 'View FEFO+ Risk Analysis'}</span>
           <ArrowRight className="w-3 h-3" />
         </button>
         <button
           onClick={onClose}
           className="text-[11px] text-slate-500 hover:text-slate-700 px-2 py-1"
         >
-          Close
+          {t('btn_cancel') || 'Close'}
         </button>
       </div>
     </div>

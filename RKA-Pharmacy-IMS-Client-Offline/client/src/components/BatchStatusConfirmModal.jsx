@@ -1,5 +1,6 @@
 import React, { useEffect, useRef } from 'react';
 import { AlertTriangle, Clock, Check, X, ShieldAlert, ArrowRight } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 
 export default function BatchStatusConfirmModal({
   isOpen,
@@ -9,6 +10,7 @@ export default function BatchStatusConfirmModal({
   quantity,
   onConfirm
 }) {
+  const { t } = useLanguage();
   const confirmBtnRef = useRef(null);
 
   useEffect(() => {
@@ -44,7 +46,7 @@ export default function BatchStatusConfirmModal({
         }`}>
           <div className="flex items-center gap-2.5 font-bold text-base">
             <ShieldAlert className="w-5 h-5 text-white animate-pulse" />
-            <span>Batch Release Confirmation</span>
+            <span>{t('modal_batch_confirm_title')}</span>
           </div>
           <button
             onClick={onClose}
@@ -60,10 +62,9 @@ export default function BatchStatusConfirmModal({
           <div className={`p-3.5 rounded-xl border flex items-start gap-3 ${tierBg}`}>
             <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
             <div>
-              <p className="font-bold text-xs">FEFO+ Expiry Alert Protocol</p>
+              <p className="font-bold text-xs">{t('modal_batch_confirm_fefo_alert') || 'FEFO+ Expiry Alert Protocol'}</p>
               <p className="mt-0.5 leading-relaxed">
-                Per Figure 2 of the clinic inventory protocol, dispensing a batch classified as 
-                <strong> {batch.expiry_tier || 'At-Risk'}</strong> requires explicit confirmation before releasing.
+                {t('modal_batch_confirm_desc') || 'Dispensing a batch classified as At-Risk requires explicit confirmation before releasing.'}
               </p>
             </div>
           </div>
@@ -72,7 +73,7 @@ export default function BatchStatusConfirmModal({
           <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 space-y-2">
             <div className="flex justify-between items-start">
               <div>
-                <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">Medicine</span>
+                <span className="text-[10px] uppercase text-slate-400 font-bold tracking-wider">{t('inv_col_medicine')}</span>
                 <p className="font-bold text-sm text-slate-900">{medicine.brand_name}</p>
                 <p className="text-slate-500 text-[11px]">{medicine.generic_name} • {medicine.dosage_strength}</p>
               </div>
@@ -83,11 +84,11 @@ export default function BatchStatusConfirmModal({
 
             <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-200/80 text-[11px]">
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase">Batch Number</span>
+                <span className="text-slate-400 block text-[10px] uppercase">{t('inv_batch_num')}</span>
                 <span className="font-mono font-bold text-slate-800">{batch.batch_number}</span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase">Expiration Date</span>
+                <span className="text-slate-400 block text-[10px] uppercase">{t('inv_exp_date')}</span>
                 <span className="font-bold text-slate-800">{batch.expiration_date}</span>
               </div>
               <div>
@@ -97,7 +98,7 @@ export default function BatchStatusConfirmModal({
                 </span>
               </div>
               <div>
-                <span className="text-slate-400 block text-[10px] uppercase">Dispensing Quantity</span>
+                <span className="text-slate-400 block text-[10px] uppercase">{t('dispense_qty_to_dispense')}</span>
                 <span className="font-bold text-emerald-700">{quantity} {medicine.unit_of_measure || 'units'}</span>
               </div>
             </div>
@@ -115,7 +116,7 @@ export default function BatchStatusConfirmModal({
             onClick={onClose}
             className="px-4 py-2 text-xs font-semibold text-slate-600 hover:text-slate-800 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 transition"
           >
-            Cancel
+            {t('btn_cancel')}
           </button>
           <button
             ref={confirmBtnRef}
@@ -130,7 +131,7 @@ export default function BatchStatusConfirmModal({
             }`}
           >
             <Check className="w-4 h-4" />
-            <span>Confirm Release & Add to Cart</span>
+            <span>{t('modal_batch_confirm_btn')}</span>
           </button>
         </div>
       </div>

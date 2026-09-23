@@ -18,8 +18,11 @@ import {
   X,
   Loader2
 } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
+import HelperText from '../components/HelperText';
 
-export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
+export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode = 'clean' }) {
+  const { t } = useLanguage();
   const [applyingId, setApplyingId] = useState(null);
   const [actionSuccess, setActionSuccess] = useState(null);
   const [actionError, setActionError] = useState(null);
@@ -272,22 +275,22 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
   };
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className={`pb-12 ${uiMode === 'clean' ? 'p-2 sm:p-4 space-y-4' : 'p-4 sm:p-6 space-y-6'}`}>
       {/* Header */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               <Sparkles className="w-5 h-5 text-purple-600" />
-              <span>Enhanced First-Expiry-First-Out (FEFO+) Intelligence</span>
+              <span>{t('fefoplus_title')}</span>
             </h2>
             <span className="bg-purple-100 text-purple-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
-              Automated Risk Detection
+              {t('badge_fefo_active') || 'FEFO+ Active'}
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Consumption-based expiry risk analysis, predicted waste volume, and dynamic suggested reorder thresholds for R.K.A Pharmacy
-          </p>
+          <HelperText uiMode={uiMode} className="text-xs text-slate-500 mt-1">
+            {t('fefoplus_subtitle')}
+          </HelperText>
         </div>
 
         <div className="flex items-center gap-2">
@@ -297,7 +300,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
               className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition"
             >
               <ShoppingBag className="w-3.5 h-3.5 text-emerald-600" />
-              <span>Purchase Orders</span>
+              <span>{t('nav_purchase_orders')}</span>
             </button>
           )}
           <button
@@ -305,7 +308,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
             className="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition"
           >
             <RefreshCw className="w-3.5 h-3.5" />
-            <span>Recalculate Metrics</span>
+            <span>{t('btn_refresh')}</span>
           </button>
         </div>
       </div>
@@ -322,7 +325,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
                 onClick={() => onNavigate('purchase-orders')}
                 className="ml-2 font-bold text-emerald-700 underline hover:text-emerald-900 flex items-center gap-0.5"
               >
-                <span>View in Purchase Orders</span>
+                <span>{t('nav_purchase_orders')}</span>
                 <ArrowRight className="w-3 h-3" />
               </button>
             )}
@@ -342,7 +345,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
 
       {/* Cold-Start Rule Notice */}
       {isColdStart && (
-        <div className="p-5 bg-amber-500/10 border-2 border-amber-500/40 rounded-2xl flex items-start gap-3 text-xs text-amber-950">
+        <div className="p-4 bg-amber-500/10 border-2 border-amber-500/40 rounded-2xl flex items-start gap-3 text-xs text-amber-950">
           <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
           <div className="space-y-1">
             <div className="flex items-center gap-2 font-bold text-sm text-amber-900">
@@ -351,67 +354,69 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
                 {recordedDays} / {requiredDays} Days Recorded
               </span>
             </div>
-            <p className="leading-relaxed text-amber-900">
+            <HelperText uiMode={uiMode} className="leading-relaxed text-amber-900">
               The system suppresses automated demand forecasting during the initial {requiredDays}-day operational baseline phase. The pharmacy operates under <strong>standard FEFO dispatching</strong> and <strong>manual owner reorder thresholds</strong>. Once {requiredDays} operational days of sales transactions are recorded in the system, automated moving average demand forecasting, dynamic replenishment reorder levels, and predictive waste alerts will activate automatically.
-            </p>
+            </HelperText>
           </div>
         </div>
       )}
 
-      {/* Methodology & Process Overview Card */}
-      <div className="bg-slate-900 text-slate-200 p-6 rounded-xl shadow-md border border-slate-800 space-y-4">
-        <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
-          <Info className="w-4 h-4" />
-          <span>FEFO+ Predictive Inventory Analytics & Decision Engine</span>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-mono">
-          <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700">
-            <span className="text-[10px] uppercase text-slate-400 font-sans block mb-1">1. Shelf Life Remaining</span>
-            <div className="text-white font-bold">Days to Expiry</div>
-            <div className="text-emerald-400 font-sans">Expiration Date − Current Date</div>
+      {/* Methodology & Process Overview Card (Shown in Maximalist Mode) */}
+      {uiMode === 'maximalist' && (
+        <div className="bg-slate-900 text-slate-200 p-6 rounded-xl shadow-md border border-slate-800 space-y-4">
+          <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wider">
+            <Info className="w-4 h-4" />
+            <span>{t('fefoplus_formula_title')}</span>
           </div>
 
-          <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700">
-            <span className="text-[10px] uppercase text-slate-400 font-sans block mb-1">2. Consumption Velocity</span>
-            <div className="text-white font-bold">Days to Depletion</div>
-            <div className="text-amber-300 font-sans">Batch Stock ÷ Daily Demand</div>
-            <span className="text-[10px] text-slate-400 font-sans mt-1 block">Based on {requiredDays}-day sales average</span>
-          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 text-xs font-mono">
+            <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700">
+              <span className="text-[10px] uppercase text-slate-400 font-sans block mb-1">1. Shelf Life Remaining</span>
+              <div className="text-white font-bold">Days to Expiry</div>
+              <div className="text-emerald-400 font-sans">Expiration Date − Current Date</div>
+            </div>
 
-          <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700">
-            <span className="text-[10px] uppercase text-slate-400 font-sans block mb-1">3. Waste Risk Indicator</span>
-            <div className="text-white font-bold">Expiry Risk Margin</div>
-            <div className="text-purple-300 font-sans">Days to Expiry − Days to Depletion</div>
-            <span className="text-[10px] text-rose-400 font-sans mt-1 block">Negative margin indicates expiration risk</span>
-          </div>
+            <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700">
+              <span className="text-[10px] uppercase text-slate-400 font-sans block mb-1">2. Consumption Velocity</span>
+              <div className="text-white font-bold">{t('days_to_depletion')}</div>
+              <div className="text-amber-300 font-sans">Batch Stock ÷ Daily Demand</div>
+              <span className="text-[10px] text-slate-400 font-sans mt-1 block">Based on {requiredDays}-day sales average</span>
+            </div>
 
-          <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700">
-            <span className="text-[10px] uppercase text-slate-400 font-sans block mb-1">4. Predicted Expired Units</span>
-            <div className="text-white font-bold">Estimated Waste Volume</div>
-            <div className="text-rose-400 font-sans">Batch Stock − Expected Sales</div>
-            <span className="text-[10px] text-slate-400 font-sans mt-1 block">Expected unsold spoiled units</span>
-          </div>
-        </div>
+            <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700">
+              <span className="text-[10px] uppercase text-slate-400 font-sans block mb-1">3. Waste Risk Indicator</span>
+              <div className="text-white font-bold">{t('expiry_risk_margin')}</div>
+              <div className="text-purple-300 font-sans">Days to Expiry − Days to Depletion</div>
+              <span className="text-[10px] text-rose-400 font-sans mt-1 block">Negative margin indicates expiration risk</span>
+            </div>
 
-        {/* Observation Window & Baseline Status */}
-        <div className="p-3 bg-indigo-950/70 border border-indigo-800/70 rounded-lg flex items-center justify-between text-xs">
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4 text-indigo-400 shrink-0" />
-            <div>
-              <span className="font-bold text-white">Sales History Span: </span>
-              <span className="text-indigo-200">
-                {recordedDays} days recorded in system ledger (Configured window: N = {requiredDays} operational days).
-              </span>
+            <div className="p-3 bg-slate-800/80 rounded-lg border border-slate-700">
+              <span className="text-[10px] uppercase text-slate-400 font-sans block mb-1">4. Predicted Expired Units</span>
+              <div className="text-white font-bold">{t('estimated_waste_volume')}</div>
+              <div className="text-rose-400 font-sans">Batch Stock − Expected Sales</div>
+              <span className="text-[10px] text-slate-400 font-sans mt-1 block">Expected unsold spoiled units</span>
             </div>
           </div>
-          <span className={`px-2 py-0.5 rounded font-bold text-[10px] uppercase ${
-            hasEnoughData ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
-          }`}>
-            {hasEnoughData ? 'Predictive FEFO+ Active' : 'Cold-Start Baseline Mode'}
-          </span>
+
+          {/* Observation Window & Baseline Status */}
+          <div className="p-3 bg-indigo-950/70 border border-indigo-800/70 rounded-lg flex items-center justify-between text-xs">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-indigo-400 shrink-0" />
+              <div>
+                <span className="font-bold text-white">Sales History Span: </span>
+                <span className="text-indigo-200">
+                  {recordedDays} days recorded in system ledger (Configured window: N = {requiredDays} operational days).
+                </span>
+              </div>
+            </div>
+            <span className={`px-2 py-0.5 rounded font-bold text-[10px] uppercase ${
+              hasEnoughData ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/40' : 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+            }`}>
+              {hasEnoughData ? 'Predictive FEFO+ Active' : 'Cold-Start Baseline Mode'}
+            </span>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Section 1: Batches with Negative Expiry Risk Margin (High Waste Risk) */}
       <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
@@ -419,11 +424,11 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
           <div>
             <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-rose-600"></span>
-              <span>Batches Not Likely to be Sold Before Expiration (Risk Margin &lt; 0)</span>
+              <span>{t('batches_unlikely_consumed')}</span>
             </h3>
-            <p className="text-xs text-slate-500">
+            <HelperText uiMode={uiMode} className="text-xs text-slate-500">
               Batches where remaining stock exceeds expected sales volume within the remaining shelf life.
-            </p>
+            </HelperText>
           </div>
           <span className="text-xs bg-rose-50 text-rose-800 border border-rose-200 font-bold px-2.5 py-1 rounded-full">
             {atRiskBatches.length} At-Risk Batches
@@ -435,14 +440,14 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
             <table className="w-full text-left text-xs border-collapse">
               <thead>
                 <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
-                  <th className="py-3 px-4">Medicine & Form</th>
-                  <th className="py-3 px-3">Batch Number</th>
-                  <th className="py-3 px-3">Current Stock</th>
+                  <th className="py-3 px-4">{t('inv_col_medicine')}</th>
+                  <th className="py-3 px-3">{t('inv_batch_num')}</th>
+                  <th className="py-3 px-3">{t('inv_col_total_stock')}</th>
                   <th className="py-3 px-3">Daily Demand (Avg)</th>
                   <th className="py-3 px-3">Days to Expiry</th>
-                  <th className="py-3 px-3">Days to Depletion</th>
-                  <th className="py-3 px-3 text-right">Risk Margin (Days)</th>
-                  <th className="py-3 px-3 text-center">Predicted Expired Waste</th>
+                  <th className="py-3 px-3">{t('days_to_depletion')}</th>
+                  <th className="py-3 px-3 text-right">{t('expiry_risk_margin')}</th>
+                  <th className="py-3 px-3 text-center">{t('estimated_waste_volume')}</th>
                   <th className="py-3 px-4 text-center">Action Guidance</th>
                 </tr>
               </thead>
@@ -506,11 +511,11 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
           <div>
             <h3 className="font-bold text-slate-900 text-sm flex items-center gap-2">
               <TrendingUp className="w-4 h-4 text-emerald-600" />
-              <span>Dynamic Reorder Level Planner</span>
+              <span>{t('dynamic_reorder_point')} Planner</span>
             </h3>
-            <p className="text-xs text-slate-500">
+            <HelperText uiMode={uiMode} className="text-xs text-slate-500">
               Compares owner's manual threshold with dynamically computed reorder requirements from {requiredDays}-day moving sales velocity.
-            </p>
+            </HelperText>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
@@ -524,8 +529,8 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
               <ShoppingBag className="w-3.5 h-3.5" />
               <span>
                 {selectedMedIds.length > 0
-                  ? `Bulk Draft PO (${selectedMedIds.length} Selected)`
-                  : 'Accept All Suggested / Bulk Draft PO'}
+                  ? `Bulk Draft PO (${selectedMedIds.length})`
+                  : t('btn_accept_all_draft_po')}
               </span>
             </button>
 
@@ -539,8 +544,8 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
               <FileCheck2 className="w-3.5 h-3.5 text-purple-600" />
               <span>
                 {selectedMedIds.length > 0
-                  ? `Apply Thresholds (${selectedMedIds.length})`
-                  : 'Apply All Thresholds'}
+                  ? `${t('btn_apply')} (${selectedMedIds.length})`
+                  : t('btn_apply')}
               </span>
             </button>
 
@@ -554,7 +559,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
               }`}
             >
               <Filter className="w-3.5 h-3.5" />
-              <span>{showOnlyDiscrepant ? 'Discrepant Only' : 'All Items'}</span>
+              <span>{showOnlyDiscrepant ? 'Discrepant Only' : t('btn_all_items')}</span>
               <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${showOnlyDiscrepant ? 'bg-white text-slate-900' : 'bg-slate-200 text-slate-800'}`}>
                 {medicineAnalysis.filter(ma => ma.suggested_reorder_level !== null && ma.suggested_reorder_level !== ma.current_threshold).length}
               </span>
@@ -575,15 +580,15 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
                     className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
                   />
                 </th>
-                <th className="py-3 px-4">Medicine</th>
-                <th className="py-3 px-3">Current Stock</th>
+                <th className="py-3 px-4">{t('inv_col_medicine')}</th>
+                <th className="py-3 px-3">{t('inv_col_total_stock')}</th>
                 <th className="py-3 px-3">Daily Demand (Avg)</th>
-                <th className="py-3 px-3">Lead Time (Days)</th>
-                <th className="py-3 px-3">Safety Buffer (Days)</th>
-                <th className="py-3 px-3 text-center">Owner Threshold</th>
-                <th className="py-3 px-3 text-center">Dynamic Reorder Point</th>
+                <th className="py-3 px-3">{t('lead_time_label')} (Days)</th>
+                <th className="py-3 px-3">{t('buffer_label')} (Days)</th>
+                <th className="py-3 px-3 text-center">{t('inv_col_reorder_threshold')}</th>
+                <th className="py-3 px-3 text-center">{t('dynamic_reorder_point')}</th>
                 <th className="py-3 px-3 text-center">Suggested PO Qty</th>
-                <th className="py-3 px-4 text-right">Owner Action</th>
+                <th className="py-3 px-4 text-right">{t('inv_col_actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -668,7 +673,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
                           className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition disabled:opacity-50"
                         >
                           <Check className="w-3.5 h-3.5" />
-                          <span>{applyingId === ma.medicine.id ? 'Applying...' : 'Accept Suggested'}</span>
+                          <span>{applyingId === ma.medicine.id ? 'Applying...' : t('btn_accept_suggested')}</span>
                         </button>
                       ) : (
                         <span className="text-slate-400 text-xs flex items-center justify-end gap-1">
@@ -805,7 +810,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
                   disabled={bulkLoading}
                   className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 rounded-lg transition"
                 >
-                  Cancel
+                  {t('btn_cancel')}
                 </button>
                 <button
                   type="button"
@@ -821,7 +826,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate }) {
                   ) : (
                     <>
                       <ShoppingBag className="w-3.5 h-3.5" />
-                      <span>Confirm & Create Draft PO</span>
+                      <span>{t('btn_create_po')}</span>
                     </>
                   )}
                 </button>

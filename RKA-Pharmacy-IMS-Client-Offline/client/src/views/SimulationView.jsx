@@ -11,8 +11,11 @@ import {
   Award,
   Sparkles
 } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
+import HelperText from '../components/HelperText';
 
-export default function SimulationView() {
+export default function SimulationView({ uiMode = 'clean' }) {
+  const { t } = useLanguage();
   const [simulationDays, setSimulationDays] = useState(90);
   const [scenario, setScenario] = useState('standard');
   const [loading, setLoading] = useState(false);
@@ -73,22 +76,22 @@ export default function SimulationView() {
   };
 
   return (
-    <div className="space-y-6 pb-12">
+    <div className={`pb-12 ${uiMode === 'clean' ? 'p-2 sm:p-4 space-y-4' : 'p-4 sm:p-6 space-y-6'}`}>
       {/* Header */}
-      <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
               <FlaskConical className="w-5 h-5 text-indigo-600" />
-              <span>Comparative Policy Simulation Engine</span>
+              <span>{t('policy_simulation_engine')}</span>
             </h2>
             <span className="bg-indigo-100 text-indigo-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
-              Inventory Policy Analytics
+              {t('badge_fefo_active') || 'Simulation Engine'}
             </span>
           </div>
-          <p className="text-xs text-slate-500 mt-1">
-            Empirical evaluation comparing FIFO vs Standard FEFO vs Enhanced FEFO+ and Static vs Computed Reorder Levels
-          </p>
+          <HelperText uiMode={uiMode} className="text-xs text-slate-500 mt-1">
+            {t('sim_subtitle')}
+          </HelperText>
         </div>
 
         {/* Controls */}
@@ -108,12 +111,12 @@ export default function SimulationView() {
               className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-300 rounded-lg shadow-2xs transition"
             >
               <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-              <span>Load Benchmark Multi-Batch Scenario</span>
+              <span>{t('btn_load_benchmark')}</span>
             </button>
           )}
 
           <div className="flex items-center gap-1">
-            <span className="text-[11px] text-slate-500 font-medium">Horizon:</span>
+            <span className="text-[11px] text-slate-500 font-medium">{t('sim_duration') || 'Horizon'}:</span>
             <select
               value={simulationDays}
               onChange={(e) => {
@@ -136,7 +139,7 @@ export default function SimulationView() {
             className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition disabled:opacity-50"
           >
             <Play className="w-3.5 h-3.5 fill-current" />
-            <span>{loading ? 'Simulating...' : 'Run Simulation'}</span>
+            <span>{loading ? 'Simulating...' : t('btn_run_simulation')}</span>
           </button>
         </div>
       </div>
@@ -206,11 +209,11 @@ export default function SimulationView() {
             <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">
-                  Comparative Analysis of Batch Release Policies on Expiry Waste and Stockouts
+                  {t('sim_policy_table_title')}
                 </h3>
-                <p className="text-xs text-slate-500">
+                <HelperText uiMode={uiMode} className="text-xs text-slate-500">
                   Simulation over {results.simulation_days} operational days with identical incoming clinic shipments
-                </p>
+                </HelperText>
               </div>
 
               <button
@@ -226,12 +229,12 @@ export default function SimulationView() {
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
-                    <th className="py-3 px-4">Release Policy</th>
-                    <th className="py-3 px-4 text-center">Total Units Released</th>
-                    <th className="py-3 px-4 text-center">Total Units Expired Without Release</th>
-                    <th className="py-3 px-4 text-center">Percentage of Expired Units</th>
-                    <th className="py-3 px-4 text-center">Zero-Stock Occurrences</th>
-                    <th className="py-3 px-4 text-center">Relative Performance</th>
+                    <th className="py-3 px-4">{t('sim_col_policy')}</th>
+                    <th className="py-3 px-4 text-center">{t('sim_col_released')}</th>
+                    <th className="py-3 px-4 text-center">{t('sim_col_expired')}</th>
+                    <th className="py-3 px-4 text-center">{t('sim_col_spoilage')}</th>
+                    <th className="py-3 px-4 text-center">{t('sim_col_stockouts')}</th>
+                    <th className="py-3 px-4 text-center">{t('relative_performance_spoilage')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -353,17 +356,17 @@ export default function SimulationView() {
           <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
             <div>
               <h3 className="font-bold text-slate-900 text-sm">
-                Comparison of Fixed Reorder Threshold vs Computed Dynamic Reorder Level in Preventing Stockouts
+                {t('sim_reorder_comparison_title')}
               </h3>
-              <p className="text-xs text-slate-500">
+              <HelperText uiMode={uiMode} className="text-xs text-slate-500">
                 Evaluation of fixed threshold vs dynamic consumption-based model [ADQS × (Lead Time + Buffer Days)]
-              </p>
+              </HelperText>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
                 <span className="text-xs uppercase text-slate-500 font-bold block mb-1">
-                  1. Fixed Reorder Threshold
+                  1. {t('sim_fixed_stockouts')}
                 </span>
                 <div className="text-2xl font-bold text-red-700">
                   {results.reorder_comparison.fixed_threshold.stockout_occurrences} Stockout Events
@@ -375,7 +378,7 @@ export default function SimulationView() {
 
               <div className="p-4 bg-emerald-50/70 rounded-xl border border-emerald-200">
                 <span className="text-xs uppercase text-emerald-700 font-bold block mb-1">
-                  2. Computed Dynamic Reorder Level
+                  2. {t('sim_computed_stockouts')}
                 </span>
                 <div className="text-2xl font-bold text-emerald-800">
                   {results.reorder_comparison.computed_threshold.stockout_occurrences} Stockout Events
@@ -384,7 +387,7 @@ export default function SimulationView() {
                   {results.reorder_comparison.computed_threshold.description}
                 </p>
                 <div className="mt-3 text-xs font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-1 rounded inline-block">
-                  ✓ {results.reorder_comparison.stockout_reduction_percentage}% Stockout Reduction
+                  ✓ {results.reorder_comparison.stockout_reduction_percentage}% {t('sim_stockout_reduction')}
                 </div>
               </div>
             </div>

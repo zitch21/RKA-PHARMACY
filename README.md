@@ -1,6 +1,6 @@
 # R.K.A Pharmacy Inventory Management System (FEFO+)
 
-> **Offline-First Clinic Pharmacy Inventory Management System with Automated Stock Alert, Expiration Tracking (FEFO+), Scrypt Authentication, Barcode-Assisted Dispensing, and Removable USB Backup.**
+> **Clinic Pharmacy Inventory Management System With Demand-Based Replenishment And Expiry-Risk-Aware FEFO**
 
 [![Platform: Windows 10 / 11](https://img.shields.io/badge/Platform-Windows%2010%20%7C%2011%20(64--bit)-blue.svg)](#system-requirements)
 [![Architecture: Offline-First](https://img.shields.io/badge/Architecture-Offline--First%20%7C%20SQLite%20WAL-success.svg)](#system-overview--key-features)
@@ -15,7 +15,7 @@
 * **Academic Institution:** Don Mariano Marcos Memorial State University – South La Union Campus (DMMMSU-SLUC)
 * **College:** College of Computer Science, Agoo, La Union
 * **Degree Program:** Bachelor of Science in Computer Science (S.Y. 2026–2027)
-* **Undergraduate Thesis Title:** *"Inventory Management System for Clinic Pharmacy Supplies with Automated Stock Alert and Expiration Tracking"* (August 2026)
+* **System Title:** Clinic Pharmacy Inventory Management System With Demand-Based Replenishment And Expiry-Risk-Aware FEFO
 * **Client Partner:** R.K.A Pharmacy, San Antonio, Agoo, La Union
 * **Clinic Administrator / Sole Proprietor:** Lourdes Gincen L. Cesista
 
@@ -112,7 +112,7 @@ The system enforces authentication to protect clinical inventory and pricing dat
 
 ## 🧪 Automated Verification Suite
 
-The repository includes a self-contained automated test suite validating all clinic and thesis specifications (46/46 tests passing):
+The repository includes a self-contained automated test suite validating all clinic and system specifications (46/46 tests passing):
 - Scrypt authentication and session validation
 - Countdown tier classification and live date calculation
 - Strict blocking of expired batches from dispensing
@@ -151,7 +151,7 @@ RKA-PHARMACY/
     ├── RKA-Pharmacy-IMS.exe           # Native C# launcher (silent background server + app mode)
     ├── Setup-Desktop-Shortcut.bat     # Client-level shortcut installer (OneDrive compatible)
     ├── start-app.bat                  # Client-level batch launcher
-    ├── verify_all_specs.js            # Automated thesis specification verification suite (42 tests)
+    ├── verify_all_specs.js            # Automated specification verification suite (46 tests)
     ├── stress_test_error_handling.js  # Concurrency, edge cases & robustness test suite
     ├── app-icon.ico                   # Application icon
     ├── runtime/                       # Bundled portable Node.js v24.14.0 LTS runtime

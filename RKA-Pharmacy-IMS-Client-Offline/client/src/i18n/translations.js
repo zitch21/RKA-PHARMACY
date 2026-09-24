@@ -5,7 +5,7 @@ export const translations = {
   en: {
     // Brand & Header
     app_title: "R.K.A PHARMACY",
-    app_subtitle: "Clinic Pharmacy Supplies with Automated Stock Alert & Expiration Tracking",
+    app_subtitle: "Clinic Pharmacy Inventory Management System With Demand-Based Replenishment And Expiry-Risk-Aware FEFO",
     workstation_tag: "Workstation Mode",
     operator_label: "Operator",
     db_online: "DB Online • FEFO+ Active",
@@ -61,8 +61,8 @@ export const translations = {
     btn_fast_intake: "Fast Intake",
     btn_press_f2: "Press F2 or Click Here",
     btn_switch_maximalist: "Switch to Maximalist Mode (View Formulas & Full Matrices) →",
-    btn_switch_clean: "🌿 Clean & Simple",
-    btn_switch_maximalist_btn: "⚡ Maximalist / Full",
+    btn_switch_clean: "Clean & Simple",
+    btn_switch_maximalist_btn: "Maximalist / Full",
 
     // Expiry Countdown Tiers & Badges
     tier_safe: "Safe (>180d)",
@@ -309,7 +309,7 @@ export const translations = {
   fil: {
     // Brand & Header
     app_title: "R.K.A BOTIKA",
-    app_subtitle: "Kagamitan sa Botika ng Klinika na may Awtomatikong Alerto sa Stock at Pagtukoy ng Paso",
+    app_subtitle: "Clinic Pharmacy Inventory Management System With Demand-Based Replenishment And Expiry-Risk-Aware FEFO",
     workstation_tag: "Modo ng Istasyon",
     operator_label: "Tagapangasiwa",
     db_online: "DB Online • Aktibo ang FEFO+",
@@ -365,8 +365,8 @@ export const translations = {
     btn_fast_intake: "Mabilis na Pagtala",
     btn_press_f2: "Pindutin ang F2 o Pindutin Dito",
     btn_switch_maximalist: "Lumipat sa Maximalist Mode (Tingnan ang Pormula at Buong Matris) →",
-    btn_switch_clean: "🌿 Malinis at Payak (Clean & Simple)",
-    btn_switch_maximalist_btn: "⚡ Buo at Detalyado (Maximalist)",
+    btn_switch_clean: "Malinis at Payak (Clean & Simple)",
+    btn_switch_maximalist_btn: "Buo at Detalyado (Maximalist)",
 
     // Expiry Countdown Tiers & Badges
     tier_safe: "Ligtas (>180 araw)",
@@ -613,7 +613,7 @@ export const translations = {
   taglish: {
     // Brand & Header
     app_title: "R.K.A PHARMACY",
-    app_subtitle: "Clinic Supplies IMS with Stock Alert & Expiration Tracking",
+    app_subtitle: "Clinic Pharmacy Inventory Management System With Demand-Based Replenishment And Expiry-Risk-Aware FEFO",
     workstation_tag: "Counter Mode",
     operator_label: "Pharmacist on Duty",
     db_online: "DB Online • FEFO+ Active",
@@ -669,8 +669,8 @@ export const translations = {
     btn_fast_intake: "Fast Intake",
     btn_press_f2: "Press F2 or Click Here",
     btn_switch_maximalist: "Switch to Maximalist Mode (View Formulas & Full Matrices) →",
-    btn_switch_clean: "🌿 Clean & Simple",
-    btn_switch_maximalist_btn: "⚡ Maximalist / Full",
+    btn_switch_clean: "Clean & Simple",
+    btn_switch_maximalist_btn: "Maximalist / Full",
 
     // Expiry Countdown Tiers & Badges
     tier_safe: "Safe (>180d)",

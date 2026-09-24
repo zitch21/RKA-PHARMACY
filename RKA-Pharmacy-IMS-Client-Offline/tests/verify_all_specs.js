@@ -1,6 +1,6 @@
 // verify_all_specs.js
 // Comprehensive automated verification test for RKA Pharmacy IMS
-// Validates thesis manuscript requirements, Chapter 2 specifications, and newly implemented features
+// Validates clinic requirements, operational specifications, and system features
 
 const http = require('http');
 
@@ -45,7 +45,7 @@ function request(method, path, body = null, headers = {}) {
 
 async function runTests() {
   console.log('================================================================');
-  console.log(' STARTING THESIS SPECIFICATION & REGRESSION VERIFICATION SUITE');
+  console.log(' STARTING SYSTEM SPECIFICATION & REGRESSION VERIFICATION SUITE');
   console.log('================================================================\n');
 
   let passedCount = 0;
@@ -63,7 +63,7 @@ async function runTests() {
 
   try {
     // -------------------------------------------------------------
-    // Test 1: Authentication & Scrypt Password Security (Manuscript p. 31)
+    // Test 1: Authentication & Scrypt Password Security
     // -------------------------------------------------------------
     console.log('1. Testing Operator Authentication & Password Security:');
     
@@ -129,7 +129,7 @@ async function runTests() {
     assert(sampleBatch.days_to_expiry === expectedDays, `Days to expiry formula verified: ${sampleBatch.days_to_expiry} == ${expectedDays}`);
 
     // -------------------------------------------------------------
-    // Test 4: Alerts & Manual Acknowledgment (Manuscript p. 31)
+    // Test 4: Alerts & Manual Acknowledgment
     // -------------------------------------------------------------
     console.log('\n4. Testing Persistent Alerts & Manual Acknowledgment:');
     const alertsRes = await request('GET', '/api/alerts');
@@ -149,7 +149,7 @@ async function runTests() {
     }
 
     // -------------------------------------------------------------
-    // Test 5: FEFO+ Advanced Analytics, Cold-Start & Qwaste Calculation (Manuscript pp. 27-28)
+    // Test 5: FEFO+ Advanced Analytics, Cold-Start & Qwaste Calculation
     // -------------------------------------------------------------
     console.log('\n5. Testing FEFO+ Analytics, Cold-Start & Qwaste Formulation:');
     const fefoRes = await request('GET', '/api/fefo-plus/analysis');
@@ -168,7 +168,7 @@ async function runTests() {
     }
 
     // -------------------------------------------------------------
-    // Test 6: Policy Simulation (Manuscript pp. 35-36)
+    // Test 6: Policy Simulation (Comparative Benchmark)
     // -------------------------------------------------------------
     console.log('\n6. Testing Policy Simulation (FIFO vs FEFO vs FEFO+):');
     const simRes = await request('GET', '/api/simulation/compare?days=30');
@@ -212,7 +212,7 @@ async function runTests() {
     }
 
     // -------------------------------------------------------------
-    // Test 8: Purchase Order (PO) Module Full Lifecycle (Manuscript pp. 17, 30, 36)
+    // Test 8: Purchase Order (PO) Module Full Lifecycle
     // -------------------------------------------------------------
     console.log('\n8. Testing Purchase Order Lifecycle (Draft -> Placed -> Receive Delivery into Batches):');
 
@@ -272,7 +272,7 @@ async function runTests() {
     assert(foundNewBatch && foundNewBatch.current_quantity === 50, `Verified newly created batch ${testBatchNo} exists in active inventory with 50 units`);
 
     // -------------------------------------------------------------
-    // Test 9: End-of-Day Backup & Removable Storage (Manuscript p. 31)
+    // Test 9: End-of-Day Backup & Removable Storage
     // -------------------------------------------------------------
     console.log('\n9. Testing End-of-Day Backup & Removable Storage:');
     const drivesRes = await request('GET', '/api/backup/drives');
@@ -282,7 +282,7 @@ async function runTests() {
     assert(downloadRes.statusCode === 200, 'WAL-checkpointed backup download returns 200 OK');
 
     // -------------------------------------------------------------
-    // Test 10: Audit Trail Immutability & Completeness (Manuscript p. 31)
+    // Test 10: Audit Trail Immutability & Completeness
     // -------------------------------------------------------------
     console.log('\n10. Testing Audit Trail Immutability & Action Logging:');
     const auditRes = await request('GET', '/api/audit?limit=50');

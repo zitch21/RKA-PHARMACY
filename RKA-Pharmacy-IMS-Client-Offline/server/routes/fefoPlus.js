@@ -30,7 +30,7 @@ const handleAnalysis = (req, res) => {
       totalHistorySpanDays = Math.max(1, Math.abs(oldestDays));
     }
 
-    // Cold-Start Rule (Manuscript p. 27):
+    // Cold-Start Baseline Rule:
     // If elapsed transaction history t < N, the system suppresses automated forecasting
     // and operates under standard FEFO dispatching and manual reorder points.
     const isColdStart = totalHistorySpanDays < N;
@@ -152,14 +152,14 @@ const handleAnalysis = (req, res) => {
           let qWaste = 0;
 
           if (adqs > 0) {
-            // T_consume = Q_i,b / D_hat_i (Manuscript p. 28)
+            // T_consume = Q_i,b / D_hat_i
             // Using cumulative stock along queue accounts for batches waiting behind earlier stock
             daysToConsume = parseFloat((cumulativeStock / adqs).toFixed(1));
             // Delta T_i,b = T_expiry - T_consume
             expiryRiskMargin = parseFloat((daysToExpiry - daysToConsume).toFixed(1));
             isAtWasteRisk = expiryRiskMargin < 0;
 
-            // Q_waste = Q_i,b - (D_hat_i * T_expiry) (Manuscript p. 28)
+            // Q_waste = Q_i,b - (D_hat_i * T_expiry)
             if (isAtWasteRisk && daysToExpiry > 0) {
               const expectedUnitsSoldBeforeExpiry = adqs * daysToExpiry;
               qWaste = Math.max(0, Math.round(b.current_quantity - expectedUnitsSoldBeforeExpiry));

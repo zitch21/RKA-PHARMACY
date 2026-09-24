@@ -17,7 +17,8 @@ import {
   LogOut,
   Lock,
   FileText,
-  Globe
+  Globe,
+  SlidersHorizontal
 } from 'lucide-react';
 import AlertNotificationDropdown from './AlertNotificationDropdown';
 import { useLanguage } from '../context/LanguageContext';
@@ -115,7 +116,7 @@ export default function Navbar({
               </span>
             </div>
             <p className="text-xs text-slate-500 -mt-0.5">
-              {t('app_subtitle', 'Clinic Pharmacy Supplies with Automated Stock Alert & Expiration Tracking')}
+              {t('app_subtitle', 'Clinic Pharmacy Inventory Management System With Demand-Based Replenishment And Expiry-Risk-Aware FEFO')}
             </p>
           </div>
         </div>
@@ -171,10 +172,10 @@ export default function Navbar({
           <button
             type="button"
             onClick={() => onToggleUiMode && onToggleUiMode()}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold border transition shadow-xs ${
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold border transition shadow-xs active:scale-[0.98] cursor-pointer ${
               uiMode === 'clean'
-                ? 'bg-amber-50 text-amber-900 border-amber-300 hover:bg-amber-100 hover:border-amber-400'
-                : 'bg-emerald-50 text-emerald-900 border-emerald-300 hover:bg-emerald-100 hover:border-emerald-400'
+                ? 'bg-slate-100 text-slate-800 border-slate-300 hover:bg-slate-200'
+                : 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
             }`}
             title={
               uiMode === 'clean'
@@ -182,15 +183,19 @@ export default function Navbar({
                 : 'Switch to Clean & Simple (Distraction-free daily counter mode)'
             }
           >
-            <LayoutTemplate className="w-3.5 h-3.5 shrink-0" />
+            {uiMode === 'clean' ? (
+              <SlidersHorizontal className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+            ) : (
+              <LayoutTemplate className="w-3.5 h-3.5 text-emerald-700 shrink-0" />
+            )}
             <span>
-              {uiMode === 'clean' ? t('btn_switch_maximalist_btn', '⚡ Maximalist / Full') : t('btn_switch_clean', '🌿 Clean & Simple')}
+              {uiMode === 'clean' ? t('btn_switch_maximalist_btn', 'Maximalist / Full') : t('btn_switch_clean', 'Clean & Simple')}
             </span>
           </button>
 
           <button
             onClick={onQuickBarcodeScan}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition shadow-xs"
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition shadow-xs active:scale-[0.98] cursor-pointer"
             title="Scan physical barcode or search item (F2)"
           >
             <Barcode className="w-4 h-4 text-emerald-600" />
@@ -204,12 +209,12 @@ export default function Navbar({
           <div className="relative">
             <button
               onClick={() => setIsAlertOpen(!isAlertOpen)}
-              className="relative p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition"
+              className="relative p-2 rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition active:scale-[0.98] cursor-pointer"
               title="View stock & expiry alerts"
             >
               <Bell className="w-5 h-5" />
               {totalAlerts > 0 && (
-                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[10px] font-bold text-white shadow-xs">
+                <span className="absolute top-1 right-1 flex h-4 w-4 items-center justify-center rounded-full bg-rose-600 text-[10px] font-bold text-white shadow-xs">
                   {totalAlerts > 9 ? '9+' : totalAlerts}
                 </span>
               )}
@@ -229,7 +234,7 @@ export default function Navbar({
             <button
               type="button"
               onClick={onLogout}
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition shadow-xs"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 transition shadow-xs active:scale-[0.98] cursor-pointer"
               title="Lock workstation / Sign out operator session"
             >
               <Lock className="w-3.5 h-3.5 text-slate-600" />
@@ -241,7 +246,7 @@ export default function Navbar({
           <button
             type="button"
             onClick={onOpenExit}
-            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition shadow-xs ml-1"
+            className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-semibold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 transition shadow-xs ml-1 active:scale-[0.98] cursor-pointer"
             title="Exit R.K.A Pharmacy IMS"
           >
             <LogOut className="w-3.5 h-3.5 text-rose-600" />

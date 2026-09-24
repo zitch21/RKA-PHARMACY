@@ -139,8 +139,8 @@ router.post('/stock-out', (req, res) => {
           }
         }
 
-        // Standard FEFO workflow (Auto-assigned or earliest batch selected)
-        // Manuscript Figure 2: "Issue from the earliest batch, if not enough proceed with the next batch until requested quantity is filled"
+        // Standard FEFO workflow (Auto-assigned or earliest batch selected):
+        // Issue from the earliest batch; if not enough, proceed with the next batch until requested quantity is filled
         if (allocations.length === 0) {
           const totalAvailable = unexpiredBatches.reduce((acc, b) => acc + b.current_quantity, 0);
           if (totalAvailable < qtyToDispense) {

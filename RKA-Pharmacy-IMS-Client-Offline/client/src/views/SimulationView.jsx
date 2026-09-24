@@ -184,8 +184,11 @@ export default function SimulationView({ uiMode = 'clean' }) {
             </div>
           </div>
 
-          <div className="p-2.5 bg-purple-900/40 rounded-lg border border-purple-800/70 text-[11px] text-purple-200 flex items-center gap-2 font-sans">
-            <span className="font-bold text-amber-400">💡 Horizon Expansion Impact:</span>
+          <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-700 text-[11px] text-slate-200 flex items-center gap-2 font-sans">
+            <span className="font-bold text-amber-400 flex items-center gap-1">
+              <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+              Horizon Expansion Impact:
+            </span>
             <span>{results.benchmark_info.horizon_note}</span>
           </div>
         </div>

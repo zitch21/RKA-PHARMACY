@@ -16,7 +16,8 @@ import {
   Layers,
   FileCheck2,
   X,
-  Loader2
+  Loader2,
+  Trash2
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import HelperText from '../components/HelperText';
@@ -36,6 +37,18 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
   const [modalNotes, setModalNotes] = useState('Consolidated replenishment PO generated via FEFO+ Dynamic Reorder Planner');
   const [updateThresholdsWithPo, setUpdateThresholdsWithPo] = useState(true);
   const [bulkLoading, setBulkLoading] = useState(false);
+
+  // Single PO Confirmation Prompt ("Accept Suggested")
+  const [singlePoConfirm, setSinglePoConfirm] = useState({
+    isOpen: false,
+    item: null,
+    quantity: 1,
+    unitCost: 10.0,
+    supplierName: '',
+    syncThreshold: true,
+    notes: '',
+    loading: false
+  });
 
   const atRiskBatches = fefoData?.at_risk_batches || [];
   const medicineAnalysis = fefoData?.medicine_analysis || [];
@@ -144,69 +157,183 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
     }
   };
 
-  // Determine items for Bulk PO with cost linked to previous batch or purchase record
-  const getCandidatePoItems = () => {
-    const resolveUnitCost = (ma) => {
-      if (ma.latest_unit_cost !== undefined && ma.latest_unit_cost !== null) return Number(ma.latest_unit_cost);
-      if (ma.medicine?.latest_unit_cost !== undefined && ma.medicine?.latest_unit_cost !== null) return Number(ma.medicine.latest_unit_cost);
-      if (ma.batches && ma.batches.length > 0) {
-        const lastBatch = ma.batches[ma.batches.length - 1];
-        if (lastBatch.unit_cost) return Number(lastBatch.unit_cost);
-      }
-      return 10.0;
-    };
-
-    if (selectedMedIds.length > 0) {
-      return medicineAnalysis
-        .filter(ma => selectedMedIds.includes(ma.medicine.id))
-        .map(ma => ({
-          medicine_id: ma.medicine.id,
-          brand_name: ma.medicine.brand_name,
-          generic_name: ma.medicine.generic_name,
-          dosage_strength: ma.medicine.dosage_strength,
-          unit_of_measure: ma.medicine.unit_of_measure,
-          supplier_name: ma.medicine.supplier_name || 'Generic Distributor',
-          current_stock: ma.total_stock,
-          suggested_reorder_level: ma.suggested_reorder_level,
-          quantity_ordered: Math.max(1, ma.suggested_purchase_quantity || Math.ceil((ma.suggested_reorder_level || 20) * 1.5 - ma.total_stock)),
-          unit_cost: resolveUnitCost(ma),
-          notes: `Suggested PO based on ${requiredDays}-day consumption velocity`
-        }));
+  // Determine unit cost from previous batches or purchase records, with safe minimum fallback
+  const resolveUnitCost = (ma) => {
+    let cost = null;
+    if (ma.latest_unit_cost !== undefined && ma.latest_unit_cost !== null && Number(ma.latest_unit_cost) > 0) {
+      cost = Number(ma.latest_unit_cost);
+    } else if (ma.medicine?.latest_unit_cost !== undefined && ma.medicine?.latest_unit_cost !== null && Number(ma.medicine.latest_unit_cost) > 0) {
+      cost = Number(ma.medicine.latest_unit_cost);
+    } else if (ma.batches && ma.batches.length > 0) {
+      const validBatch = [...ma.batches].reverse().find(b => Number(b.unit_cost) > 0);
+      if (validBatch) cost = Number(validBatch.unit_cost);
     }
+    return cost && cost > 0 ? parseFloat(cost.toFixed(2)) : 10.0;
+  };
 
-    // Default: all items needing replenishment or having suggested PO qty > 0
-    return medicineAnalysis
-      .filter(ma => ma.suggested_purchase_quantity > 0 || ma.is_low_stock || ma.is_dynamically_low)
-      .map(ma => ({
-        medicine_id: ma.medicine.id,
-        brand_name: ma.medicine.brand_name,
-        generic_name: ma.medicine.generic_name,
-        dosage_strength: ma.medicine.dosage_strength,
-        unit_of_measure: ma.medicine.unit_of_measure,
-        supplier_name: ma.medicine.supplier_name || 'Generic Distributor',
-        current_stock: ma.total_stock,
-        suggested_reorder_level: ma.suggested_reorder_level,
-        quantity_ordered: Math.max(1, ma.suggested_purchase_quantity || 20),
-        unit_cost: resolveUnitCost(ma),
-        notes: `Suggested PO based on ${requiredDays}-day consumption velocity`
-      }));
+  // Determine suggested replenishment purchase quantity
+  const resolveSuggestedQty = (ma) => {
+    if (ma.suggested_purchase_quantity && Number(ma.suggested_purchase_quantity) > 0) {
+      return Number(ma.suggested_purchase_quantity);
+    }
+    if (ma.suggested_reorder_level && Number(ma.suggested_reorder_level) > 0) {
+      const deficit = Number(ma.suggested_reorder_level) - (Number(ma.total_stock) || 0);
+      if (deficit > 0) return deficit;
+      return Number(ma.suggested_reorder_level);
+    }
+    if (ma.current_threshold && Number(ma.current_threshold) > 0) {
+      const deficit = Number(ma.current_threshold) - (Number(ma.total_stock) || 0);
+      if (deficit > 0) return deficit;
+      return Number(ma.current_threshold);
+    }
+    return 20;
+  };
+
+  // Open confirmation prompt when clicking "Accept Suggested"
+  const handleOpenSinglePoConfirm = (ma) => {
+    const qty = resolveSuggestedQty(ma);
+    const cost = resolveUnitCost(ma);
+    const supp = ma.medicine?.supplier_name || 'Generic Distributor';
+    const notes = `Replenishment PO for ${ma.medicine?.brand_name} from FEFO+ Dynamic Planner`;
+
+    setSinglePoConfirm({
+      isOpen: true,
+      item: ma,
+      quantity: qty,
+      unitCost: cost,
+      supplierName: supp,
+      syncThreshold: true,
+      notes,
+      loading: false
+    });
+  };
+
+  // Confirm and execute single draft PO creation
+  const handleConfirmSinglePo = async () => {
+    if (!singlePoConfirm.item) return;
+    const ma = singlePoConfirm.item;
+    const qty = Math.max(1, parseInt(singlePoConfirm.quantity, 10) || 1);
+    const cost = Math.max(0.5, parseFloat(singlePoConfirm.unitCost) || 10.0);
+    const supplier = (singlePoConfirm.supplierName || ma.medicine?.supplier_name || 'Generic Distributor').trim();
+
+    setSinglePoConfirm(prev => ({ ...prev, loading: true }));
+    setActionSuccess(null);
+    setActionError(null);
+
+    try {
+      // 1. Create Draft Purchase Order
+      const res = await fetch('/api/purchase-orders', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          supplier_name: supplier,
+          items: [
+            {
+              medicine_id: ma.medicine.id,
+              quantity_ordered: qty,
+              unit_cost: cost,
+              notes: singlePoConfirm.notes || `Replenishment from FEFO+ Dynamic Planner`
+            }
+          ],
+          notes: `Draft PO accepted from FEFO+ Dynamic Planner for ${ma.medicine.brand_name}`,
+          operator_name: 'Lourdes Gincen L. Cesista'
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to create Purchase Order');
+
+      // 2. Synchronize threshold if checked
+      let thresholdNote = '';
+      if (singlePoConfirm.syncThreshold && ma.suggested_reorder_level !== null) {
+        try {
+          await fetch(`/api/fefo-plus/apply-suggested-threshold/${ma.medicine.id}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ suggested_value: ma.suggested_reorder_level })
+          });
+          thresholdNote = ` & reorder threshold updated to ${ma.suggested_reorder_level} units`;
+        } catch (tErr) {
+          console.warn('Could not sync threshold:', tErr);
+        }
+      }
+
+      setSinglePoConfirm({
+        isOpen: false,
+        item: null,
+        quantity: 1,
+        unitCost: 10.0,
+        supplierName: '',
+        syncThreshold: true,
+        notes: '',
+        loading: false
+      });
+
+      setActionSuccess(`Draft Purchase Order ${data.po?.po_number || ''} created for ${ma.medicine.brand_name} (${qty} ${ma.medicine.unit_of_measure}s at ₱${cost.toFixed(2)})${thresholdNote}.`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      onRefresh();
+    } catch (err) {
+      setActionError(err.message);
+      setSinglePoConfirm(prev => ({ ...prev, loading: false }));
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
   };
 
   // Trigger Bulk Draft PO button click
   const handleBulkDraftPoClick = () => {
-    const candidates = getCandidatePoItems();
-    if (candidates.length === 0) {
-      setActionError('No items currently require replenishment under the current consumption velocity.');
+    let targetList = [];
+
+    // Case 1: Specific rows are checked with checkboxes
+    if (selectedMedIds.length > 0) {
+      targetList = medicineAnalysis.filter(ma => selectedMedIds.includes(ma.medicine.id));
+    } else {
+      // Case 2: No checkboxes checked.
+      // Priority 2a: Items needing replenishment or having suggested PO qty > 0
+      const urgentItems = medicineAnalysis.filter(
+        ma => (ma.suggested_purchase_quantity && ma.suggested_purchase_quantity > 0) ||
+              ma.is_low_stock ||
+              ma.is_dynamically_low
+      );
+
+      if (urgentItems.length > 0) {
+        targetList = urgentItems;
+      } else {
+        // Priority 2b: Items with discrepancy between suggested and current threshold
+        const discrepantItems = medicineAnalysis.filter(
+          ma => ma.suggested_reorder_level !== null && ma.suggested_reorder_level !== ma.current_threshold
+        );
+
+        if (discrepantItems.length > 0) {
+          targetList = discrepantItems;
+        } else {
+          // Priority 2c: All displayed medicines in current filter
+          targetList = displayedMedicines.length > 0 ? displayedMedicines : medicineAnalysis;
+        }
+      }
+    }
+
+    if (targetList.length === 0) {
+      setActionError('No medicines available in catalog to draft purchase orders.');
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       return;
     }
 
-    if (poDraftingMode === 'manual') {
-      setModalItems(candidates);
-      setIsReviewModalOpen(true);
-    } else {
-      // Instant auto mode: directly draft
-      executeDraftPoDirect(candidates);
-    }
+    const candidates = targetList.map(ma => ({
+      medicine_id: ma.medicine.id,
+      brand_name: ma.medicine.brand_name,
+      generic_name: ma.medicine.generic_name,
+      dosage_strength: ma.medicine.dosage_strength,
+      unit_of_measure: ma.medicine.unit_of_measure,
+      supplier_name: ma.medicine.supplier_name || 'Generic Distributor',
+      current_stock: Number(ma.total_stock) || 0,
+      suggested_reorder_level: ma.suggested_reorder_level,
+      quantity_ordered: resolveSuggestedQty(ma),
+      unit_cost: resolveUnitCost(ma),
+      notes: `Suggested PO based on ${requiredDays}-day consumption velocity`
+    }));
+
+    setModalItems(candidates);
+    setIsReviewModalOpen(true);
   };
 
   // Direct / confirmed creation of draft Purchase Orders
@@ -223,12 +350,12 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
       // Group items by supplier for realistic supply chain separation
       const supplierGroups = {};
       for (const item of itemsToDraft) {
-        const supp = item.supplier_name || 'United Laboratories (Unilab)';
+        const supp = (item.supplier_name || 'United Laboratories (Unilab)').trim();
         if (!supplierGroups[supp]) supplierGroups[supp] = [];
         supplierGroups[supp].push({
           medicine_id: item.medicine_id,
-          quantity_ordered: parseInt(item.quantity_ordered, 10) || 1,
-          unit_cost: parseFloat(item.unit_cost) || 10.0,
+          quantity_ordered: Math.max(1, parseInt(item.quantity_ordered, 10) || 1),
+          unit_cost: Math.max(0.5, parseFloat(item.unit_cost) || 10.0),
           notes: item.notes || `Replenishment from FEFO+ Dynamic Planner`
         });
       }
@@ -276,9 +403,11 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
       setSelectedMedIds([]);
       const poNums = createdOrders.map(o => o.po_number).join(', ');
       setActionSuccess(`Draft Purchase Order(s) created: ${poNums} for ${itemsToDraft.length} items.`);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
       onRefresh();
     } catch (err) {
       setActionError(err.message);
+      window.scrollTo({ top: 0, behavior: 'smooth' });
     } finally {
       setBulkLoading(false);
     }
@@ -534,13 +663,14 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
               type="button"
               onClick={handleBulkDraftPoClick}
               disabled={bulkLoading}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs transition disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-lg bg-emerald-600 text-white hover:bg-emerald-700 shadow-2xs transition disabled:opacity-50 cursor-pointer"
+              title="Bulk draft purchase orders for selected medicines or suggested replenishment items"
             >
               <ShoppingBag className="w-3.5 h-3.5" />
               <span>
                 {selectedMedIds.length > 0
                   ? `Bulk Draft PO (${selectedMedIds.length})`
-                  : t('btn_accept_all_draft_po')}
+                  : 'Bulk Draft PO'}
               </span>
             </button>
 
@@ -676,20 +806,20 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
                         <span className="text-slate-400 text-xs italic">
                           Baseline Active
                         </span>
-                      ) : isSuggestedDifferent ? (
+                      ) : (
                         <button
-                          disabled={applyingId === ma.medicine.id}
-                          onClick={() => handleApplySuggestedThreshold(ma.medicine.id, ma.suggested_reorder_level)}
-                          className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-2xs transition disabled:opacity-50"
+                          disabled={applyingId === ma.medicine.id || singlePoConfirm.loading}
+                          onClick={() => handleOpenSinglePoConfirm(ma)}
+                          className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg shadow-2xs transition cursor-pointer ${
+                            isSuggestedDifferent || ma.suggested_purchase_quantity > 0
+                              ? 'text-white bg-emerald-600 hover:bg-emerald-700'
+                              : 'text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-200'
+                          }`}
+                          title="Prompt confirmation and generate Draft Purchase Order pre-populated with suggested quantity"
                         >
                           <Check className="w-3.5 h-3.5" />
-                          <span>{applyingId === ma.medicine.id ? 'Applying...' : t('btn_accept_suggested')}</span>
+                          <span>{t('btn_accept_suggested')}</span>
                         </button>
-                      ) : (
-                        <span className="text-slate-400 text-xs flex items-center justify-end gap-1">
-                          <Check className="w-3 h-3 text-emerald-500" />
-                          <span>Aligned</span>
-                        </span>
                       )}
                     </td>
                   </tr>
@@ -700,10 +830,198 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
         </div>
       </div>
 
+      {/* Single PO Confirmation Modal ("Accept Suggested") */}
+      {singlePoConfirm.isOpen && singlePoConfirm.item && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
+            {/* Header */}
+            <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <ShoppingBag className="w-5 h-5 text-emerald-400" />
+                <div>
+                  <h3 className="font-bold text-sm">Generate Draft Purchase Order</h3>
+                  <span className="text-[11px] text-slate-400">
+                    Accept suggested replenishment for {singlePoConfirm.item.medicine?.brand_name}
+                  </span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSinglePoConfirm({ isOpen: false, item: null, quantity: 1, unitCost: 10, supplierName: '', syncThreshold: true, notes: '', loading: false })}
+                className="text-slate-400 hover:text-white p-1 rounded cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-5 overflow-y-auto space-y-4">
+              {/* Medicine Overview Card */}
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5">
+                <div className="flex items-start justify-between">
+                  <div>
+                    <h4 className="font-bold text-slate-900 text-sm">{singlePoConfirm.item.medicine?.brand_name}</h4>
+                    <p className="text-xs text-slate-500 font-medium">
+                      {singlePoConfirm.item.medicine?.generic_name} • {singlePoConfirm.item.medicine?.dosage_strength}
+                    </p>
+                  </div>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-200">
+                    {singlePoConfirm.item.medicine?.unit_of_measure}
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 mt-3 pt-3 border-t border-slate-200 text-center text-xs">
+                  <div className="bg-white p-2 rounded-lg border border-slate-200">
+                    <span className="text-[10px] uppercase text-slate-400 block font-semibold">On-Hand Stock</span>
+                    <span className="font-bold text-slate-800">{singlePoConfirm.item.total_stock}</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-slate-200">
+                    <span className="text-[10px] uppercase text-slate-400 block font-semibold">Current Limit</span>
+                    <span className="font-bold text-slate-800">{singlePoConfirm.item.current_threshold}</span>
+                  </div>
+                  <div className="bg-white p-2 rounded-lg border border-slate-200">
+                    <span className="text-[10px] uppercase text-slate-400 block font-semibold">Suggested Reorder</span>
+                    <span className="font-bold text-emerald-700">
+                      {singlePoConfirm.item.suggested_reorder_level !== null ? `${singlePoConfirm.item.suggested_reorder_level} units` : '—'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Form Inputs */}
+              <div className="space-y-3">
+                {/* Quantity */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="text-xs font-bold text-slate-700 uppercase">
+                      Purchase Order Quantity
+                    </label>
+                    <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded font-semibold border border-emerald-200">
+                      Pre-populated from velocity
+                    </span>
+                  </div>
+                  <input
+                    type="number"
+                    min="1"
+                    value={singlePoConfirm.quantity}
+                    onChange={(e) => setSinglePoConfirm(prev => ({
+                      ...prev,
+                      quantity: Math.max(1, parseInt(e.target.value, 10) || 1)
+                    }))}
+                    className="w-full px-3 py-2 text-sm font-bold border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
+                  />
+                </div>
+
+                {/* Unit Cost & Supplier Grid */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Estimated Unit Cost (₱)
+                    </label>
+                    <div className="flex items-center rounded-lg border border-slate-300 bg-white overflow-hidden focus-within:ring-2 focus-within:ring-emerald-500">
+                      <span className="px-2.5 py-2 bg-slate-100 text-slate-700 font-bold text-xs border-r border-slate-200">₱</span>
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0.5"
+                        value={singlePoConfirm.unitCost}
+                        onChange={(e) => setSinglePoConfirm(prev => ({
+                          ...prev,
+                          unitCost: Math.max(0.5, parseFloat(e.target.value) || 0.5)
+                        }))}
+                        className="w-full px-2 py-2 text-xs font-bold font-mono focus:outline-none"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">
+                      Distributor / Supplier
+                    </label>
+                    <input
+                      type="text"
+                      value={singlePoConfirm.supplierName}
+                      onChange={(e) => setSinglePoConfirm(prev => ({ ...prev, supplierName: e.target.value }))}
+                      className="w-full px-2.5 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none bg-white"
+                    />
+                  </div>
+                </div>
+
+                {/* Total Value Banner */}
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-center justify-between text-xs font-bold">
+                  <span className="text-emerald-900">Total Estimated PO Amount:</span>
+                  <span className="text-emerald-800 font-mono text-sm">
+                    ₱{((parseInt(singlePoConfirm.quantity, 10) || 0) * (parseFloat(singlePoConfirm.unitCost) || 0)).toFixed(2)}
+                  </span>
+                </div>
+
+                {/* Dynamic threshold sync checkbox */}
+                {singlePoConfirm.item.suggested_reorder_level !== null && (
+                  <label className="flex items-center gap-2 p-2.5 bg-purple-50/70 border border-purple-200 rounded-xl cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={singlePoConfirm.syncThreshold}
+                      onChange={(e) => setSinglePoConfirm(prev => ({ ...prev, syncThreshold: e.target.checked }))}
+                      className="rounded text-purple-600 focus:ring-purple-500 border-purple-300 cursor-pointer"
+                    />
+                    <span className="text-xs text-purple-950 font-medium">
+                      Also synchronize dynamic reorder threshold to <strong>{singlePoConfirm.item.suggested_reorder_level} units</strong>
+                    </span>
+                  </label>
+                )}
+
+                {/* Notes */}
+                <div>
+                  <label className="block text-xs font-semibold text-slate-600 mb-1">
+                    PO Item Notes (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={singlePoConfirm.notes}
+                    onChange={(e) => setSinglePoConfirm(prev => ({ ...prev, notes: e.target.value }))}
+                    className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
+                    placeholder="Notes for order slip..."
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Footer Buttons */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                onClick={() => setSinglePoConfirm({ isOpen: false, item: null, quantity: 1, unitCost: 10, supplierName: '', syncThreshold: true, notes: '', loading: false })}
+                disabled={singlePoConfirm.loading}
+                className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 rounded-lg transition cursor-pointer"
+              >
+                {t('btn_cancel')}
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmSinglePo}
+                disabled={singlePoConfirm.loading}
+                className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+              >
+                {singlePoConfirm.loading ? (
+                  <>
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                    <span>Creating Draft PO...</span>
+                  </>
+                ) : (
+                  <>
+                    <ShoppingBag className="w-3.5 h-3.5" />
+                    <span>Confirm & Create Draft PO</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Review Modal for Manual PO Drafting Mode */}
       {isReviewModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-3xl w-full overflow-hidden border border-slate-200 flex flex-col max-h-[90vh]">
             <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <ShoppingBag className="w-5 h-5 text-emerald-400" />
@@ -716,7 +1034,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
               </div>
               <button
                 onClick={() => setIsReviewModalOpen(false)}
-                className="text-slate-400 hover:text-white p-1 rounded"
+                className="text-slate-400 hover:text-white p-1 rounded cursor-pointer"
               >
                 <X className="w-5 h-5" />
               </button>
@@ -725,7 +1043,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
             <div className="p-5 overflow-y-auto space-y-4 flex-1">
               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950 flex items-center justify-between">
                 <span>
-                  <strong>Manual Review Mode:</strong> Review quantities and unit costs before recording to purchase orders.
+                  <strong>Bulk PO Review:</strong> Review quantities and unit costs before recording to purchase orders.
                 </span>
                 <span className="font-bold bg-white px-2 py-0.5 rounded border border-emerald-300">
                   {modalItems.length} Line Item(s)
@@ -743,6 +1061,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
                       <th className="py-2.5 px-2 text-center">Suggested PO Qty</th>
                       <th className="py-2.5 px-2 text-center">Unit Cost (₱)</th>
                       <th className="py-2.5 px-3 text-right">Line Total</th>
+                      <th className="py-2.5 px-2 text-center w-8"></th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
@@ -760,7 +1079,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
                             min="1"
                             value={item.quantity_ordered}
                             onChange={(e) => {
-                              const val = parseInt(e.target.value, 10) || 1;
+                              const val = Math.max(1, parseInt(e.target.value, 10) || 1);
                               setModalItems(prev => {
                                 const copy = [...prev];
                                 copy[idx] = { ...copy[idx], quantity_ordered: val };
@@ -776,13 +1095,13 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
                             <input
                               type="number"
                               step="0.01"
-                              min="0.01"
+                              min="0.5"
                               value={item.unit_cost}
                               onChange={(e) => {
                                 const val = parseFloat(e.target.value);
                                 setModalItems(prev => {
                                   const copy = [...prev];
-                                  copy[idx] = { ...copy[idx], unit_cost: isNaN(val) ? '' : val };
+                                  copy[idx] = { ...copy[idx], unit_cost: isNaN(val) ? 0.5 : val };
                                   return copy;
                                 });
                               }}
@@ -794,8 +1113,25 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
                         <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">
                           ₱{((parseInt(item.quantity_ordered, 10) || 0) * (parseFloat(item.unit_cost) || 0)).toFixed(2)}
                         </td>
+                        <td className="py-2 px-2 text-center">
+                          <button
+                            type="button"
+                            onClick={() => setModalItems(prev => prev.filter((_, i) => i !== idx))}
+                            className="p-1 text-slate-400 hover:text-rose-600 rounded transition cursor-pointer"
+                            title="Remove from this draft PO"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </td>
                       </tr>
                     ))}
+                    {modalItems.length === 0 && (
+                      <tr>
+                        <td colSpan="7" className="py-4 text-center text-slate-400 italic">
+                          No items remaining in this draft PO.
+                        </td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -807,7 +1143,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
                     type="checkbox"
                     checked={updateThresholdsWithPo}
                     onChange={(e) => setUpdateThresholdsWithPo(e.target.checked)}
-                    className="rounded text-purple-600 focus:ring-purple-500 border-purple-300"
+                    className="rounded text-purple-600 focus:ring-purple-500 border-purple-300 cursor-pointer"
                   />
                   <span className="font-semibold text-purple-900">
                     Also apply dynamic reorder thresholds to medicine database records
@@ -840,15 +1176,15 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
                   type="button"
                   onClick={() => setIsReviewModalOpen(false)}
                   disabled={bulkLoading}
-                  className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 rounded-lg transition"
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-slate-200 rounded-lg transition cursor-pointer"
                 >
                   {t('btn_cancel')}
                 </button>
                 <button
                   type="button"
                   onClick={() => executeDraftPoDirect(modalItems)}
-                  disabled={bulkLoading}
-                  className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition flex items-center gap-1.5 disabled:opacity-50"
+                  disabled={bulkLoading || modalItems.length === 0}
+                  className="px-5 py-2 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
                   {bulkLoading ? (
                     <>

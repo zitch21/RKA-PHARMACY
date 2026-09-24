@@ -167,7 +167,7 @@ export default function App() {
 
   return (
     <LanguageProvider>
-      <div className="min-h-screen bg-slate-100 flex flex-col font-sans text-slate-800 antialiased selection:bg-emerald-500 selection:text-white">
+      <div className="min-h-[100dvh] bg-slate-50 flex flex-col font-sans text-slate-900 antialiased selection:bg-emerald-600 selection:text-white">
         <Navbar
           activeTab={activeTab}
           setActiveTab={setActiveTab}
@@ -185,9 +185,29 @@ export default function App() {
 
         <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6">
           {loading ? (
-            <div className="flex flex-col items-center justify-center py-24 text-slate-400">
-              <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-3"></div>
-              <span className="text-xs font-semibold uppercase tracking-wider">Loading R.K.A Pharmacy Records...</span>
+            <div className="w-full space-y-4 animate-pulse" aria-busy="true" aria-label="Loading Pharmacy Records">
+              <div className="h-20 bg-white rounded-2xl border border-slate-200/80 p-5 flex items-center justify-between shadow-xs">
+                <div className="space-y-2">
+                  <div className="h-5 w-48 bg-slate-200 rounded-md"></div>
+                  <div className="h-3 w-72 bg-slate-100 rounded-md"></div>
+                </div>
+                <div className="flex gap-2">
+                  <div className="h-9 w-24 bg-slate-200 rounded-lg"></div>
+                  <div className="h-9 w-28 bg-slate-200 rounded-lg"></div>
+                </div>
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                <div className="lg:col-span-2 h-72 bg-white rounded-2xl border border-slate-200/80 p-6 space-y-4 shadow-xs">
+                  <div className="h-6 w-44 bg-slate-200 rounded-md"></div>
+                  <div className="h-28 bg-slate-100 rounded-xl"></div>
+                  <div className="h-16 bg-slate-50 rounded-xl"></div>
+                </div>
+                <div className="h-72 bg-white rounded-2xl border border-slate-200/80 p-6 space-y-3 shadow-xs">
+                  <div className="h-6 w-36 bg-slate-200 rounded-md"></div>
+                  <div className="h-24 bg-slate-100 rounded-xl"></div>
+                  <div className="h-24 bg-slate-100 rounded-xl"></div>
+                </div>
+              </div>
             </div>
           ) : (
             <ErrorBoundary key={activeTab} onNavigateHome={() => setActiveTab('dashboard')}>

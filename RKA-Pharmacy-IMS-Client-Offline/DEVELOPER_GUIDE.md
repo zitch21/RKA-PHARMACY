@@ -114,7 +114,7 @@ When the app opens, you will be greeted by the workstation lock screen. Use the 
 * **Operator:** Lourdes Gincen L. Cesista
 
 ### Running the Automated Test Suite & Health Audits
-To verify that all 46 thesis and clinic specifications are functioning:
+To verify that all 46 system and clinic specifications are functioning:
 ```powershell
 cd RKA-Pharmacy-IMS-Client-Offline
 .\runtime\node.exe tests/verify_all_specs.js
@@ -199,7 +199,7 @@ RKA-Pharmacy-IMS-Client-Offline/
 │   └── dist/                   # Compiled HTML/CSS/JS served to the browser
 ├── tests/                      # Automated verification, edge case & health diagnostics
 │   ├── check_system_health.js  # Zero-defect SQLite integrity, schema & foreign key auditor
-│   ├── verify_all_specs.js     # Automated test suite validating all thesis requirements (46 tests)
+│   ├── verify_all_specs.js     # Automated test suite validating all system specifications (46 tests)
 │   └── stress_test_error_handling.js # Concurrency, boundary & robustness test suite
 ├── Setup-Desktop-Shortcut.bat  # 1-click shortcut installer
 ├── start-app.bat               # Fallback launcher

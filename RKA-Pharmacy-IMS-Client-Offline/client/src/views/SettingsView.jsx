@@ -362,7 +362,7 @@ export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMo
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                  <span>🌿 Clean & Simple Mode</span>
+                  <span>Clean & Simple Mode</span>
                   <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded uppercase">
                     Recommended
                   </span>
@@ -409,7 +409,7 @@ export default function SettingsView({ onRefresh, uiMode = 'clean', onToggleUiMo
             <div>
               <div className="flex items-center justify-between mb-2">
                 <span className="font-bold text-sm text-slate-900 flex items-center gap-2">
-                  <span>⚡ Maximalist (Advanced) Mode</span>
+                  <span>Maximalist (Advanced) Mode</span>
                 </span>
                 {uiMode === 'maximalist' && (
                   <span className="w-2.5 h-2.5 rounded-full bg-indigo-600"></span>

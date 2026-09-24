@@ -15,7 +15,8 @@ import {
   Layers,
   FileText,
   Plus,
-  Sparkles
+  Sparkles,
+  Lock
 } from 'lucide-react';
 import OverrideModal from '../components/OverrideModal';
 import BatchStatusConfirmModal from '../components/BatchStatusConfirmModal';
@@ -889,8 +890,9 @@ export default function StockOutView({
                     <div>
                       <label className="block text-xs font-semibold uppercase text-slate-700 mb-1 flex items-center justify-between">
                         <span>Unit Price (₱)</span>
-                        <span className="text-[10px] text-slate-500 font-semibold bg-slate-200/80 px-1.5 py-0.5 rounded">
-                          🔒 Fixed / Locked
+                        <span className="text-[10px] text-slate-500 font-semibold bg-slate-200/80 px-1.5 py-0.5 rounded flex items-center gap-1">
+                          <Lock className="w-2.5 h-2.5 text-slate-500" />
+                          <span>Fixed / Locked</span>
                         </span>
                       </label>
                       <div className="w-full px-3 py-2 text-sm border border-slate-200 rounded-lg bg-slate-100 font-bold text-slate-900 flex items-center justify-between">

@@ -26,7 +26,7 @@ const handleSimulation = (req, res) => {
 
       for (const m of medicines) {
         if (isBenchmark) {
-          // Chapter 2 Thesis Benchmark Multi-Batch Divergence Scenario:
+          // Benchmark Multi-Batch Divergence Scenario:
           // Batch A: Arrived earlier (received day -15) with distant expiry (day 120, 80 units).
           // Batch B: Arrived later (received day 5) with imminent expiry (day 38, 60 units).
           // Daily consumption velocity: 2 units / day.
@@ -324,7 +324,7 @@ const handleSimulation = (req, res) => {
         waste_reduction_vs_fefo: `${(fefoResult.total_expired_units - fefoPlusResult.total_expired_units)} units (${(fefoResult.expired_percentage - fefoPlusResult.expired_percentage).toFixed(1)}% drop)`
       },
       benchmark_info: (scenario === 'benchmark_divergence' || scenario === 'multi_batch_benchmark') ? {
-        title: 'Benchmark Multi-Batch Scenario (Chapter 2 Thesis Model)',
+        title: 'Benchmark Multi-Batch Scenario (Operational Inventory Model)',
         description: 'Demonstrates batch release divergence: Batch A (arrived earlier, distant expiry) vs Batch B (arrived later, imminent expiry). Evaluates why traditional FIFO results in catastrophic spoilage compared to FEFO and FEFO+.',
         batch_a: 'Arrived Day -15 | Expires Day 120 (Distant) | Stock: 80 units',
         batch_b: 'Arrived Day 5 | Expires Day 38 (Imminent) | Stock: 60 units',

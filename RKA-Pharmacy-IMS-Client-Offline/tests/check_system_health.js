@@ -1,6 +1,9 @@
-// check_system_health.js
 const path = require('path');
-const { db, getLocalDateString } = require(path.join(__dirname, 'server', 'db'));
+const fs = require('fs');
+const serverDbPath = fs.existsSync(path.join(__dirname, 'server', 'db.js'))
+  ? path.join(__dirname, 'server', 'db')
+  : path.join(__dirname, '..', 'server', 'db');
+const { db, getLocalDateString } = require(serverDbPath);
 
 console.log('=== SYSTEM & DATABASE HEALTH AUDIT ===\n');
 

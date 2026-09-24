@@ -54,6 +54,8 @@ router.get('/', (req, res) => {
 
       return {
         ...po,
+        total_cost: po.total_amount,
+        operator_name: po.created_by,
         items
       };
     });
@@ -134,7 +136,9 @@ router.get('/recommendations', (req, res) => {
 
         const totalSold = salesQuery ? salesQuery.total_sold : 0;
         adqs = parseFloat((totalSold / N).toFixed(2));
-        effectiveThreshold = Math.ceil(adqs * (leadTime + bufferDays));
+        effectiveThreshold = adqs > 0 
+          ? Math.ceil(adqs * (leadTime + bufferDays))
+          : (med.reorder_threshold || 20);
 
         needsReorder = med.total_stock <= effectiveThreshold;
         if (needsReorder) {
@@ -213,6 +217,8 @@ router.get('/:id', (req, res) => {
 
     res.json({
       ...po,
+      total_cost: po.total_amount,
+      operator_name: po.created_by,
       items
     });
   } catch (err) {

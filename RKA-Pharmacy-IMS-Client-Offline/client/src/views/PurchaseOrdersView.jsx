@@ -106,6 +106,61 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
     setIsCreateModalOpen(true);
   };
 
+  // Handle Bulk Drafting with Multi-Supplier separation
+  const handleBulkDraftRecommendations = async (items) => {
+    if (!items || items.length === 0) return;
+
+    // Group by supplier
+    const supplierGroups = {};
+    for (const item of items) {
+      const supp = item.supplier_name || 'Generic Distributor';
+      if (!supplierGroups[supp]) supplierGroups[supp] = [];
+      supplierGroups[supp].push({
+        medicine_id: item.medicine_id,
+        quantity_ordered: parseInt(item.suggested_quantity || 50, 10),
+        unit_cost: parseFloat(item.estimated_unit_cost || 10)
+      });
+    }
+
+    const uniqueSuppliers = Object.keys(supplierGroups);
+    if (uniqueSuppliers.length <= 1) {
+      handleOpenCreateModal(items, uniqueSuppliers[0]);
+      return;
+    }
+
+    if (!window.confirm(`Replenishment recommendations involve ${uniqueSuppliers.length} different distributors (${uniqueSuppliers.join(', ')}). Automatically generate separated draft Purchase Orders for each distributor?`)) {
+      return;
+    }
+
+    setActionLoading(true);
+    setActionError(null);
+    try {
+      const created = [];
+      for (const [suppName, suppItems] of Object.entries(supplierGroups)) {
+        const res = await fetch('/api/purchase-orders', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            supplier_name: suppName,
+            items: suppItems,
+            notes: 'Consolidated replenishment PO generated via Dynamic Replenishment Planner',
+            operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista'
+          })
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'Failed to create PO');
+        created.push(data.po.po_number);
+      }
+      setActionSuccess(`Created ${created.length} draft Purchase Order(s) grouped by supplier: ${created.join(', ')}.`);
+      fetchOrdersAndRecommendations();
+      if (onRefreshInventory) onRefreshInventory();
+    } catch (err) {
+      setActionError(err.message);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
   const handleAddItemRow = () => {
     const defaultMedId = medicines && medicines.length > 0 ? medicines[0].id : '';
     setNewPoItems(prev => [...prev, { medicine_id: defaultMedId, quantity_ordered: 50, unit_cost: 10 }]);
@@ -466,7 +521,7 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
           </div>
 
           <button
-            onClick={() => handleOpenCreateModal(recommendations)}
+            onClick={() => handleBulkDraftRecommendations(recommendations)}
             className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition shrink-0"
           >
             <ShoppingBag className="w-4 h-4" />
@@ -551,13 +606,13 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
                       <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 mt-1">
                         <span>Created: {new Date(po.created_at).toLocaleDateString()}</span>
                         <span>•</span>
-                        <span>Total: <strong>₱{Number(po.total_cost || 0).toFixed(2)}</strong></span>
+                        <span>Total: <strong>₱{Number(po.total_amount ?? po.total_cost ?? 0).toFixed(2)}</strong></span>
                         <span>•</span>
                         <span>Items: {totalReceivedCount} / {totalItemsCount} units received</span>
-                        {po.operator_name && (
+                        {(po.operator_name || po.created_by) && (
                           <>
                             <span>•</span>
-                            <span>By: {po.operator_name}</span>
+                            <span>By: {po.operator_name || po.created_by}</span>
                           </>
                         )}
                       </div>
@@ -1070,7 +1125,7 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
 
               <div className="flex justify-between items-center text-sm font-black pt-1">
                 <span>TOTAL ESTIMATED COST:</span>
-                <span>₱{Number(printPo.total_cost || 0).toFixed(2)}</span>
+                <span>₱{Number(printPo.total_amount ?? printPo.total_cost ?? 0).toFixed(2)}</span>
               </div>
 
               {printPo.notes && (

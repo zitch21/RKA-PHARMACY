@@ -130,13 +130,13 @@ The repository includes a self-contained automated test suite validating all cli
 To run the verification test suite:
 ```powershell
 cd RKA-Pharmacy-IMS-Client-Offline
-.\runtime\node.exe verify_all_specs.js
+.\runtime\node.exe tests/verify_all_specs.js
 ```
 
 To run the complete system and database health check:
 ```powershell
 cd RKA-Pharmacy-IMS-Client-Offline
-.\runtime\node.exe check_system_health.js
+.\runtime\node.exe tests/check_system_health.js
 ```
 
 ## 📂 Repository Structure
@@ -151,8 +151,10 @@ RKA-PHARMACY/
     ├── RKA-Pharmacy-IMS.exe           # Native C# launcher (silent background server + app mode)
     ├── Setup-Desktop-Shortcut.bat     # Client-level shortcut installer (OneDrive compatible)
     ├── start-app.bat                  # Client-level batch launcher
-    ├── verify_all_specs.js            # Automated thesis specification verification suite (42 tests)
-    ├── stress_test_error_handling.js  # Concurrency, edge cases & robustness test suite
+    ├── tests/                         # Automated verification & diagnostic test suites
+    │   ├── verify_all_specs.js        # Automated thesis specification verification suite (46 tests)
+    │   ├── stress_test_error_handling.js # Concurrency, edge cases & robustness test suite (24 tests)
+    │   └── check_system_health.js     # Database integrity & consistency health diagnostics
     ├── app-icon.ico                   # Application icon
     ├── runtime/                       # Bundled portable Node.js v24.14.0 LTS runtime
     │   └── node.exe

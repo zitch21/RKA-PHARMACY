@@ -129,7 +129,10 @@ const handleAnalysis = (req, res) => {
         const adqs = parseFloat((totalSold / N).toFixed(2));
 
         // Dynamic Reorder Point: R_i = (D_hat_i * L_i) + (D_hat_i * K_buffer)
-        const suggestedReorder = Math.ceil(adqs * (leadTime + bufferDays));
+        const computedReorder = Math.ceil(adqs * (leadTime + bufferDays));
+        // Safe floor: if ADQS == 0 (no sales recorded or drug was out of stock),
+        // fallback to manual threshold to protect against censored demand wiping threshold to 0
+        const suggestedReorder = adqs > 0 ? computedReorder : (med.reorder_threshold || 20);
 
         // Suggested purchase quantity when replenishment is needed
         const suggestedPurchaseQty = totalCurrentStock <= suggestedReorder

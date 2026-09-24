@@ -117,7 +117,7 @@ When the app opens, you will be greeted by the workstation lock screen. Use the 
 To verify that all 46 thesis and clinic specifications are functioning:
 ```powershell
 cd RKA-Pharmacy-IMS-Client-Offline
-.\runtime\node.exe verify_all_specs.js
+.\runtime\node.exe tests/verify_all_specs.js
 ```
 You should see:
 ```text
@@ -129,12 +129,12 @@ You should see:
 
 To run the complete system and database health audit:
 ```powershell
-.\runtime\node.exe check_system_health.js
+.\runtime\node.exe tests/check_system_health.js
 ```
 
 To run the comprehensive stress and edge-case test suite:
 ```powershell
-.\runtime\node.exe stress_test_error_handling.js
+.\runtime\node.exe tests/stress_test_error_handling.js
 ```
 
 ---
@@ -197,9 +197,10 @@ RKA-Pharmacy-IMS-Client-Offline/
 │   │   │   └── SettingsView.jsx        # Configurable window (N), tiers, USB backup, security
 │   │   └── App.jsx             # Workstation shell, state orchestrator, auth guard
 │   └── dist/                   # Compiled HTML/CSS/JS served to the browser
-├── check_system_health.js      # Zero-defect SQLite integrity, schema & foreign key auditor
-├── verify_all_specs.js         # Automated test suite validating all thesis requirements (46 tests)
-├── stress_test_error_handling.js # Concurrency, boundary & robustness test suite
+├── tests/                      # Automated verification, edge case & health diagnostics
+│   ├── check_system_health.js  # Zero-defect SQLite integrity, schema & foreign key auditor
+│   ├── verify_all_specs.js     # Automated test suite validating all thesis requirements (46 tests)
+│   └── stress_test_error_handling.js # Concurrency, boundary & robustness test suite
 ├── Setup-Desktop-Shortcut.bat  # 1-click shortcut installer
 ├── start-app.bat               # Fallback launcher
 └── RKA-Pharmacy-IMS.exe        # Native Windows launcher
@@ -733,7 +734,7 @@ The compiled files are automatically written into `client/dist/`, which the Expr
 ### Recipe 5: Writing an Automated Verification Test
 Suppose you want to add an automated test to ensure that the system prevents setting negative prices:
 
-1. Open `RKA-Pharmacy-IMS-Client-Offline/verify_all_specs.js`.
+1. Open `RKA-Pharmacy-IMS-Client-Offline/tests/verify_all_specs.js`.
 2. Add an assertion inside `runTests()`:
    ```javascript
    console.log('Testing Negative Price Prevention:');
@@ -749,7 +750,7 @@ Suppose you want to add an automated test to ensure that the system prevents set
    ```
 3. Run the test suite:
    ```powershell
-   .\runtime\node.exe verify_all_specs.js
+   .\runtime\node.exe tests/verify_all_specs.js
    ```
 
 ---

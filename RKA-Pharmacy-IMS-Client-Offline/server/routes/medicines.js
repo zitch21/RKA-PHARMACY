@@ -12,6 +12,15 @@ router.get('/', (req, res) => {
     const medicines = db.prepare(`
       SELECT 
         m.*,
+        COALESCE(
+          (SELECT unit_cost FROM batches WHERE medicine_id = m.id ORDER BY id DESC LIMIT 1),
+          (SELECT unit_cost FROM purchase_order_items WHERE medicine_id = m.id ORDER BY id DESC LIMIT 1),
+          10.0
+        ) as latest_unit_cost,
+        COALESCE(
+          (SELECT selling_price FROM batches WHERE medicine_id = m.id ORDER BY id DESC LIMIT 1),
+          15.0
+        ) as latest_selling_price,
         COALESCE(SUM(CASE WHEN b.status = 'active' AND b.current_quantity > 0 AND b.expiration_date > ? THEN b.current_quantity ELSE 0 END), 0) as total_stock,
         COUNT(CASE WHEN b.status = 'active' AND b.current_quantity > 0 AND b.expiration_date > ? THEN b.id END) as active_batches_count,
         MIN(CASE WHEN b.status = 'active' AND b.current_quantity > 0 AND b.expiration_date > ? THEN b.expiration_date END) as earliest_expiration_date

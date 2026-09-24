@@ -144,8 +144,18 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
     }
   };
 
-  // Determine items for Bulk PO
+  // Determine items for Bulk PO with cost linked to previous batch or purchase record
   const getCandidatePoItems = () => {
+    const resolveUnitCost = (ma) => {
+      if (ma.latest_unit_cost !== undefined && ma.latest_unit_cost !== null) return Number(ma.latest_unit_cost);
+      if (ma.medicine?.latest_unit_cost !== undefined && ma.medicine?.latest_unit_cost !== null) return Number(ma.medicine.latest_unit_cost);
+      if (ma.batches && ma.batches.length > 0) {
+        const lastBatch = ma.batches[ma.batches.length - 1];
+        if (lastBatch.unit_cost) return Number(lastBatch.unit_cost);
+      }
+      return 10.0;
+    };
+
     if (selectedMedIds.length > 0) {
       return medicineAnalysis
         .filter(ma => selectedMedIds.includes(ma.medicine.id))
@@ -159,7 +169,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
           current_stock: ma.total_stock,
           suggested_reorder_level: ma.suggested_reorder_level,
           quantity_ordered: Math.max(1, ma.suggested_purchase_quantity || Math.ceil((ma.suggested_reorder_level || 20) * 1.5 - ma.total_stock)),
-          unit_cost: 10.0,
+          unit_cost: resolveUnitCost(ma),
           notes: `Suggested PO based on ${requiredDays}-day consumption velocity`
         }));
     }
@@ -177,7 +187,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
         current_stock: ma.total_stock,
         suggested_reorder_level: ma.suggested_reorder_level,
         quantity_ordered: Math.max(1, ma.suggested_purchase_quantity || 20),
-        unit_cost: 10.0,
+        unit_cost: resolveUnitCost(ma),
         notes: `Suggested PO based on ${requiredDays}-day consumption velocity`
       }));
   };
@@ -731,7 +741,8 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
                       <th className="py-2.5 px-2">Supplier</th>
                       <th className="py-2.5 px-2 text-center">Stock</th>
                       <th className="py-2.5 px-2 text-center">Suggested PO Qty</th>
-                      <th className="py-2.5 px-2 text-right">Est. Cost</th>
+                      <th className="py-2.5 px-2 text-center">Unit Cost (₱)</th>
+                      <th className="py-2.5 px-3 text-right">Line Total</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium">
@@ -756,11 +767,32 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
                                 return copy;
                               });
                             }}
-                            className="w-16 px-1.5 py-1 text-center font-bold text-xs border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500"
+                            className="w-16 px-1.5 py-1 text-center font-bold text-xs border border-slate-300 rounded focus:ring-1 focus:ring-emerald-500 bg-white"
                           />
                         </td>
-                        <td className="py-2 px-2 text-right font-mono text-slate-700">
-                          ₱{(item.quantity_ordered * item.unit_cost).toFixed(2)}
+                        <td className="py-2 px-2 text-center">
+                          <div className="inline-flex items-center rounded border border-slate-300 bg-white overflow-hidden focus-within:ring-1 focus-within:ring-emerald-500 shadow-2xs">
+                            <span className="px-1.5 py-1 bg-slate-100 text-emerald-800 font-bold text-[11px] border-r border-slate-200 select-none">₱</span>
+                            <input
+                              type="number"
+                              step="0.01"
+                              min="0.01"
+                              value={item.unit_cost}
+                              onChange={(e) => {
+                                const val = parseFloat(e.target.value);
+                                setModalItems(prev => {
+                                  const copy = [...prev];
+                                  copy[idx] = { ...copy[idx], unit_cost: isNaN(val) ? '' : val };
+                                  return copy;
+                                });
+                              }}
+                              className="w-20 px-1.5 py-1 text-right font-mono font-bold text-xs focus:outline-none"
+                              title="Editable Unit Cost pre-filled from item's previous batch or purchase record"
+                            />
+                          </div>
+                        </td>
+                        <td className="py-2 px-3 text-right font-mono font-bold text-slate-800">
+                          ₱{((parseInt(item.quantity_ordered, 10) || 0) * (parseFloat(item.unit_cost) || 0)).toFixed(2)}
                         </td>
                       </tr>
                     ))}
@@ -800,7 +832,7 @@ export default function FefoPlusView({ fefoData, onRefresh, onNavigate, uiMode =
 
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
               <span className="text-xs font-bold text-slate-700">
-                Total Est. Value: ₱{modalItems.reduce((sum, i) => sum + (i.quantity_ordered * i.unit_cost), 0).toFixed(2)}
+                Total Est. Value: ₱{modalItems.reduce((sum, i) => sum + ((parseInt(i.quantity_ordered, 10) || 0) * (parseFloat(i.unit_cost) || 0)), 0).toFixed(2)}
               </span>
 
               <div className="flex items-center gap-2">

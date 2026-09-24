@@ -355,11 +355,18 @@ router.post('/:id/receive', (req, res) => {
     const poId = req.params.id;
     const {
       deliveries, // array of { item_id, quantity_received, batch_number, manufacturing_date, expiration_date, unit_cost, selling_price }
+      received_items,
       operator_name = 'Lourdes Gincen L. Cesista',
       delivery_notes
     } = req.body || {};
 
-    if (!deliveries || !Array.isArray(deliveries) || deliveries.length === 0) {
+    const itemsToReceive = (deliveries && Array.isArray(deliveries) && deliveries.length > 0)
+      ? deliveries
+      : (received_items && Array.isArray(received_items) && received_items.length > 0)
+        ? received_items
+        : null;
+
+    if (!itemsToReceive || itemsToReceive.length === 0) {
       return res.status(400).json({ error: 'Please specify received delivery items with batch and expiry details.' });
     }
 
@@ -380,8 +387,10 @@ router.post('/:id/receive', (req, res) => {
       const createdBatches = [];
 
       for (const del of deliveryList) {
-        const { item_id, quantity_received, batch_number, manufacturing_date, expiration_date, unit_cost, selling_price } = del;
-        const qtyReceived = parseInt(quantity_received);
+        const { batch_number, manufacturing_date, expiration_date, unit_cost, selling_price } = del;
+        const targetItemId = del.item_id ?? del.po_item_id ?? del.id;
+        const rawQty = del.quantity_received !== undefined ? del.quantity_received : del.quantity_to_receive;
+        const qtyReceived = parseInt(rawQty);
 
         if (isNaN(qtyReceived) || qtyReceived <= 0) continue; // skip zero/unreceived lines
 
@@ -393,9 +402,15 @@ router.post('/:id/receive', (req, res) => {
           throw new Error(`Cannot receive expired batch (${batch_number} expires on ${expiration_date}). Expiration date must be in the future.`);
         }
 
-        const item = db.prepare('SELECT * FROM purchase_order_items WHERE id = ? AND po_id = ?').get(item_id, poId);
+        let item = null;
+        if (targetItemId) {
+          item = db.prepare('SELECT * FROM purchase_order_items WHERE id = ? AND po_id = ?').get(targetItemId, poId);
+        }
+        if (!item && del.medicine_id) {
+          item = db.prepare('SELECT * FROM purchase_order_items WHERE medicine_id = ? AND po_id = ?').get(del.medicine_id, poId);
+        }
         if (!item) {
-          throw new Error(`Order line item with ID ${item_id} not found in this Purchase Order.`);
+          throw new Error(`Order line item with ID ${targetItemId || del.medicine_id} not found in this Purchase Order.`);
         }
 
         const med = db.prepare('SELECT * FROM medicines WHERE id = ?').get(item.medicine_id);
@@ -455,7 +470,7 @@ router.post('/:id/receive', (req, res) => {
           UPDATE purchase_order_items
           SET quantity_received = ?, status = ?
           WHERE id = ?
-        `).run(newTotalReceived, newItemStatus, item_id);
+        `).run(newTotalReceived, newItemStatus, item.id);
 
         createdBatches.push({
           batch_id: newBatchId,
@@ -494,10 +509,11 @@ router.post('/:id/receive', (req, res) => {
       return { new_status: newPoStatus, created_batches: createdBatches };
     });
 
-    const result = receiveTx(deliveries);
+    const result = receiveTx(itemsToReceive);
     res.status(200).json({
       message: `Delivery successfully processed. Received stock converted to active inventory batches for ${po.po_number}.`,
       po_status: result.new_status,
+      new_status: result.new_status,
       created_batches: result.created_batches
     });
   } catch (err) {

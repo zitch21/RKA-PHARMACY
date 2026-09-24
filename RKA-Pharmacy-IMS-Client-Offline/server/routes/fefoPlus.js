@@ -49,6 +49,14 @@ const handleAnalysis = (req, res) => {
       ORDER BY expiration_date ASC
     `);
 
+    const latestBatchCostStmt = db.prepare(`
+      SELECT unit_cost FROM batches WHERE medicine_id = ? ORDER BY id DESC LIMIT 1
+    `);
+
+    const latestPoItemCostStmt = db.prepare(`
+      SELECT unit_cost FROM purchase_order_items WHERE medicine_id = ? ORDER BY id DESC LIMIT 1
+    `);
+
     const salesQueryStmt = !isColdStart ? db.prepare(`
       SELECT COALESCE(SUM(quantity), 0) as total_sold
       FROM transactions
@@ -57,6 +65,12 @@ const handleAnalysis = (req, res) => {
     `) : null;
 
     for (const med of medicines) {
+      // Look up previous batch / purchase record unit cost
+      const batchCostRow = latestBatchCostStmt.get(med.id);
+      const poCostRow = !batchCostRow ? latestPoItemCostStmt.get(med.id) : null;
+      const latestCost = batchCostRow ? batchCostRow.unit_cost : (poCostRow ? poCostRow.unit_cost : 10.0);
+      med.latest_unit_cost = latestCost;
+
       // Fetch active unexpired batches in FEFO order
       const batches = getBatchesStmt.all(med.id, todayStr);
 
@@ -91,6 +105,7 @@ const handleAnalysis = (req, res) => {
         medicineAnalysis.push({
           medicine: med,
           total_stock: totalCurrentStock,
+          latest_unit_cost: latestCost,
           adqs: null,
           analysis_window_days: N,
           is_cold_start: true,
@@ -183,6 +198,7 @@ const handleAnalysis = (req, res) => {
         medicineAnalysis.push({
           medicine: med,
           total_stock: totalCurrentStock,
+          latest_unit_cost: latestCost,
           adqs,
           analysis_window_days: N,
           is_cold_start: false,

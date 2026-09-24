@@ -8,7 +8,12 @@ import {
   AlertCircle,
   Tag,
   Clock,
-  Sparkles
+  Sparkles,
+  Plus,
+  Trash2,
+  Layers,
+  ListPlus,
+  PackageCheck
 } from 'lucide-react';
 import BarcodeModal from '../components/BarcodeModal';
 import HelperText from '../components/HelperText';
@@ -16,6 +21,9 @@ import { useLanguage } from '../context/LanguageContext';
 
 export default function StockInView({ medicines, batches = [], onRefresh, onOpenAddMedicine, uiMode = 'clean' }) {
   const { t } = useLanguage();
+  const [entryMode, setEntryMode] = useState('single'); // 'single' | 'multi'
+
+  // Single-item state
   const [barcodeInput, setBarcodeInput] = useState('');
   const [selectedMedId, setSelectedMedId] = useState('');
   const [batchNumber, setBatchNumber] = useState('');
@@ -28,6 +36,24 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
   const [supplierName, setSupplierName] = useState('');
   const [referenceNo, setReferenceNo] = useState('');
   const [notes, setNotes] = useState('');
+
+  // Multi-item intake state
+  const [multiSupplier, setMultiSupplier] = useState('United Laboratories (Unilab)');
+  const [multiReferenceNo, setMultiReferenceNo] = useState('');
+  const [multiNotes, setMultiNotes] = useState('');
+  const [multiRows, setMultiRows] = useState([
+    {
+      id: 1,
+      medicine_id: '',
+      batch_number: '',
+      manufacturing_date: new Date().toISOString().split('T')[0],
+      expiration_date: '',
+      quantity: '',
+      unit_cost: '',
+      selling_price: ''
+    }
+  ]);
+  const [multiSuccessBatches, setMultiSuccessBatches] = useState(null);
 
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -44,6 +70,112 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
   const medList = medicines || [];
   const selectedMed = medList.find(m => m.id === parseInt(selectedMedId));
 
+  const generateBatchNumberForMed = (med) => {
+    if (!med) return '';
+    const randomBatchSuffix = Math.floor(100 + Math.random() * 900);
+    return `${(med.code || 'MED').replace('MED-', 'LOT-')}-${randomBatchSuffix}`;
+  };
+
+  const getMedPriceDefaults = (medId) => {
+    const priorBatches = (batches || []).filter(b => b.medicine_id === parseInt(medId, 10));
+    if (priorBatches.length > 0) {
+      const latest = priorBatches[priorBatches.length - 1];
+      return {
+        unit_cost: Number(latest.unit_cost || 0).toString(),
+        selling_price: Number(latest.selling_price || 0).toString()
+      };
+    }
+    const med = (medicines || []).find(m => m.id === parseInt(medId, 10));
+    const cost = med?.latest_unit_cost || 10;
+    const price = med?.latest_selling_price || (cost * 1.35).toFixed(2);
+    return {
+      unit_cost: Number(cost).toString(),
+      selling_price: Number(price).toString()
+    };
+  };
+
+  const handleAddMultiRow = (prefillMed = null) => {
+    const newId = Date.now() + Math.random();
+    const today = new Date().toISOString().split('T')[0];
+    if (prefillMed) {
+      const prices = getMedPriceDefaults(prefillMed.id);
+      setMultiRows(prev => [
+        ...prev,
+        {
+          id: newId,
+          medicine_id: prefillMed.id.toString(),
+          batch_number: generateBatchNumberForMed(prefillMed),
+          manufacturing_date: today,
+          expiration_date: '',
+          quantity: '50',
+          unit_cost: prices.unit_cost,
+          selling_price: prices.selling_price
+        }
+      ]);
+    } else {
+      setMultiRows(prev => [
+        ...prev,
+        {
+          id: newId,
+          medicine_id: '',
+          batch_number: '',
+          manufacturing_date: today,
+          expiration_date: '',
+          quantity: '',
+          unit_cost: '',
+          selling_price: ''
+        }
+      ]);
+    }
+  };
+
+  const handleRemoveMultiRow = (id) => {
+    if (multiRows.length <= 1) {
+      setMultiRows([{
+        id: Date.now(),
+        medicine_id: '',
+        batch_number: '',
+        manufacturing_date: new Date().toISOString().split('T')[0],
+        expiration_date: '',
+        quantity: '',
+        unit_cost: '',
+        selling_price: ''
+      }]);
+    } else {
+      setMultiRows(prev => prev.filter(r => r.id !== id));
+    }
+  };
+
+  const handleMultiRowChange = (id, field, value) => {
+    setMultiRows(prev => prev.map(row => {
+      if (row.id !== id) return row;
+      const updated = { ...row, [field]: value };
+      if (field === 'medicine_id') {
+        const med = (medicines || []).find(m => m.id === parseInt(value, 10));
+        if (med) {
+          updated.batch_number = generateBatchNumberForMed(med);
+          const prices = getMedPriceDefaults(med.id);
+          updated.unit_cost = prices.unit_cost;
+          updated.selling_price = prices.selling_price;
+        }
+      }
+      return updated;
+    }));
+  };
+
+  const handleDateJumpMultiRow = (id, months) => {
+    const d = new Date();
+    const originalDay = d.getDate();
+    d.setMonth(d.getMonth() + months);
+    if (d.getDate() !== originalDay) {
+      d.setDate(0);
+    }
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    const dd = String(d.getDate()).padStart(2, '0');
+    handleMultiRowChange(id, 'expiration_date', `${yyyy}-${mm}-${dd}`);
+  };
+
   const processScannedBarcode = (query) => {
     if (!query) return;
     const match = medList.find(
@@ -51,9 +183,20 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
     );
 
     if (match) {
-      handleSelectMedicine(match);
-      setBarcodeInput('');
-      setError(null);
+      if (entryMode === 'multi') {
+        const emptyIdx = multiRows.findIndex(r => !r.medicine_id);
+        if (emptyIdx >= 0) {
+          handleMultiRowChange(multiRows[emptyIdx].id, 'medicine_id', match.id.toString());
+        } else {
+          handleAddMultiRow(match);
+        }
+        setBarcodeInput('');
+        setError(null);
+      } else {
+        handleSelectMedicine(match);
+        setBarcodeInput('');
+        setError(null);
+      }
     } else {
       setError(`No registered medicine matches barcode "${query}". You can register it first.`);
     }
@@ -228,6 +371,103 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
     }
   };
 
+  const handleSubmitMultiStockIn = async (e) => {
+    e.preventDefault();
+    setError(null);
+    setSuccessData(null);
+    setMultiSuccessBatches(null);
+
+    const filledRows = multiRows.filter(r => r.medicine_id);
+    if (filledRows.length === 0) {
+      setError('Please add at least one medicine item with valid batch and expiration details.');
+      return;
+    }
+
+    const todayStr = new Date().toISOString().split('T')[0];
+    const payloadItems = [];
+
+    for (let i = 0; i < filledRows.length; i++) {
+      const r = filledRows[i];
+      const med = (medicines || []).find(m => m.id === parseInt(r.medicine_id, 10));
+      const medName = med ? med.brand_name : `Row #${i + 1}`;
+
+      if (!r.batch_number || !r.batch_number.trim()) {
+        setError(`Please enter a valid Batch / Lot Number for ${medName}.`);
+        return;
+      }
+      if (!r.expiration_date) {
+        setError(`Please enter an Expiration Date for ${medName}.`);
+        return;
+      }
+      if (r.expiration_date <= todayStr) {
+        setError(`Expiration date for ${medName} (${r.batch_number}) must be in the future.`);
+        return;
+      }
+      const qty = parseInt(r.quantity, 10);
+      if (isNaN(qty) || qty <= 0) {
+        setError(`Please enter a quantity greater than zero for ${medName}.`);
+        return;
+      }
+      const cost = parseFloat(r.unit_cost);
+      if (isNaN(cost) || cost <= 0) {
+        setError(`Please enter a valid Unit Cost greater than zero for ${medName}.`);
+        return;
+      }
+      const price = parseFloat(r.selling_price);
+      if (isNaN(price) || price <= 0) {
+        setError(`Please enter a valid Selling Price greater than zero for ${medName}.`);
+        return;
+      }
+
+      payloadItems.push({
+        medicine_id: parseInt(r.medicine_id, 10),
+        batch_number: r.batch_number.trim(),
+        manufacturing_date: r.manufacturing_date || todayStr,
+        expiration_date: r.expiration_date,
+        quantity: qty,
+        unit_cost: cost,
+        selling_price: price,
+        supplier_name: multiSupplier
+      });
+    }
+
+    setLoading(true);
+    try {
+      const res = await fetch('/api/batches/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          supplier_name: multiSupplier,
+          reference_no: multiReferenceNo || `INV-${Date.now().toString().slice(-6)}`,
+          notes: multiNotes || `Multi-item intake (${payloadItems.length} lines)`,
+          items: payloadItems
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Failed to process bulk stock-in');
+
+      setMultiSuccessBatches(data.batches || payloadItems);
+      setMultiRows([{
+        id: Date.now(),
+        medicine_id: '',
+        batch_number: '',
+        manufacturing_date: todayStr,
+        expiration_date: '',
+        quantity: '',
+        unit_cost: '',
+        selling_price: ''
+      }]);
+      setMultiReferenceNo('');
+      setMultiNotes('');
+      onRefresh();
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
     <div className={uiMode === 'clean' ? 'max-w-4xl mx-auto space-y-4 pb-8' : 'max-w-4xl mx-auto space-y-6 pb-12'}>
       {/* Header */}
@@ -300,6 +540,19 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
         </div>
       )}
 
+      {/* Multi-Item Success Banner */}
+      {multiSuccessBatches && (
+        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 flex items-start justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+            <div className="text-xs">
+              <span className="font-bold">{t('stockin_bulk_success', 'Bulk Stock-In Completed!')} </span>
+              Successfully recorded {multiSuccessBatches.length} item(s) into inventory with atomic batch records.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Error Banner */}
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs flex items-center gap-2">
@@ -308,7 +561,43 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
         </div>
       )}
 
-      {/* Stock-In Entry Form */}
+      {/* Mode Switcher Tabs */}
+      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => setEntryMode('single')}
+            className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
+              entryMode === 'single'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+            }`}
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Single Batch Intake</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setEntryMode('multi')}
+            className={`px-3.5 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
+              entryMode === 'multi'
+                ? 'bg-emerald-600 text-white shadow-xs'
+                : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+            }`}
+          >
+            <Layers className="w-3.5 h-3.5" />
+            <span>Multi-Item Stock-In</span>
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ml-1 ${
+              entryMode === 'multi' ? 'bg-emerald-800 text-emerald-100' : 'bg-slate-200 text-slate-700'
+            }`}>
+              {multiRows.filter(r => r.medicine_id).length}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {entryMode === 'single' ? (
+      /* Stock-In Entry Form */
       <form onSubmit={handleSubmit} className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-5">
         {/* Medicine Selector */}
         <div>
@@ -582,6 +871,265 @@ export default function StockInView({ medicines, batches = [], onRefresh, onOpen
           </span>
         </button>
       </form>
+      ) : (
+      /* Multi-Item Stock-In Form */
+      <form onSubmit={handleSubmitMultiStockIn} className="bg-white p-6 rounded-xl border border-slate-200 shadow-xs space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-200">
+          <div>
+            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <Layers className="w-4 h-4 text-emerald-600" />
+              <span>Multi-Item Batch Intake</span>
+            </h3>
+            <p className="text-xs text-slate-500">
+              Record multiple medicine deliveries in a single intake session with individual batch lots, expiries, and costs.
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => handleAddMultiRow()}
+            className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold rounded-lg flex items-center gap-1.5 transition self-start sm:self-auto"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            <span>Add Medicine Line</span>
+          </button>
+        </div>
+
+        {/* Delivery & Reference Header */}
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 bg-slate-50 p-3.5 rounded-lg border border-slate-200">
+          <div>
+            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+              Supplier / Distributor
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. United Laboratories, Zuellig Pharma"
+              value={multiSupplier}
+              onChange={(e) => setMultiSupplier(e.target.value)}
+              className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+              Delivery Invoice / DR Reference
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. DR-99420"
+              value={multiReferenceNo}
+              onChange={(e) => setMultiReferenceNo(e.target.value)}
+              className="w-full px-3 py-1.5 text-xs font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+            />
+          </div>
+          <div>
+            <label className="block text-[11px] font-bold uppercase text-slate-600 mb-1">
+              Receiving Notes / Inspection
+            </label>
+            <input
+              type="text"
+              placeholder="e.g. All packaging intact and sealed"
+              value={multiNotes}
+              onChange={(e) => setMultiNotes(e.target.value)}
+              className="w-full px-3 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+            />
+          </div>
+        </div>
+
+        {/* Multi-Item Lines Table */}
+        <div className="overflow-x-auto border border-slate-200 rounded-lg">
+          <table className="w-full text-left text-xs border-collapse">
+            <thead className="bg-slate-100 text-slate-700 font-semibold border-b border-slate-200 uppercase text-[10px] tracking-wider">
+              <tr>
+                <th className="p-2.5 w-8 text-center">#</th>
+                <th className="p-2.5 min-w-[200px]">Medicine Catalog Item *</th>
+                <th className="p-2.5 min-w-[140px]">Batch / Lot # *</th>
+                <th className="p-2.5 min-w-[160px]">Expiry Date *</th>
+                <th className="p-2.5 min-w-[80px]">Qty *</th>
+                <th className="p-2.5 min-w-[95px]">Cost (₱) *</th>
+                <th className="p-2.5 min-w-[95px]">Price (₱) *</th>
+                <th className="p-2.5 min-w-[85px] text-right">Subtotal</th>
+                <th className="p-2.5 w-10 text-center"></th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-100 bg-white">
+              {multiRows.map((row, idx) => {
+                const rowQty = parseFloat(row.quantity) || 0;
+                const rowCost = parseFloat(row.unit_cost) || 0;
+                const subtotal = rowQty * rowCost;
+
+                return (
+                  <tr key={row.id} className="hover:bg-slate-50 transition-colors">
+                    <td className="p-2 text-center text-slate-400 font-mono text-[11px]">
+                      {idx + 1}
+                    </td>
+                    <td className="p-2">
+                      <select
+                        value={row.medicine_id}
+                        onChange={(e) => handleMultiRowChange(row.id, 'medicine_id', e.target.value)}
+                        className="w-full px-2 py-1.5 text-xs border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 bg-white"
+                        required
+                      >
+                        <option value="">-- Choose Medicine --</option>
+                        {(medicines || []).map(m => (
+                          <option key={m.id} value={m.id}>
+                            {m.brand_name} ({m.generic_name} {m.dosage_strength})
+                          </option>
+                        ))}
+                      </select>
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="text"
+                        placeholder="e.g. LOT-409"
+                        value={row.batch_number}
+                        onChange={(e) => handleMultiRowChange(row.id, 'batch_number', e.target.value)}
+                        className="w-full px-2 py-1.5 text-xs font-mono uppercase border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500"
+                        required
+                      />
+                    </td>
+                    <td className="p-2">
+                      <div className="space-y-1">
+                        <input
+                          type="date"
+                          value={row.expiration_date}
+                          onChange={(e) => handleMultiRowChange(row.id, 'expiration_date', e.target.value)}
+                          className="w-full px-2 py-1 text-xs border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500"
+                          required
+                        />
+                        <div className="flex gap-1 text-[9px]">
+                          <button
+                            type="button"
+                            onClick={() => handleDateJumpMultiRow(row.id, 6)}
+                            className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-200"
+                          >
+                            +6M
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDateJumpMultiRow(row.id, 12)}
+                            className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-200"
+                          >
+                            +1Y
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleDateJumpMultiRow(row.id, 24)}
+                            className="px-1.5 py-0.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded border border-slate-200"
+                          >
+                            +2Y
+                          </button>
+                        </div>
+                      </div>
+                    </td>
+                    <td className="p-2">
+                      <input
+                        type="number"
+                        min="1"
+                        placeholder="Qty"
+                        value={row.quantity}
+                        onChange={(e) => handleMultiRowChange(row.id, 'quantity', e.target.value)}
+                        className="w-full px-2 py-1.5 text-xs font-bold border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 text-right"
+                        required
+                      />
+                    </td>
+                    <td className="p-2">
+                      <div className="relative">
+                        <span className="absolute left-1.5 top-1.5 text-slate-400 text-[11px]">₱</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          placeholder="0.00"
+                          value={row.unit_cost}
+                          onChange={(e) => handleMultiRowChange(row.id, 'unit_cost', e.target.value)}
+                          className="w-full pl-5 pr-2 py-1.5 text-xs border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 text-right"
+                          required
+                        />
+                      </div>
+                    </td>
+                    <td className="p-2">
+                      <div className="relative">
+                        <span className="absolute left-1.5 top-1.5 text-slate-400 text-[11px]">₱</span>
+                        <input
+                          type="number"
+                          step="0.01"
+                          min="0.01"
+                          placeholder="0.00"
+                          value={row.selling_price}
+                          onChange={(e) => handleMultiRowChange(row.id, 'selling_price', e.target.value)}
+                          className="w-full pl-5 pr-2 py-1.5 text-xs font-bold text-emerald-800 border border-slate-300 rounded focus:ring-2 focus:ring-emerald-500 text-right"
+                          required
+                        />
+                      </div>
+                    </td>
+                    <td className="p-2 text-right font-mono font-semibold text-slate-800 text-xs">
+                      ₱{subtotal.toFixed(2)}
+                    </td>
+                    <td className="p-2 text-center">
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveMultiRow(row.id)}
+                        disabled={multiRows.length <= 1}
+                        className="p-1 text-slate-400 hover:text-red-600 disabled:opacity-30 transition"
+                        title="Remove row"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+
+        {/* Actions and Totals Summary */}
+        <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => handleAddMultiRow()}
+              className="px-3 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-lg flex items-center gap-1.5 border border-slate-300 transition"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              <span>Add Another Item</span>
+            </button>
+          </div>
+
+          <div className="flex items-center gap-6 text-xs bg-slate-50 px-4 py-2 rounded-lg border border-slate-200">
+            <div>
+              <span className="text-slate-500 uppercase text-[10px] block font-semibold">Total Items</span>
+              <span className="font-bold text-slate-800 text-sm">
+                {multiRows.filter(r => r.medicine_id).length} line(s)
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-500 uppercase text-[10px] block font-semibold">Total Quantity</span>
+              <span className="font-bold text-slate-800 text-sm">
+                {multiRows.reduce((sum, r) => sum + (parseInt(r.quantity, 10) || 0), 0)} units
+              </span>
+            </div>
+            <div>
+              <span className="text-slate-500 uppercase text-[10px] block font-semibold">Total Cost</span>
+              <span className="font-bold text-emerald-700 text-sm">
+                ₱{multiRows.reduce((sum, r) => sum + ((parseInt(r.quantity, 10) || 0) * (parseFloat(r.unit_cost) || 0)), 0).toFixed(2)}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Submit Bulk Button */}
+        <button
+          type="submit"
+          disabled={loading}
+          className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-sm rounded-xl shadow-sm transition flex items-center justify-center gap-2"
+        >
+          <PackageCheck className="w-5 h-5" />
+          <span>
+            {loading ? 'Processing Bulk Stock-In...' : `Confirm & Stock-In All Items (${multiRows.filter(r => r.medicine_id).length})`}
+          </span>
+        </button>
+      </form>
+      )}
 
       {/* Barcode Print Modal */}
       {barcodeMedicine && (

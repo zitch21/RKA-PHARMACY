@@ -11,7 +11,11 @@ import {
   ShieldCheck,
   ShieldAlert,
   AlertOctagon,
-  HelpCircle
+  HelpCircle,
+  Layers,
+  FileText,
+  Plus,
+  Sparkles
 } from 'lucide-react';
 import OverrideModal from '../components/OverrideModal';
 import BatchStatusConfirmModal from '../components/BatchStatusConfirmModal';
@@ -28,6 +32,18 @@ export default function StockOutView({
   currentUser
 }) {
   const { t } = useLanguage();
+  const [dispenseMode, setDispenseMode] = useState('single'); // 'single' | 'prescription'
+
+  // Prescription / Multi-Item State
+  const [rxDoctor, setRxDoctor] = useState('');
+  const [rxPatient, setRxPatient] = useState('');
+  const [rxRef, setRxRef] = useState('');
+  const [rxNotes, setRxNotes] = useState('');
+  const [rxLines, setRxLines] = useState([
+    { id: 1, medicine_id: '', quantity: '1', instructions: '' }
+  ]);
+  const [splitNotice, setSplitNotice] = useState(null);
+
   const [barcodeInput, setBarcodeInput] = useState('');
   const [medSearchTerm, setMedSearchTerm] = useState('');
   const [selectedMedId, setSelectedMedId] = useState('');
@@ -68,6 +84,8 @@ export default function StockOutView({
   // FEFO batch candidate is the earliest unexpired batch
   const fefoBatch = medBatches.find(b => b.days_to_expiry > 0);
   const currentSelectedBatch = medBatches.find(b => b.id === parseInt(selectedBatchId));
+  const unexpiredBatches = medBatches.filter(b => b.days_to_expiry > 0);
+  const totalUnexpiredStock = unexpiredBatches.reduce((acc, b) => acc + b.current_quantity, 0);
 
   // Process barcode lookup
   const processScannedBarcode = (query) => {
@@ -77,9 +95,25 @@ export default function StockOutView({
     );
 
     if (match) {
-      handleSelectMedicine(match);
-      setBarcodeInput('');
-      setError(null);
+      if (dispenseMode === 'prescription') {
+        const existingIdx = rxLines.findIndex(l => parseInt(l.medicine_id) === match.id);
+        if (existingIdx >= 0) {
+          setRxLines(prev => prev.map((l, idx) => idx === existingIdx ? { ...l, quantity: ((parseInt(l.quantity, 10) || 0) + 1).toString() } : l));
+        } else {
+          const emptyIdx = rxLines.findIndex(l => !l.medicine_id);
+          if (emptyIdx >= 0) {
+            setRxLines(prev => prev.map((l, idx) => idx === emptyIdx ? { ...l, medicine_id: match.id.toString(), quantity: '1' } : l));
+          } else {
+            setRxLines(prev => [...prev, { id: Date.now() + Math.random(), medicine_id: match.id.toString(), quantity: '1', instructions: '' }]);
+          }
+        }
+        setBarcodeInput('');
+        setError(null);
+      } else {
+        handleSelectMedicine(match);
+        setBarcodeInput('');
+        setError(null);
+      }
     } else {
       setError(`No registered medicine found for barcode "${query}".`);
     }
@@ -143,6 +177,14 @@ export default function StockOutView({
     setError(null);
   };
 
+  const resetSingleSelection = () => {
+    setSelectedMedId('');
+    setSelectedBatchId('');
+    setQuantityInput(1);
+    setError(null);
+    if (barcodeInputRef.current) barcodeInputRef.current.focus();
+  };
+
   // Add Item to Dispensing Cart
   const handleAddToCart = () => {
     if (!selectedMed || !currentSelectedBatch) {
@@ -150,14 +192,9 @@ export default function StockOutView({
       return;
     }
 
-    const qty = parseInt(quantityInput);
+    const qty = parseInt(quantityInput, 10);
     if (isNaN(qty) || qty <= 0) {
       setError('Please enter a valid quantity greater than zero.');
-      return;
-    }
-
-    if (qty > currentSelectedBatch.current_quantity) {
-      setError(`Cannot dispense ${qty} items. Only ${currentSelectedBatch.current_quantity} remaining in batch ${currentSelectedBatch.batch_number}.`);
       return;
     }
 
@@ -170,6 +207,10 @@ export default function StockOutView({
     // Check if user is overriding FEFO
     const isOverride = fefoBatch && currentSelectedBatch.id !== fefoBatch.id;
     if (isOverride) {
+      if (qty > currentSelectedBatch.current_quantity) {
+        setError(`Cannot dispense ${qty} items. Only ${currentSelectedBatch.current_quantity} remaining in batch ${currentSelectedBatch.batch_number}.`);
+        return;
+      }
       setPendingOverrideItem({
         medicine: selectedMed,
         selectedBatch: currentSelectedBatch,
@@ -177,6 +218,61 @@ export default function StockOutView({
         quantity: qty
       });
       setOverrideModalOpen(true);
+      return;
+    }
+
+    // FEFO Recommended Batch workflow: Auto-split across sequential unexpired batches if requested qty > current batch
+    if (qty > currentSelectedBatch.current_quantity) {
+      const unexp = medBatches.filter(b => b.days_to_expiry > 0);
+      const totalAvail = unexp.reduce((sum, b) => sum + b.current_quantity, 0);
+
+      const inCartTotal = cart
+        .filter(c => c.medicine_id === selectedMed.id)
+        .reduce((sum, c) => sum + c.quantity, 0);
+
+      if (qty + inCartTotal > totalAvail) {
+        setError(`Cannot dispense ${qty} units. Total unexpired stock is ${totalAvail} units (${inCartTotal} already in cart).`);
+        return;
+      }
+
+      // Compute multi-batch allocations
+      let remainingNeeded = qty;
+      const allocations = [];
+      for (const b of unexp) {
+        if (remainingNeeded <= 0) break;
+        const inCartForThis = cart.find(c => c.batch_id === b.id)?.quantity || 0;
+        const availableInBatch = b.current_quantity - inCartForThis;
+        if (availableInBatch <= 0) continue;
+
+        const take = Math.min(availableInBatch, remainingNeeded);
+        if (take > 0) {
+          allocations.push({ batch: b, qty: take });
+          remainingNeeded -= take;
+        }
+      }
+
+      if (remainingNeeded > 0) {
+        setError(`Cannot fulfill ${qty} units from remaining batch quantities.`);
+        return;
+      }
+
+      for (const alloc of allocations) {
+        addItemToCartInternal({
+          medicine: selectedMed,
+          batch: alloc.batch,
+          quantity: alloc.qty,
+          unitPrice: alloc.batch.selling_price,
+          isOverride: false,
+          overrideReason: null,
+          statusConfirmed: false,
+          expiryStatus: alloc.batch.expiry_tier
+        });
+      }
+
+      setSplitNotice(
+        `FEFO Auto-Split: Dispensed ${qty} units of ${selectedMed.brand_name} across ${allocations.length} batches (${allocations.map(a => `${a.batch.batch_number}: ${a.qty} units`).join(' + ')}).`
+      );
+      resetSingleSelection();
       return;
     }
 
@@ -203,58 +299,54 @@ export default function StockOutView({
       statusConfirmed: false,
       expiryStatus: currentSelectedBatch.expiry_tier
     });
+    resetSingleSelection();
   };
 
   const addItemToCartInternal = ({ medicine, batch, quantity, unitPrice, isOverride, overrideReason, statusConfirmed, expiryStatus }) => {
-    const existingIndex = cart.findIndex(i => i.batch_id === batch.id);
+    setCart(prev => {
+      const existingIndex = prev.findIndex(i => i.batch_id === batch.id);
 
-    if (existingIndex >= 0) {
-      const existing = cart[existingIndex];
-      const newQty = existing.quantity + quantity;
-      if (newQty > batch.current_quantity) {
-        setError(`Cannot add ${quantity} more. Exceeds batch total stock (${batch.current_quantity}).`);
-        return;
-      }
-      const updatedCart = [...cart];
-      updatedCart[existingIndex] = {
-        ...existing,
-        quantity: newQty,
-        subtotal: newQty * unitPrice,
-        is_override: isOverride || existing.is_override,
-        override_reason: overrideReason || existing.override_reason,
-        status_confirmed: statusConfirmed || existing.status_confirmed
-      };
-      setCart(updatedCart);
-    } else {
-      setCart(prev => [
-        ...prev,
-        {
-          id: Date.now(),
-          medicine_id: medicine.id,
-          batch_id: batch.id,
-          brand_name: medicine.brand_name,
-          generic_name: medicine.generic_name,
-          dosage_strength: medicine.dosage_strength,
-          batch_number: batch.batch_number,
-          expiration_date: batch.expiration_date,
-          days_to_expiry: batch.days_to_expiry,
-          unit_price: unitPrice,
-          quantity: quantity,
-          subtotal: quantity * unitPrice,
-          is_override: isOverride,
-          override_reason: overrideReason,
-          status_confirmed: statusConfirmed,
-          expiry_status: expiryStatus
+      if (existingIndex >= 0) {
+        const existing = prev[existingIndex];
+        const newQty = existing.quantity + quantity;
+        if (newQty > batch.current_quantity) {
+          setError(`Cannot add ${quantity} more. Exceeds batch total stock (${batch.current_quantity}).`);
+          return prev;
         }
-      ]);
-    }
-
-    // Reset current selection form
-    setSelectedMedId('');
-    setSelectedBatchId('');
-    setQuantityInput(1);
-    setError(null);
-    if (barcodeInputRef.current) barcodeInputRef.current.focus();
+        const updatedCart = [...prev];
+        updatedCart[existingIndex] = {
+          ...existing,
+          quantity: newQty,
+          subtotal: newQty * unitPrice,
+          is_override: isOverride || existing.is_override,
+          override_reason: overrideReason || existing.override_reason,
+          status_confirmed: statusConfirmed || existing.status_confirmed
+        };
+        return updatedCart;
+      } else {
+        return [
+          ...prev,
+          {
+            id: Date.now() + Math.random(),
+            medicine_id: medicine.id,
+            batch_id: batch.id,
+            brand_name: medicine.brand_name,
+            generic_name: medicine.generic_name,
+            dosage_strength: medicine.dosage_strength,
+            batch_number: batch.batch_number,
+            expiration_date: batch.expiration_date,
+            days_to_expiry: batch.days_to_expiry,
+            unit_price: unitPrice,
+            quantity: quantity,
+            subtotal: quantity * unitPrice,
+            is_override: isOverride,
+            override_reason: overrideReason,
+            status_confirmed: statusConfirmed,
+            expiry_status: expiryStatus
+          }
+        ];
+      }
+    });
   };
 
   const handleConfirmOverride = (reason) => {
@@ -271,6 +363,131 @@ export default function StockOutView({
     });
     setOverrideModalOpen(false);
     setPendingOverrideItem(null);
+    resetSingleSelection();
+  };
+
+  // Prescription / Multi-Medicine Handlers
+  const handleAddRxLine = () => {
+    setRxLines(prev => [
+      ...prev,
+      { id: Date.now() + Math.random(), medicine_id: '', quantity: '1', instructions: '' }
+    ]);
+  };
+
+  const handleRemoveRxLine = (id) => {
+    if (rxLines.length <= 1) {
+      setRxLines([{ id: Date.now(), medicine_id: '', quantity: '1', instructions: '' }]);
+    } else {
+      setRxLines(prev => prev.filter(l => l.id !== id));
+    }
+  };
+
+  const handleRxLineChange = (id, field, value) => {
+    setRxLines(prev => prev.map(l => l.id === id ? { ...l, [field]: value } : l));
+  };
+
+  const handleAllocatePrescriptionToCart = () => {
+    setError(null);
+    setSplitNotice(null);
+
+    const filledLines = rxLines.filter(l => l.medicine_id);
+    if (filledLines.length === 0) {
+      setError('Please add at least one medicine item to the prescription.');
+      return;
+    }
+
+    const batchAllocationsToAdd = [];
+    const splitSummary = [];
+
+    for (const line of filledLines) {
+      const med = medList.find(m => m.id === parseInt(line.medicine_id, 10));
+      if (!med) continue;
+
+      const qty = parseInt(line.quantity, 10);
+      if (isNaN(qty) || qty <= 0) {
+        setError(`Please enter a valid quantity greater than zero for ${med.brand_name}.`);
+        return;
+      }
+
+      const medActiveBatches = batchList
+        .filter(b => b.medicine_id === med.id && b.status === 'active' && b.current_quantity > 0 && b.days_to_expiry > 0)
+        .sort((a, b) => new Date(a.expiration_date) - new Date(b.expiration_date));
+
+      const totalAvail = medActiveBatches.reduce((acc, b) => acc + b.current_quantity, 0);
+
+      const inCartTotal = cart
+        .filter(c => c.medicine_id === med.id)
+        .reduce((sum, c) => sum + c.quantity, 0);
+
+      if (qty + inCartTotal > totalAvail) {
+        setError(
+          `Insufficient unexpired stock for ${med.brand_name} (${med.generic_name}). Requested: ${qty}, already in cart: ${inCartTotal}, available stock: ${totalAvail}.`
+        );
+        return;
+      }
+
+      let remaining = qty;
+      const lineAllocations = [];
+      for (const b of medActiveBatches) {
+        if (remaining <= 0) break;
+        const inCartForThisBatch = cart.find(c => c.batch_id === b.id)?.quantity || 0;
+        const availableInBatch = b.current_quantity - inCartForThisBatch;
+        if (availableInBatch <= 0) continue;
+
+        const take = Math.min(availableInBatch, remaining);
+        if (take > 0) {
+          lineAllocations.push({ batch: b, qty: take });
+          remaining -= take;
+        }
+      }
+
+      if (remaining > 0) {
+        setError(`Could not fulfill requested ${qty} units for ${med.brand_name} from available unexpired batches.`);
+        return;
+      }
+
+      if (lineAllocations.length > 1) {
+        splitSummary.push(`${med.brand_name} (${lineAllocations.map(a => `${a.batch.batch_number}: ${a.qty}`).join(' + ')})`);
+      }
+
+      for (const alloc of lineAllocations) {
+        batchAllocationsToAdd.push({
+          medicine: med,
+          batch: alloc.batch,
+          quantity: alloc.qty,
+          unitPrice: alloc.batch.selling_price,
+          isOverride: false,
+          overrideReason: null,
+          statusConfirmed: false,
+          expiryStatus: alloc.batch.expiry_tier
+        });
+      }
+    }
+
+    // Add all allocations into the cart
+    for (const item of batchAllocationsToAdd) {
+      addItemToCartInternal(item);
+    }
+
+    if (rxPatient || rxRef) {
+      setPatientOrRef([rxPatient, rxRef ? `(${rxRef})` : ''].filter(Boolean).join(' '));
+    }
+    if (rxDoctor || rxNotes) {
+      setDispenseNotes([rxDoctor ? `Attending: ${rxDoctor}` : '', rxNotes].filter(Boolean).join(' | '));
+    }
+
+    if (splitSummary.length > 0) {
+      setSplitNotice(`FEFO multi-batch splits applied: ${splitSummary.join('; ')}`);
+    } else {
+      setSplitNotice(`Added ${filledLines.length} prescription medication(s) to dispensing slip.`);
+    }
+
+    // Reset prescription form to empty line
+    setRxLines([{ id: Date.now(), medicine_id: '', quantity: '1', instructions: '' }]);
+    setRxPatient('');
+    setRxDoctor('');
+    setRxRef('');
+    setRxNotes('');
   };
 
   const handleRemoveFromCart = (id) => {
@@ -400,6 +617,23 @@ export default function StockOutView({
         </form>
       </div>
 
+      {/* Split Notice Banner */}
+      {splitNotice && (
+        <div className="p-3.5 bg-indigo-50 border border-indigo-200 rounded-xl text-indigo-900 text-xs flex items-center justify-between gap-2 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <CheckCircle2 className="w-4 h-4 text-indigo-600 shrink-0" />
+            <span>{splitNotice}</span>
+          </div>
+          <button
+            type="button"
+            onClick={() => setSplitNotice(null)}
+            className="text-indigo-400 hover:text-indigo-700 text-xs font-bold px-1"
+          >
+            ×
+          </button>
+        </div>
+      )}
+
       {/* Error Message */}
       {error && (
         <div className="p-4 bg-red-50 border border-red-200 rounded-xl text-red-800 text-xs flex items-center gap-2 animate-in fade-in">
@@ -412,12 +646,46 @@ export default function StockOutView({
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Left Column: Medicine & Batch Selection (7 cols) */}
         <div className="lg:col-span-7 bg-white p-5 rounded-xl border border-slate-200 shadow-xs space-y-4">
-          <h3 className="text-sm font-bold text-slate-800 border-b border-slate-100 pb-2 flex items-center justify-between">
-            <span>1. Select Medicine & Batch</span>
+          {/* Mode Switcher Tabs */}
+          <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setDispenseMode('single')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
+                  dispenseMode === 'single'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                <Barcode className="w-3.5 h-3.5" />
+                <span>Single Item & Scanner</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setDispenseMode('prescription')}
+                className={`px-3 py-1.5 text-xs font-bold rounded-lg transition flex items-center gap-1.5 ${
+                  dispenseMode === 'prescription'
+                    ? 'bg-emerald-600 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Prescription / Multi-Medicine</span>
+                <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-bold ml-1 ${
+                  dispenseMode === 'prescription' ? 'bg-emerald-800 text-emerald-100' : 'bg-slate-200 text-slate-700'
+                }`}>
+                  {rxLines.filter(l => l.medicine_id).length}
+                </span>
+              </button>
+            </div>
             <HelperText uiMode={uiMode} as="span" className="text-xs font-normal text-slate-400">
-              Step 1 of 2
+              {dispenseMode === 'single' ? 'Step 1 of 2' : 'Multi-Item FEFO'}
             </HelperText>
-          </h3>
+          </div>
+
+          {dispenseMode === 'single' ? (
+          <div>
 
           {/* Medicine Select with Search Filter */}
           <div className="space-y-1.5">
@@ -557,15 +825,25 @@ export default function StockOutView({
               {/* Quantity and Price Entry */}
               {currentSelectedBatch && (
                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
+                  {/* FEFO Auto-Split Callout */}
+                  {currentSelectedBatch.id === fefoBatch?.id && parseInt(quantityInput, 10) > currentSelectedBatch.current_quantity && (
+                    <div className="p-2.5 bg-blue-50 border border-blue-200 rounded-lg text-xs text-blue-900 flex items-center gap-2">
+                      <Layers className="w-4 h-4 text-blue-600 shrink-0" />
+                      <div>
+                        <strong>FEFO Auto-Split Enabled:</strong> Requested {quantityInput} units exceeds batch {currentSelectedBatch.batch_number} ({currentSelectedBatch.current_quantity} remaining). The remaining {(parseInt(quantityInput, 10) || 0) - currentSelectedBatch.current_quantity} units will be automatically allocated across sequential unexpired batches.
+                      </div>
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                        Quantity to Dispense *
+                        Quantity to Dispense * {currentSelectedBatch.id === fefoBatch?.id && `(Max: ${totalUnexpiredStock})`}
                       </label>
                       <input
                         type="number"
                         min="1"
-                        max={currentSelectedBatch.current_quantity}
+                        max={currentSelectedBatch.id === fefoBatch?.id ? totalUnexpiredStock : currentSelectedBatch.current_quantity}
                         value={quantityInput}
                         onChange={(e) => setQuantityInput(e.target.value)}
                         onKeyDown={(e) => {
@@ -583,7 +861,7 @@ export default function StockOutView({
                           <button
                             key={amount}
                             type="button"
-                            onClick={() => setQuantityInput(prev => Math.min(currentSelectedBatch.current_quantity, (parseInt(prev, 10) || 0) + amount))}
+                            onClick={() => setQuantityInput(prev => Math.min(currentSelectedBatch.id === fefoBatch?.id ? totalUnexpiredStock : currentSelectedBatch.current_quantity, (parseInt(prev, 10) || 0) + amount))}
                             className="px-1.5 py-0.5 text-[10px] font-bold bg-white border border-slate-200 text-slate-700 rounded hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300 transition"
                           >
                             +{amount}
@@ -594,8 +872,17 @@ export default function StockOutView({
                           onClick={() => setQuantityInput(currentSelectedBatch.current_quantity)}
                           className="px-1.5 py-0.5 text-[10px] font-bold bg-white border border-slate-200 text-slate-700 rounded hover:bg-emerald-50 hover:text-emerald-800 hover:border-emerald-300 transition"
                         >
-                          Max ({currentSelectedBatch.current_quantity})
+                          Max Batch ({currentSelectedBatch.current_quantity})
                         </button>
+                        {currentSelectedBatch.id === fefoBatch?.id && totalUnexpiredStock > currentSelectedBatch.current_quantity && (
+                          <button
+                            type="button"
+                            onClick={() => setQuantityInput(totalUnexpiredStock)}
+                            className="px-1.5 py-0.5 text-[10px] font-bold bg-emerald-50 border border-emerald-300 text-emerald-800 rounded hover:bg-emerald-100 transition"
+                          >
+                            Max All ({totalUnexpiredStock})
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -639,6 +926,172 @@ export default function StockOutView({
                 </div>
               )}
             </div>
+          )}
+          </div>
+          ) : (
+          /* Prescription & Multi-Medicine Dispense Form */
+          <div className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+              <div>
+                <h4 className="text-xs font-bold text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-emerald-600" />
+                  <span>Prescription & Multi-Medicine Dispense</span>
+                </h4>
+                <p className="text-[11px] text-slate-500">
+                  Add multiple medications for a prescription order. System auto-allocates across unexpired batches in FEFO order.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={handleAddRxLine}
+                className="px-2.5 py-1 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg flex items-center gap-1 self-start sm:self-auto transition shadow-xs"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Item Line</span>
+              </button>
+            </div>
+
+            {/* Prescription Header Info */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 bg-slate-50 p-3 rounded-lg border border-slate-200">
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                  Patient Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Maria Santos"
+                  value={rxPatient}
+                  onChange={(e) => setRxPatient(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                  Prescribing Doctor
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Dr. Roberto Cruz"
+                  value={rxDoctor}
+                  onChange={(e) => setRxDoctor(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                />
+              </div>
+              <div>
+                <label className="block text-[10px] font-bold uppercase text-slate-600 mb-1">
+                  Prescription / Rx #
+                </label>
+                <input
+                  type="text"
+                  placeholder="e.g. Rx-2026-0812"
+                  value={rxRef}
+                  onChange={(e) => setRxRef(e.target.value)}
+                  className="w-full px-2.5 py-1.5 text-xs font-mono border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white"
+                />
+              </div>
+            </div>
+
+            {/* Multi-Item Prescription Lines */}
+            <div className="space-y-2.5 max-h-[350px] overflow-y-auto pr-1">
+              {rxLines.map((line, idx) => {
+                const selectedM = medList.find(m => m.id === parseInt(line.medicine_id, 10));
+                const unexp = selectedM ? batchList.filter(b => b.medicine_id === selectedM.id && b.status === 'active' && b.current_quantity > 0 && b.days_to_expiry > 0) : [];
+                const totalAvail = unexp.reduce((sum, b) => sum + b.current_quantity, 0);
+                const estPrice = unexp[0]?.selling_price || selectedM?.latest_selling_price || 0;
+                const lineQty = parseInt(line.quantity, 10) || 0;
+                const estSubtotal = lineQty * estPrice;
+
+                return (
+                  <div key={line.id} className="p-3 bg-slate-50 hover:bg-slate-100/70 rounded-lg border border-slate-200 transition space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-[11px] font-bold text-slate-400 font-mono">#{idx + 1}</span>
+                      <div className="flex-1">
+                        <select
+                          value={line.medicine_id}
+                          onChange={(e) => handleRxLineChange(line.id, 'medicine_id', e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 bg-white font-medium"
+                        >
+                          <option value="">-- Choose Medicine from Catalog --</option>
+                          {medList.map(m => (
+                            <option key={m.id} value={m.id}>
+                              {m.brand_name} - {m.generic_name} ({m.dosage_strength} {m.dosage_form}) • Stock: {m.total_stock}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleRemoveRxLine(line.id)}
+                        disabled={rxLines.length <= 1}
+                        className="p-1 text-slate-400 hover:text-red-600 disabled:opacity-30 transition"
+                        title="Remove medicine line"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+
+                    {selectedM && (
+                      <div className="grid grid-cols-12 gap-2 items-center text-xs">
+                        <div className="col-span-4 sm:col-span-3">
+                          <label className="block text-[9px] font-bold uppercase text-slate-500 mb-0.5">Dispense Qty</label>
+                          <input
+                            type="number"
+                            min="1"
+                            max={totalAvail}
+                            value={line.quantity}
+                            onChange={(e) => handleRxLineChange(line.id, 'quantity', e.target.value)}
+                            className="w-full px-2 py-1 text-xs font-bold border border-slate-300 rounded bg-white text-right focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <div className="col-span-8 sm:col-span-5">
+                          <label className="block text-[9px] font-bold uppercase text-slate-500 mb-0.5">Dosage / Instructions</label>
+                          <input
+                            type="text"
+                            placeholder="e.g. 1 tab 3x daily"
+                            value={line.instructions || ''}
+                            onChange={(e) => handleRxLineChange(line.id, 'instructions', e.target.value)}
+                            className="w-full px-2 py-1 text-xs border border-slate-300 rounded bg-white focus:ring-1 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <div className="col-span-12 sm:col-span-4 text-right">
+                          <div className="text-[10px] text-slate-500">
+                            Stock: <strong className={totalAvail < lineQty ? 'text-red-600' : 'text-emerald-700'}>{totalAvail}</strong> units ({unexp.length} batch{unexp.length !== 1 ? 'es' : ''})
+                          </div>
+                          <div className="font-bold text-slate-800 text-xs mt-0.5">
+                            Est. ₱{estSubtotal.toFixed(2)}
+                          </div>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+
+            {/* Prescription Bottom Actions */}
+            <div className="pt-2 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <button
+                type="button"
+                onClick={handleAddRxLine}
+                className="text-xs font-semibold text-slate-700 hover:text-emerald-700 flex items-center gap-1 self-start sm:self-auto"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>Add Another Medicine</span>
+              </button>
+              <div className="text-xs text-slate-600 font-medium">
+                Total: <span className="font-bold text-slate-900">{rxLines.filter(l => l.medicine_id).length} item(s)</span>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleAllocatePrescriptionToCart}
+              className="w-full py-2.5 text-xs font-bold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition flex items-center justify-center gap-2"
+            >
+              <ShoppingCart className="w-4 h-4" />
+              <span>Auto-Allocate & Add Prescription to Dispensing Slip</span>
+            </button>
+          </div>
           )}
         </div>
 

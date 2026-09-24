@@ -55,8 +55,164 @@ router.get('/', (req, res) => {
   }
 });
 
+// Bulk stock-in handler for multi-item intake
+function handleBulkStockIn(req, res) {
+  try {
+    const { items, supplier_name, reference_no, notes, operator_name = 'Lourdes Gincen L. Cesista' } = req.body || {};
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Please provide at least one item to stock-in.' });
+    }
+
+    const todayStr = getLocalDateString();
+    const normalizeDateStr = (dateStr) => {
+      if (!dateStr) return dateStr;
+      const match = String(dateStr).trim().match(/^(\d{2})-(\d{2})-(\d{4})$/);
+      if (match) return `${match[3]}-${match[1]}-${match[2]}`;
+      return String(dateStr).trim();
+    };
+
+    const bulkTx = db.transaction((itemList) => {
+      const createdBatches = [];
+
+      for (const item of itemList) {
+        const {
+          medicine_id,
+          batch_number,
+          manufacturing_date,
+          expiration_date: rawExpDate,
+          quantity,
+          unit_cost,
+          selling_price,
+          supplier_name: itemSupplier,
+          notes: itemNotes
+        } = item;
+
+        const expDate = normalizeDateStr(rawExpDate);
+        const mfg = normalizeDateStr(manufacturing_date) || todayStr;
+
+        if (!medicine_id || !batch_number || !expDate || !quantity) {
+          throw new Error('Medicine, batch number, expiration date, and quantity are required for all items.');
+        }
+
+        const med = db.prepare('SELECT * FROM medicines WHERE id = ?').get(medicine_id);
+        if (!med) {
+          throw new Error(`Medicine with ID ${medicine_id} not found.`);
+        }
+
+        const qty = parseInt(quantity);
+        if (isNaN(qty) || qty <= 0) {
+          throw new Error(`Quantity for ${med.brand_name} must be a positive number greater than zero.`);
+        }
+
+        if (expDate <= todayStr) {
+          throw new Error(`Expiration date for ${med.brand_name} (${batch_number}) must be in the future.`);
+        }
+
+        if (mfg > todayStr) {
+          throw new Error(`Manufacturing date for ${med.brand_name} cannot be in the future.`);
+        }
+
+        if (new Date(expDate) <= new Date(mfg)) {
+          throw new Error(`Expiration date for ${med.brand_name} must be later than manufacturing date.`);
+        }
+
+        const cost = parseFloat(unit_cost);
+        if (isNaN(cost) || cost <= 0) {
+          throw new Error(`Unit cost for ${med.brand_name} must be greater than zero.`);
+        }
+
+        const price = parseFloat(selling_price);
+        if (isNaN(price) || price <= 0) {
+          throw new Error(`Selling price for ${med.brand_name} must be greater than zero.`);
+        }
+
+        const supp = (itemSupplier || supplier_name || med.supplier_name || 'Generic Supplier').trim();
+
+        const insertBatch = db.prepare(`
+          INSERT INTO batches (
+            medicine_id, batch_number, manufacturing_date, expiration_date,
+            initial_quantity, current_quantity, unit_cost, selling_price,
+            supplier_name, status, received_date
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+        `);
+
+        const bRes = insertBatch.run(
+          med.id,
+          batch_number.trim(),
+          mfg,
+          expDate,
+          qty,
+          qty,
+          cost,
+          price,
+          supp,
+          todayStr
+        );
+        const newBatchId = bRes.lastInsertRowid;
+
+        const lastTx = db.prepare('SELECT id FROM transactions ORDER BY id DESC LIMIT 1').get();
+        const txCode = `TX-IN-${Date.now()}-${Math.floor(Math.random() * 10000)}-${lastTx ? lastTx.id + 1 : 1}`;
+
+        db.prepare(`
+          INSERT INTO transactions (
+            transaction_code, transaction_type, medicine_id, batch_id,
+            quantity, unit_price, total_amount, reference_no,
+            is_override, override_reason, operator_name, notes
+          ) VALUES (?, 'stock_in', ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
+        `).run(
+          txCode,
+          med.id,
+          newBatchId,
+          qty,
+          cost,
+          qty * cost,
+          reference_no || 'MULTI-STOCKIN',
+          operator_name,
+          itemNotes || notes || `Bulk stock-in of batch ${batch_number}`
+        );
+
+        logAudit('STOCK_IN', 'BATCH', newBatchId, {
+          medicine: med.brand_name,
+          batch_number,
+          quantity: qty,
+          expiration_date: expDate,
+          unit_cost: cost,
+          is_bulk: true
+        }, operator_name);
+
+        createdBatches.push({
+          id: newBatchId,
+          medicine_id: med.id,
+          brand_name: med.brand_name,
+          batch_number: batch_number.trim(),
+          quantity: qty,
+          expiration_date: expDate,
+          unit_cost: cost,
+          selling_price: price
+        });
+      }
+
+      return createdBatches;
+    });
+
+    const result = bulkTx(items);
+    res.status(201).json({
+      message: `Successfully received and registered ${result.length} batch(es) into inventory.`,
+      batches: result
+    });
+  } catch (err) {
+    res.status(400).json({ error: err.message });
+  }
+}
+
+// POST bulk stock-in
+router.post('/bulk', handleBulkStockIn);
+
 // POST new batch (direct stock-in)
 router.post('/', (req, res) => {
+  if (req.body?.items && Array.isArray(req.body.items)) {
+    return handleBulkStockIn(req, res);
+  }
   try {
     const normalizeDateStr = (dateStr) => {
       if (!dateStr) return dateStr;

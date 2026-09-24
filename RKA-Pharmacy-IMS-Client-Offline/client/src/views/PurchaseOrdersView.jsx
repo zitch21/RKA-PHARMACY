@@ -118,7 +118,13 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
   const handleItemChange = (index, field, value) => {
     setNewPoItems(prev => {
       const copy = [...prev];
-      copy[index] = { ...copy[index], [field]: value };
+      if (field === 'medicine_id') {
+        const selectedMed = (medicines || []).find(m => m.id === parseInt(value, 10));
+        const autoCost = selectedMed?.latest_unit_cost || copy[index]?.unit_cost || 10;
+        copy[index] = { ...copy[index], medicine_id: value, unit_cost: autoCost };
+      } else {
+        copy[index] = { ...copy[index], [field]: value };
+      }
       return copy;
     });
   };
@@ -232,16 +238,18 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
     setActionError(null);
 
     try {
+      const todayStr = new Date().toISOString().split('T')[0];
       const receivedItemsPayload = Object.values(deliveryItems)
         .filter(i => parseInt(i.quantity_to_receive) > 0)
         .map(i => ({
           item_id: i.item_id,
           quantity_to_receive: parseInt(i.quantity_to_receive),
-          batch_number: i.batch_number.trim(),
+          quantity_received: parseInt(i.quantity_to_receive),
+          batch_number: (i.batch_number || '').trim(),
           expiration_date: i.expiration_date,
-          manufacturing_date: i.manufacturing_date,
-          unit_cost: parseFloat(i.unit_cost),
-          selling_price: parseFloat(i.selling_price),
+          manufacturing_date: i.manufacturing_date || todayStr,
+          unit_cost: parseFloat(i.unit_cost) || 0,
+          selling_price: parseFloat(i.selling_price) || 0,
           quality_inspection_passed: Boolean(i.quality_inspection_passed)
         }));
 
@@ -254,8 +262,8 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
         if (!item.batch_number || !item.expiration_date) {
           throw new Error('All receiving rows must have a valid Batch / Lot Number and Expiration Date.');
         }
-        if (new Date(item.expiration_date) <= new Date()) {
-          throw new Error(`Batch ${item.batch_number} has an expiration date in the past. Cannot receive expired inventory.`);
+        if (item.expiration_date <= todayStr) {
+          throw new Error(`Batch ${item.batch_number} has an expiration date in the past or today. Cannot receive expired inventory.`);
         }
       }
 
@@ -265,6 +273,7 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
         body: JSON.stringify({
           delivery_notes: deliveryNotes,
           operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista',
+          deliveries: receivedItemsPayload,
           received_items: receivedItemsPayload
         })
       });
@@ -712,15 +721,24 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
                   </button>
                 </div>
 
+                {/* Column Header Indicators */}
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg text-[10px] font-bold uppercase tracking-wider text-slate-600 border border-slate-200">
+                  <div className="flex-1">Medicine Catalog Item</div>
+                  <div className="w-28 text-center">Order Qty</div>
+                  <div className="w-32 text-center">Unit Cost (₱)</div>
+                  {newPoItems.length > 1 && <div className="w-7"></div>}
+                </div>
+
                 <div className="space-y-2 max-h-60 overflow-y-auto p-1">
                   {newPoItems.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs">
+                    <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs shadow-2xs">
                       <div className="flex-1">
                         <select
                           value={item.medicine_id}
                           onChange={(e) => handleItemChange(idx, 'medicine_id', e.target.value)}
                           required
-                          className="w-full px-2 py-1.5 border border-slate-300 rounded bg-white"
+                          aria-label="Medicine Catalog Item"
+                          className="w-full px-2 py-1.5 border border-slate-300 rounded bg-white text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500"
                         >
                           <option value="">-- Choose Medicine --</option>
                           {medicines.map(m => (
@@ -731,37 +749,50 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
                         </select>
                       </div>
 
-                      <div className="w-24">
-                        <input
-                          type="number"
-                          min="1"
-                          required
-                          placeholder="Qty"
-                          value={item.quantity_ordered}
-                          onChange={(e) => handleItemChange(idx, 'quantity_ordered', e.target.value)}
-                          className="w-full px-2 py-1.5 border border-slate-300 rounded bg-white text-right font-semibold"
-                        />
+                      <div className="w-28">
+                        <div className="flex items-center rounded border border-slate-300 bg-white overflow-hidden focus-within:ring-1 focus-within:ring-emerald-500">
+                          <span className="px-2 py-1.5 bg-slate-100 text-slate-600 font-bold text-[11px] border-r border-slate-200 select-none">
+                            Qty
+                          </span>
+                          <input
+                            type="number"
+                            min="1"
+                            required
+                            placeholder="Qty"
+                            aria-label="Order Quantity"
+                            value={item.quantity_ordered}
+                            onChange={(e) => handleItemChange(idx, 'quantity_ordered', e.target.value)}
+                            className="w-full px-2 py-1.5 border-0 bg-transparent text-right font-semibold text-xs focus:outline-none"
+                          />
+                        </div>
                       </div>
 
-                      <div className="w-28">
-                        <input
-                          type="number"
-                          step="0.01"
-                          min="0.01"
-                          required
-                          placeholder="Cost (₱)"
-                          value={item.unit_cost}
-                          onChange={(e) => handleItemChange(idx, 'unit_cost', e.target.value)}
-                          className="w-full px-2 py-1.5 border border-slate-300 rounded bg-white text-right font-mono"
-                        />
+                      <div className="w-32">
+                        <div className="flex items-center rounded border border-slate-300 bg-white overflow-hidden focus-within:ring-1 focus-within:ring-emerald-500">
+                          <span className="px-2.5 py-1.5 bg-slate-100 text-emerald-800 font-bold text-xs border-r border-slate-200 select-none">
+                            ₱
+                          </span>
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0.01"
+                            required
+                            placeholder="0.00"
+                            aria-label="Unit Cost in Pesos"
+                            value={item.unit_cost}
+                            onChange={(e) => handleItemChange(idx, 'unit_cost', e.target.value)}
+                            className="w-full px-2 py-1.5 border-0 bg-transparent text-right font-mono text-xs focus:outline-none font-medium"
+                          />
+                        </div>
                       </div>
 
                       {newPoItems.length > 1 && (
                         <button
                           type="button"
                           onClick={() => handleRemoveItemRow(idx)}
-                          className="p-1.5 text-rose-500 hover:text-rose-700 rounded"
+                          className="p-1.5 text-rose-500 hover:text-rose-700 rounded transition"
                           title="Remove item row"
+                          aria-label="Remove item row"
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>

@@ -6,10 +6,8 @@ import {
   PackageCheck,
   XCircle,
   AlertTriangle,
-  Clock,
   CheckCircle2,
   Calendar,
-  DollarSign,
   ChevronDown,
   ChevronUp,
   RefreshCw,
@@ -17,21 +15,87 @@ import {
   Trash2,
   Sparkles,
   ShoppingBag,
-  ExternalLink
+  X,
 } from 'lucide-react';
 import HelperText from '../components/HelperText';
 import { useLanguage } from '../context/LanguageContext';
+import { broadcastInventoryUpdate } from '../utils/syncChannel';
+import { formatDatePH, getLocalDateISO } from '../utils/dateFormatter';
 
-export default function PurchaseOrdersView({ medicines, currentUser, onRefreshInventory, uiMode = 'clean' }) {
+/* ── Status badges ───────────────────────────── */
+function StatusBadge({ status }) {
+  const { t } = useLanguage();
+  const map = {
+    draft:              'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-300 dark:border-zinc-700',
+    placed:             'bg-amber-100 dark:bg-amber-950/40 text-amber-800 dark:text-amber-300 border-amber-300 dark:border-amber-800/60',
+    partially_received: 'bg-blue-100 dark:bg-blue-950/40 text-blue-800 dark:text-blue-300 border-blue-300 dark:border-blue-800/60',
+    received:           'bg-teal-100 dark:bg-teal-950/40 text-teal-800 dark:text-teal-300 border-teal-200 dark:border-teal-800/60',
+    cancelled:          'bg-rose-100 dark:bg-rose-950/40 text-rose-800 dark:text-rose-300 border-rose-300 dark:border-rose-800/60',
+  };
+  const labels = {
+    draft:              t('po_status_draft', 'Draft'),
+    placed:             t('po_status_placed', 'Placed / Sent'),
+    partially_received: t('po_status_partially_received', 'Partially Received'),
+    received:           t('po_status_received', 'Received ✓'),
+    cancelled:          t('po_status_cancelled', 'Cancelled'),
+  };
+  const cls = map[status] || 'bg-zinc-100 dark:bg-zinc-800 text-zinc-700 dark:text-zinc-300 border-zinc-200 dark:border-zinc-700';
+  return (
+    <span className={`px-2 py-0.5 text-[10px] font-bold uppercase tracking-widest rounded border tabular-nums ${cls}`}>
+      {labels[status] || status}
+    </span>
+  );
+}
+
+function MetricCard({ label, value, sub, accentCls, borderCls, bgCls }) {
+  return (
+    <div className={`${bgCls} ${borderCls} rounded-xl border shadow-xs p-4`}>
+      <span className={`text-[10px] font-bold uppercase tracking-widest block ${accentCls}`}>{label}</span>
+      <span className={`text-2xl font-black block mt-1 tabular-nums ${accentCls.replace('text-', 'text-').replace('-700', '-950').replace('-800', '-950')}`}>{value}</span>
+      {sub && <span className="text-[10px] text-zinc-500 dark:text-slate-400 block mt-0.5">{sub}</span>}
+    </div>
+  );
+}
+
+const inputCls = 'w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white';
+const SUPPLIERS = ['United Laboratories (Unilab)', 'Zuellig Pharma', 'Medix Distribution', 'Pharmalink Inc.', 'MedPro Pharma', 'GlobalRx Distributors'];
+
+export default function PurchaseOrdersView({
+  medicines,
+  currentUser,
+  onRefreshInventory,
+  uiMode = 'clean',
+  activeSubTab = 'po-active',
+  onSubTabChange
+}) {
   const { t } = useLanguage();
   const [orders, setOrders] = useState([]);
   const [recommendations, setRecommendations] = useState([]);
   const [recomMeta, setRecomMeta] = useState(null);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState('all');
+
+  useEffect(() => {
+    if (!activeSubTab) return;
+    if (activeSubTab === 'po-drafts') {
+      setStatusFilter('draft');
+    } else if (activeSubTab === 'po-history') {
+      setStatusFilter('received');
+    } else if (activeSubTab === 'po-active') {
+      setStatusFilter('all');
+    }
+  }, [activeSubTab]);
+
+  const handleTabClick = (key) => {
+    setStatusFilter(key);
+    if (onSubTabChange) {
+      if (key === 'draft') onSubTabChange('po-drafts');
+      else if (key === 'received' || key === 'cancelled') onSubTabChange('po-history');
+      else onSubTabChange('po-active');
+    }
+  };
   const [expandedPoId, setExpandedPoId] = useState(null);
 
-  // Modals
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [isReceiveModalOpen, setIsReceiveModalOpen] = useState(false);
   const [isCancelModalOpen, setIsCancelModalOpen] = useState(false);
@@ -42,18 +106,13 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
   const [actionSuccess, setActionSuccess] = useState(null);
   const [actionError, setActionError] = useState(null);
 
-  // New PO Form
   const [newPoSupplier, setNewPoSupplier] = useState('United Laboratories (Unilab)');
   const [newPoNotes, setNewPoNotes] = useState('');
-  const [newPoItems, setNewPoItems] = useState([
-    { medicine_id: '', quantity_ordered: 50, unit_cost: 10 }
-  ]);
+  const [newPoItems, setNewPoItems] = useState([{ medicine_id: '', quantity_ordered: 50, unit_cost: 10 }]);
 
-  // Delivery Receiving Form (keyed by item_id)
   const [deliveryItems, setDeliveryItems] = useState({});
   const [deliveryNotes, setDeliveryNotes] = useState('');
-
-  // Cancel Outstanding Form
+  const [supplierDrNumber, setSupplierDrNumber] = useState('');
   const [cancellationReason, setCancellationReason] = useState('');
 
   const fetchOrdersAndRecommendations = async () => {
@@ -63,89 +122,50 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
         fetch(`/api/purchase-orders?status=${statusFilter}`),
         fetch('/api/purchase-orders/recommendations')
       ]);
-
-      const [ordersData, recomData] = await Promise.all([
-        ordersRes.json(),
-        recomRes.json()
-      ]);
-
+      const [ordersData, recomData] = await Promise.all([ordersRes.json(), recomRes.json()]);
       setOrders(ordersData.orders || []);
       setRecommendations(recomData.recommendations || []);
       setRecomMeta(recomData || null);
     } catch (err) {
       console.error('Failed to fetch purchase orders:', err);
       setActionError('Failed to load purchase orders.');
-    } finally {
-      setLoading(false);
-    }
+    } finally { setLoading(false); }
   };
 
-  useEffect(() => {
-    fetchOrdersAndRecommendations();
-  }, [statusFilter]);
+  useEffect(() => { fetchOrdersAndRecommendations(); }, [statusFilter]);
 
-  // Create PO from Scratch or Recommendations
   const handleOpenCreateModal = (prefillItems = null, supplier = null) => {
     if (prefillItems && prefillItems.length > 0) {
       setNewPoSupplier(supplier || prefillItems[0].supplier_name || 'United Laboratories (Unilab)');
-      setNewPoItems(
-        prefillItems.map(item => ({
-          medicine_id: item.medicine_id,
-          quantity_ordered: item.suggested_quantity || 50,
-          unit_cost: item.estimated_unit_cost || 10
-        }))
-      );
+      setNewPoItems(prefillItems.map(item => ({ medicine_id: item.medicine_id, quantity_ordered: item.suggested_quantity || 50, unit_cost: item.estimated_unit_cost || 10 })));
       setNewPoNotes('Generated from clinic replenishment recommendations.');
     } else {
       setNewPoSupplier('United Laboratories (Unilab)');
-      const defaultMedId = medicines && medicines.length > 0 ? medicines[0].id : '';
-      setNewPoItems([{ medicine_id: defaultMedId, quantity_ordered: 50, unit_cost: 10 }]);
+      setNewPoItems([{ medicine_id: medicines && medicines.length > 0 ? medicines[0].id : '', quantity_ordered: 50, unit_cost: 10 }]);
       setNewPoNotes('');
     }
     setActionError(null);
     setIsCreateModalOpen(true);
   };
 
-  // Handle Bulk Drafting with Multi-Supplier separation
   const handleBulkDraftRecommendations = async (items) => {
     if (!items || items.length === 0) return;
-
-    // Group by supplier
     const supplierGroups = {};
     for (const item of items) {
       const supp = item.supplier_name || 'Generic Distributor';
       if (!supplierGroups[supp]) supplierGroups[supp] = [];
-      supplierGroups[supp].push({
-        medicine_id: item.medicine_id,
-        quantity_ordered: parseInt(item.suggested_quantity || 50, 10),
-        unit_cost: parseFloat(item.estimated_unit_cost || 10)
-      });
+      supplierGroups[supp].push({ medicine_id: item.medicine_id, quantity_ordered: parseInt(item.suggested_quantity || 50, 10), unit_cost: parseFloat(item.estimated_unit_cost || 10) });
     }
-
     const uniqueSuppliers = Object.keys(supplierGroups);
-    if (uniqueSuppliers.length <= 1) {
-      handleOpenCreateModal(items, uniqueSuppliers[0]);
-      return;
-    }
-
-    if (!window.confirm(`Replenishment recommendations involve ${uniqueSuppliers.length} different distributors (${uniqueSuppliers.join(', ')}). Automatically generate separated draft Purchase Orders for each distributor?`)) {
-      return;
-    }
-
-    setActionLoading(true);
-    setActionError(null);
+    if (uniqueSuppliers.length <= 1) { handleOpenCreateModal(items, uniqueSuppliers[0]); return; }
+    if (!window.confirm(`Replenishment recommendations involve ${uniqueSuppliers.length} different distributors (${uniqueSuppliers.join(', ')}). Automatically generate separated draft Purchase Orders for each distributor?`)) return;
+    setActionLoading(true); setActionError(null);
     try {
       const created = [];
       for (const [suppName, suppItems] of Object.entries(supplierGroups)) {
         const res = await fetch('/api/purchase-orders', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            supplier_name: suppName,
-            items: suppItems,
-            notes: 'Consolidated replenishment PO generated via Dynamic Replenishment Planner',
-            operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista'
-          })
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ supplier_name: suppName, items: suppItems, notes: 'Consolidated replenishment PO generated via Dynamic Replenishment Planner', operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista' })
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || 'Failed to create PO');
@@ -154,423 +174,229 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
       setActionSuccess(`Created ${created.length} draft Purchase Order(s) grouped by supplier: ${created.join(', ')}.`);
       fetchOrdersAndRecommendations();
       if (onRefreshInventory) onRefreshInventory();
-    } catch (err) {
-      setActionError(err.message);
-    } finally {
-      setActionLoading(false);
-    }
+    } catch (err) { setActionError(err.message); }
+    finally { setActionLoading(false); }
   };
 
-  const handleAddItemRow = () => {
-    const defaultMedId = medicines && medicines.length > 0 ? medicines[0].id : '';
-    setNewPoItems(prev => [...prev, { medicine_id: defaultMedId, quantity_ordered: 50, unit_cost: 10 }]);
-  };
-
-  const handleRemoveItemRow = (index) => {
-    setNewPoItems(prev => prev.filter((_, i) => i !== index));
-  };
-
+  const handleAddItemRow = () => setNewPoItems(prev => [...prev, { medicine_id: medicines && medicines.length > 0 ? medicines[0].id : '', quantity_ordered: 50, unit_cost: 10 }]);
+  const handleRemoveItemRow = (index) => setNewPoItems(prev => prev.filter((_, i) => i !== index));
   const handleItemChange = (index, field, value) => {
     setNewPoItems(prev => {
       const copy = [...prev];
       if (field === 'medicine_id') {
-        const selectedMed = (medicines || []).find(m => m.id === parseInt(value, 10));
-        const autoCost = selectedMed?.latest_unit_cost || copy[index]?.unit_cost || 10;
-        copy[index] = { ...copy[index], medicine_id: value, unit_cost: autoCost };
-      } else {
-        copy[index] = { ...copy[index], [field]: value };
-      }
+        const sel = (medicines || []).find(m => m.id === parseInt(value, 10));
+        copy[index] = { ...copy[index], medicine_id: value, unit_cost: sel?.latest_unit_cost || copy[index]?.unit_cost || 10 };
+      } else { copy[index] = { ...copy[index], [field]: value }; }
       return copy;
     });
   };
 
   const handleSubmitCreatePo = async (e) => {
-    e.preventDefault();
-    setActionLoading(true);
-    setActionError(null);
-
+    e.preventDefault(); setActionLoading(true); setActionError(null);
     try {
-      const payload = {
-        supplier_name: newPoSupplier,
-        notes: newPoNotes,
-        operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista',
-        items: newPoItems.map(i => ({
-          medicine_id: parseInt(i.medicine_id),
-          quantity_ordered: parseInt(i.quantity_ordered),
-          unit_cost: parseFloat(i.unit_cost)
-        }))
-      };
-
       const res = await fetch('/api/purchase-orders', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ supplier_name: newPoSupplier, notes: newPoNotes, operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista', items: newPoItems.map(i => ({ medicine_id: parseInt(i.medicine_id), quantity_ordered: parseInt(i.quantity_ordered), unit_cost: parseFloat(i.unit_cost) })) })
       });
-
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create Purchase Order');
-
-      setActionSuccess(data.message);
-      setIsCreateModalOpen(false);
+      setActionSuccess(data.message); setIsCreateModalOpen(false);
       fetchOrdersAndRecommendations();
       if (onRefreshInventory) onRefreshInventory();
-    } catch (err) {
-      setActionError(err.message);
-    } finally {
-      setActionLoading(false);
-    }
+    } catch (err) { setActionError(err.message); }
+    finally { setActionLoading(false); }
   };
 
-  // Place Order with Supplier
   const handlePlaceOrder = async (po) => {
     if (!window.confirm(`Mark Purchase Order ${po.po_number} as PLACED with ${po.supplier_name}?`)) return;
-
-    setActionLoading(true);
-    setActionError(null);
+    setActionLoading(true); setActionError(null);
     try {
-      const res = await fetch(`/api/purchase-orders/${po.id}/place`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista'
-        })
-      });
-
+      const res = await fetch(`/api/purchase-orders/${po.id}/place`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista' }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to place Purchase Order');
-
-      setActionSuccess(data.message);
-      fetchOrdersAndRecommendations();
-    } catch (err) {
-      setActionError(err.message);
-    } finally {
-      setActionLoading(false);
-    }
+      setActionSuccess(data.message); fetchOrdersAndRecommendations();
+    } catch (err) { setActionError(err.message); }
+    finally { setActionLoading(false); }
   };
 
-  // Open Receive Delivery Modal
   const handleOpenReceiveModal = (po) => {
     setActivePoForAction(po);
+    const today = getLocalDateISO();
+    const futureExp = new Date(); futureExp.setMonth(futureExp.getMonth() + 18);
+    const defaultExp = getLocalDateISO(futureExp);
     const initialDelivery = {};
-    const today = new Date().toISOString().split('T')[0];
-
-    // Default future expiration date (+1.5 years)
-    const futureExp = new Date();
-    futureExp.setMonth(futureExp.getMonth() + 18);
-    const defaultExp = futureExp.toISOString().split('T')[0];
-
     po.items.forEach(item => {
-      const remainingQty = Math.max(0, item.quantity_ordered - item.quantity_received);
-      const randomLot = Math.floor(100 + Math.random() * 900);
-      initialDelivery[item.id] = {
-        item_id: item.id,
-        quantity_to_receive: remainingQty,
-        batch_number: `LOT-${Date.now().toString().slice(-4)}-${randomLot}`,
-        expiration_date: defaultExp,
-        manufacturing_date: today,
-        unit_cost: item.unit_cost,
-        selling_price: (item.unit_cost * 1.35).toFixed(2),
-        quality_inspection_passed: true
-      };
+      const remaining = Math.max(0, item.quantity_ordered - item.quantity_received);
+      initialDelivery[item.id] = { item_id: item.id, quantity_to_receive: remaining, batch_number: `LOT-${Date.now().toString().slice(-4)}-${Math.floor(100 + Math.random() * 900)}`, expiration_date: defaultExp, manufacturing_date: today, unit_cost: item.unit_cost, selling_price: (item.unit_cost * 1.35).toFixed(2), quality_inspection_passed: true };
     });
-
     setDeliveryItems(initialDelivery);
     setDeliveryNotes(`Delivery receipt against PO ${po.po_number}`);
-    setActionError(null);
-    setIsReceiveModalOpen(true);
+    setSupplierDrNumber(po.supplier_dr_number || '');
+    setActionError(null); setIsReceiveModalOpen(true);
   };
 
-  const handleDeliveryItemChange = (itemId, field, value) => {
-    setDeliveryItems(prev => ({
-      ...prev,
-      [itemId]: { ...prev[itemId], [field]: value }
-    }));
-  };
+  const handleDeliveryItemChange = (itemId, field, value) =>
+    setDeliveryItems(prev => ({ ...prev, [itemId]: { ...prev[itemId], [field]: value } }));
 
   const handleSubmitReceiveDelivery = async (e) => {
-    e.preventDefault();
-    setActionLoading(true);
-    setActionError(null);
-
+    e.preventDefault(); setActionLoading(true); setActionError(null);
     try {
-      const todayStr = new Date().toISOString().split('T')[0];
-      const receivedItemsPayload = Object.values(deliveryItems)
-        .filter(i => parseInt(i.quantity_to_receive) > 0)
-        .map(i => ({
-          item_id: i.item_id,
-          quantity_to_receive: parseInt(i.quantity_to_receive),
-          quantity_received: parseInt(i.quantity_to_receive),
-          batch_number: (i.batch_number || '').trim(),
-          expiration_date: i.expiration_date,
-          manufacturing_date: i.manufacturing_date || todayStr,
-          unit_cost: parseFloat(i.unit_cost) || 0,
-          selling_price: parseFloat(i.selling_price) || 0,
-          quality_inspection_passed: Boolean(i.quality_inspection_passed)
-        }));
-
-      if (receivedItemsPayload.length === 0) {
-        throw new Error('Please enter quantity greater than zero for at least one item being received.');
-      }
-
-      // Check dates
+      const todayStr = getLocalDateISO();
+      const receivedItemsPayload = Object.values(deliveryItems).filter(i => parseInt(i.quantity_to_receive) > 0).map(i => ({ item_id: i.item_id, quantity_to_receive: parseInt(i.quantity_to_receive), quantity_received: parseInt(i.quantity_to_receive), batch_number: (i.batch_number || '').trim(), expiration_date: i.expiration_date, manufacturing_date: i.manufacturing_date || todayStr, unit_cost: parseFloat(i.unit_cost) || 0, selling_price: parseFloat(i.selling_price) || 0, quality_inspection_passed: Boolean(i.quality_inspection_passed), supplier_dr_number: supplierDrNumber.trim() || undefined }));
+      if (receivedItemsPayload.length === 0) throw new Error('Please enter quantity greater than zero for at least one item being received.');
       for (const item of receivedItemsPayload) {
-        if (!item.batch_number || !item.expiration_date) {
-          throw new Error('All receiving rows must have a valid Batch / Lot Number and Expiration Date.');
-        }
-        if (item.expiration_date <= todayStr) {
-          throw new Error(`Batch ${item.batch_number} has an expiration date in the past or today. Cannot receive expired inventory.`);
-        }
+        if (!item.batch_number || !item.expiration_date) throw new Error('All receiving rows must have a valid Batch / Lot Number and Expiration Date.');
+        if (item.expiration_date <= todayStr) throw new Error(`Batch ${item.batch_number} has an expiration date in the past or today. Cannot receive expired inventory.`);
       }
-
-      const res = await fetch(`/api/purchase-orders/${activePoForAction.id}/receive`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          delivery_notes: deliveryNotes,
-          operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista',
-          deliveries: receivedItemsPayload,
-          received_items: receivedItemsPayload
-        })
-      });
-
+      const res = await fetch(`/api/purchase-orders/${activePoForAction.id}/receive`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ delivery_notes: deliveryNotes, supplier_dr_number: supplierDrNumber.trim() || undefined, operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista', deliveries: receivedItemsPayload, received_items: receivedItemsPayload }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to record delivery');
-
-      setActionSuccess(data.message);
-      setIsReceiveModalOpen(false);
+      setActionSuccess(data.message); setIsReceiveModalOpen(false);
       fetchOrdersAndRecommendations();
       if (onRefreshInventory) onRefreshInventory();
-    } catch (err) {
-      setActionError(err.message);
-    } finally {
-      setActionLoading(false);
-    }
+      broadcastInventoryUpdate('PO_DELIVERY_RECEIVED', { poId: activePoForAction.id, drNumber: supplierDrNumber.trim() });
+    } catch (err) { setActionError(err.message); }
+    finally { setActionLoading(false); }
   };
 
-  // Open Cancel Outstanding Modal
-  const handleOpenCancelModal = (po) => {
-    setActivePoForAction(po);
-    setCancellationReason('');
-    setActionError(null);
-    setIsCancelModalOpen(true);
-  };
+  const handleOpenCancelModal = (po) => { setActivePoForAction(po); setCancellationReason(''); setActionError(null); setIsCancelModalOpen(true); };
 
   const handleSubmitCancelOutstanding = async (e) => {
     e.preventDefault();
-    if (!cancellationReason.trim()) {
-      setActionError('A mandatory justification reason is required.');
-      return;
-    }
-
-    setActionLoading(true);
-    setActionError(null);
-
+    if (!cancellationReason.trim()) { setActionError('A mandatory justification reason is required.'); return; }
+    setActionLoading(true); setActionError(null);
     try {
-      const res = await fetch(`/api/purchase-orders/${activePoForAction.id}/cancel-outstanding`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          cancellation_reason: cancellationReason.trim(),
-          operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista'
-        })
-      });
-
+      const res = await fetch(`/api/purchase-orders/${activePoForAction.id}/cancel-outstanding`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ cancellation_reason: cancellationReason.trim(), operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista' }) });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to cancel outstanding lines');
-
-      setActionSuccess(data.message);
-      setIsCancelModalOpen(false);
-      fetchOrdersAndRecommendations();
-    } catch (err) {
-      setActionError(err.message);
-    } finally {
-      setActionLoading(false);
-    }
+      setActionSuccess(data.message); setIsCancelModalOpen(false); fetchOrdersAndRecommendations();
+    } catch (err) { setActionError(err.message); }
+    finally { setActionLoading(false); }
   };
 
-  // Delete Draft PO
   const handleDeleteDraftPo = async (po) => {
     if (!window.confirm(`Delete draft purchase order ${po.po_number}?`)) return;
-
     try {
       const res = await fetch(`/api/purchase-orders/${po.id}`, { method: 'DELETE' });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to delete draft');
-
-      setActionSuccess(data.message);
-      fetchOrdersAndRecommendations();
-    } catch (err) {
-      setActionError(err.message);
-    }
+      setActionSuccess(data.message); fetchOrdersAndRecommendations();
+    } catch (err) { setActionError(err.message); }
   };
 
-  // Helper for Status Badges
-  const getStatusBadge = (status) => {
-    switch (status) {
-      case 'draft':
-        return <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-slate-100 text-slate-700 border border-slate-300">Draft</span>;
-      case 'placed':
-        return <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-amber-100 text-amber-800 border border-amber-300 animate-pulse">Placed with Supplier</span>;
-      case 'partially_received':
-        return <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-blue-100 text-blue-800 border border-blue-300">Partially Received</span>;
-      case 'received':
-        return <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">Received (In Stock)</span>;
-      case 'cancelled':
-        return <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-rose-100 text-rose-800 border border-rose-300">Cancelled</span>;
-      default:
-        return <span className="px-2.5 py-1 text-[11px] font-bold rounded-full bg-slate-100 text-slate-800">{status}</span>;
-    }
-  };
-
-  const draftCount = orders.filter(o => o.status === 'draft').length;
-  const placedCount = orders.filter(o => o.status === 'placed' || o.status === 'partially_received').length;
+  const draftCount    = orders.filter(o => o.status === 'draft').length;
+  const placedCount   = orders.filter(o => o.status === 'placed' || o.status === 'partially_received').length;
   const receivedCount = orders.filter(o => o.status === 'received').length;
+  const totalAmount   = orders.reduce((s, o) => s + Number(o.total_amount ?? o.total_cost ?? 0), 0);
+
+  const filterTabs = [
+    { key: 'all',      label: t('po_filter_all', 'All Orders'),           count: orders.length },
+    { key: 'draft',    label: t('po_filter_draft', 'Draft Orders'),       count: draftCount },
+    { key: 'placed',   label: t('po_filter_sent', 'Placed / Sent'),       count: placedCount },
+    { key: 'received', label: t('po_filter_received', 'Received / Delivered'), count: receivedCount },
+    { key: 'cancelled',label: t('po_filter_cancelled', 'Cancelled'),      count: null },
+  ];
 
   return (
-    <div className={uiMode === 'clean' ? 'space-y-4 pb-8' : 'space-y-6 pb-12'}>
-      {/* Header */}
-      <div className={`bg-white rounded-xl border border-slate-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 ${
-        uiMode === 'clean' ? 'p-4' : 'p-5'
-      }`}>
+    <div className={uiMode === 'clean' ? 'space-y-4 pb-8' : 'space-y-5 pb-12'}>
+
+      {/* ══ Page Header ══ */}
+      <div className="bg-white rounded-xl border border-zinc-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-5 py-3.5">
         <div>
-          <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              <FileText className="w-5 h-5 text-emerald-600" />
-              <span>{t('purchase_orders_title', 'Purchase Orders (PO)')}</span>
-            </h2>
-            <span className="bg-emerald-100 text-emerald-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
-              Clinic Procurement Standard
-            </span>
-          </div>
-          <HelperText uiMode={uiMode} className="text-xs text-slate-500 mt-1">
+          <h2 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+            <FileText className="w-4 h-4 text-teal-600" />
+            {t('purchase_orders_title', 'Purchase Orders & Procurement')}
+          </h2>
+          <HelperText uiMode={uiMode} className="text-xs text-slate-500 mt-0.5">
             {t('po_subtitle', 'Manage replenishment orders, supplier purchase slips, and stock intake')}
           </HelperText>
         </div>
-
-        <div className="flex items-center gap-2">
-          <button
-            onClick={() => handleOpenCreateModal()}
-            className="flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg shadow-sm transition"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{t('btn_create_po', 'Create Purchase Order')}</span>
+        <div className="flex items-center gap-2 shrink-0">
+          <button onClick={() => handleOpenCreateModal()}
+            className="flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-sm transition cursor-pointer">
+            <Plus className="w-3.5 h-3.5" />
+            {t('btn_create_po', '+ Create Purchase Order')}
           </button>
-          <button
-            onClick={fetchOrdersAndRecommendations}
-            className="p-2 text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition"
-            title={t('btn_refresh', 'Refresh')}
-          >
-            <RefreshCw className="w-4 h-4" />
+          <button onClick={fetchOrdersAndRecommendations}
+            className="p-2 text-zinc-500 hover:bg-zinc-100 border border-zinc-200 rounded-lg transition cursor-pointer" title={t('btn_refresh', 'Refresh')}>
+            <RefreshCw className="w-3.5 h-3.5" />
           </button>
         </div>
       </div>
 
-      {/* Notifications */}
+      {/* ══ Notices ══ */}
       {actionSuccess && (
-        <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-900 text-xs flex items-center justify-between gap-2 animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span>{actionSuccess}</span>
-          </div>
-          <button onClick={() => setActionSuccess(null)} className="text-emerald-700 hover:text-emerald-900 font-bold text-xs">✕</button>
+        <div className="p-3.5 bg-teal-50 border border-teal-200 rounded-xl text-teal-900 text-xs flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2"><CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" /><span>{actionSuccess}</span></div>
+          <button onClick={() => setActionSuccess(null)} className="text-teal-500 hover:text-teal-800 cursor-pointer"><X className="w-3.5 h-3.5" /></button>
         </div>
       )}
       {actionError && (
-        <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-900 text-xs flex items-center justify-between gap-2 animate-in fade-in">
-          <div className="flex items-center gap-2">
-            <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-            <span>{actionError}</span>
-          </div>
-          <button onClick={() => setActionError(null)} className="text-rose-700 hover:text-rose-900 font-bold text-xs">✕</button>
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center justify-between gap-2">
+          <div className="flex items-center gap-2"><AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" /><span>{actionError}</span></div>
+          <button onClick={() => setActionError(null)} className="text-rose-400 hover:text-rose-700 cursor-pointer"><X className="w-3.5 h-3.5" /></button>
         </div>
       )}
 
-      {/* Metrics Bar */}
-      <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-slate-500 text-xs font-semibold uppercase tracking-wider block">Total POs</span>
-          <span className="text-2xl font-black text-slate-900 mt-1 block">{orders.length}</span>
-        </div>
-        <div className="bg-amber-50/60 p-4 rounded-xl border border-amber-200 shadow-2xs">
-          <span className="text-amber-800 text-xs font-semibold uppercase tracking-wider block">{t('po_filter_sent', 'Placed / Sent')}</span>
-          <span className="text-2xl font-black text-amber-950 mt-1 block">{placedCount}</span>
-        </div>
-        <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 shadow-2xs">
-          <span className="text-slate-600 text-xs font-semibold uppercase tracking-wider block">{t('po_filter_draft', 'Draft Orders')}</span>
-          <span className="text-2xl font-black text-slate-800 mt-1 block">{draftCount}</span>
-        </div>
-        <div className="bg-emerald-50/60 p-4 rounded-xl border border-emerald-200 shadow-2xs">
-          <span className="text-emerald-800 text-xs font-semibold uppercase tracking-wider block">{t('po_filter_received', 'Received / Delivered')}</span>
-          <span className="text-2xl font-black text-emerald-950 mt-1 block">{receivedCount}</span>
-        </div>
+      {/* ══ Metrics Strip ══ */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <MetricCard label={t('total_pos_metric', 'Total POs')} value={orders.length} sub={`₱${totalAmount.toFixed(2)} total`} accentCls="text-zinc-600" bgCls="bg-white" borderCls="border-zinc-200" />
+        <MetricCard label={t('po_filter_sent', 'Placed / Sent')} value={placedCount} sub="Awaiting delivery" accentCls="text-amber-700" bgCls="bg-amber-50/60" borderCls="border-amber-200" />
+        <MetricCard label={t('po_filter_draft', 'Draft Orders')} value={draftCount} sub="Pending placement" accentCls="text-zinc-600" bgCls="bg-zinc-50" borderCls="border-zinc-200" />
+        <MetricCard label={t('po_filter_received', 'Received / Delivered')} value={receivedCount} sub="In inventory" accentCls="text-teal-700" bgCls="bg-teal-50/60" borderCls="border-teal-200" />
       </div>
 
-      {/* Replenishment Recommendation Banner */}
+      {/* ══ Replenishment Recommendation Banner ══ */}
       {recommendations.length > 0 && (
-        <div className="bg-gradient-to-r from-amber-500/10 via-emerald-500/10 to-teal-500/10 border-2 border-emerald-500/30 p-5 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-emerald-700" />
-              <h3 className="font-bold text-slate-900 text-sm">
-                {t('po_recom_title', 'Dynamic Replenishment Recommendations')} ({recommendations.length} Items)
-              </h3>
+        <div className="bg-white border border-teal-200 rounded-xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4 shadow-xs">
+          <div className="flex items-start gap-3">
+            <Sparkles className="w-4 h-4 text-teal-600 shrink-0 mt-0.5" />
+            <div>
+              <h3 className="font-bold text-slate-900 text-sm">{t('po_recom_title', 'Dynamic Replenishment Recommendations')} <span className="text-teal-700">({recommendations.length} Items)</span></h3>
+              <HelperText uiMode={uiMode} className="text-xs text-slate-500">
+                {t('po_recom_subtitle', 'Based on daily demand velocity and supplier lead times')}
+                {recomMeta?.window_days ? ` (${recomMeta.window_days}-day rolling sales window)` : ''}
+              </HelperText>
             </div>
-            <HelperText uiMode={uiMode} className="text-xs text-slate-600">
-              {t('po_recom_subtitle', 'Based on daily demand velocity and supplier lead times')}
-            </HelperText>
           </div>
-
-          <button
-            onClick={() => handleBulkDraftRecommendations(recommendations)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs transition shrink-0"
-          >
+          <button onClick={() => handleBulkDraftRecommendations(recommendations)} disabled={actionLoading}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-xl shadow-xs transition shrink-0 cursor-pointer disabled:opacity-50">
             <ShoppingBag className="w-4 h-4" />
-            <span>{t('btn_accept_all_draft_po', 'Accept All Suggested / Bulk Draft PO')}</span>
+            {t('btn_accept_all_draft_po', 'Accept All Suggested / Bulk Draft PO')}
           </button>
         </div>
       )}
 
-      {/* Filter Tabs */}
-      <div className="flex items-center gap-2 border-b border-slate-200 pb-3">
-        {[
-          { key: 'all', label: t('po_filter_all', 'All Orders') },
-          { key: 'draft', label: t('po_filter_draft', 'Draft Orders') },
-          { key: 'placed', label: t('po_filter_sent', 'Placed / Sent') },
-          { key: 'received', label: t('po_filter_received', 'Received / Delivered') },
-          { key: 'cancelled', label: t('po_filter_cancelled', 'Cancelled') }
-        ].map(tab => (
-          <button
-            key={tab.key}
-            onClick={() => setStatusFilter(tab.key)}
-            className={`px-3 py-1.5 text-xs font-semibold rounded-lg capitalize transition ${
+      {/* ══ Filter Tabs ══ */}
+      <div className="flex items-center gap-1 overflow-x-auto no-scrollbar border-b border-zinc-200">
+        {filterTabs.map(tab => (
+          <button key={tab.key} onClick={() => handleTabClick(tab.key)}
+            className={`flex items-center gap-1.5 px-3 py-2 text-xs font-bold border-b-2 transition whitespace-nowrap cursor-pointer ${
               statusFilter === tab.key
-                ? 'bg-slate-800 text-white shadow-xs'
-                : 'text-slate-600 hover:bg-slate-200/70'
-            }`}
-          >
+                ? 'border-teal-500 text-teal-700'
+                : 'border-transparent text-zinc-400 hover:text-zinc-700 hover:border-zinc-300'
+            }`}>
             {tab.label}
+            {tab.count !== null && (
+              <span className={`text-[9px] px-1.5 py-0.5 rounded-full tabular-nums font-bold ${statusFilter === tab.key ? 'bg-teal-600 text-white' : 'bg-zinc-200 text-zinc-600'}`}>
+                {tab.count}
+              </span>
+            )}
           </button>
         ))}
       </div>
 
-      {/* Purchase Orders Table */}
+      {/* ══ Purchase Orders Ledger ══ */}
       {loading ? (
-        <div className="p-12 text-center text-slate-400 text-xs">
-          Loading purchase order records...
-        </div>
+        <div className="p-12 text-center text-zinc-400 text-xs">{t('loading_po', 'Loading purchase order records…')}</div>
       ) : orders.length === 0 ? (
-        <div className="bg-white p-12 text-center rounded-xl border border-slate-200 shadow-2xs space-y-3">
-          <FileText className="w-10 h-10 text-slate-300 mx-auto" />
-          <h4 className="font-bold text-slate-700 text-sm">No Purchase Orders Recorded</h4>
-          <p className="text-xs text-slate-500 max-w-sm mx-auto">
-            Create an internal clinic purchase order to track incoming batches and streamline delivery receiving.
-          </p>
-          <button
-            onClick={() => handleOpenCreateModal()}
-            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-lg shadow-2xs transition inline-flex items-center gap-1.5"
-          >
-            <Plus className="w-4 h-4" />
-            <span>{uiMode === 'clean' ? 'Create PO' : 'Create Purchase Order'}</span>
+        <div className="bg-white p-12 text-center rounded-xl border border-zinc-200 shadow-xs space-y-3">
+          <FileText className="w-10 h-10 text-zinc-200 mx-auto" />
+          <h4 className="font-bold text-slate-700 text-sm">{t('no_po_recorded', 'No Purchase Orders Recorded')}</h4>
+          <p className="text-xs text-zinc-400 max-w-sm mx-auto">{t('no_po_desc', 'Create an internal pharmacy purchase order to track incoming batches and streamline delivery receiving.')}</p>
+          <button onClick={() => handleOpenCreateModal()}
+            className="px-4 py-2 bg-teal-600 hover:bg-teal-700 text-white font-bold text-xs rounded-lg shadow-xs transition inline-flex items-center gap-1.5 cursor-pointer">
+            <Plus className="w-4 h-4" /><span>{t('btn_create_po', '+ Create Purchase Order')}</span>
           </button>
         </div>
       ) : (
@@ -578,142 +404,120 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
           {orders.map(po => {
             const isExpanded = expandedPoId === po.id;
             const items = po.items || [];
-            const totalItemsCount = items.reduce((s, i) => s + i.quantity_ordered, 0);
-            const totalReceivedCount = items.reduce((s, i) => s + (i.quantity_received || 0), 0);
+            const totalItemsQty    = items.reduce((s, i) => s + i.quantity_ordered, 0);
+            const totalReceivedQty = items.reduce((s, i) => s + (i.quantity_received || 0), 0);
 
             return (
-              <div
-                key={po.id}
-                className="bg-white rounded-xl border border-slate-200 shadow-2xs overflow-hidden transition"
-              >
-                {/* PO Header Row */}
+              <div key={po.id} className="bg-white rounded-xl border border-zinc-200 shadow-xs overflow-hidden">
+                {/* PO Row */}
                 <div className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3">
                   <div className="flex items-start sm:items-center gap-3">
-                    <button
-                      onClick={() => setExpandedPoId(isExpanded ? null : po.id)}
-                      className="p-1 text-slate-400 hover:text-slate-700 rounded transition"
-                      title={isExpanded ? 'Collapse' : 'Expand'}
-                    >
+                    <button onClick={() => setExpandedPoId(isExpanded ? null : po.id)}
+                      className="p-1 text-zinc-400 hover:text-zinc-700 rounded transition cursor-pointer shrink-0">
                       {isExpanded ? <ChevronUp className="w-5 h-5" /> : <ChevronDown className="w-5 h-5" />}
                     </button>
-
                     <div>
                       <div className="flex flex-wrap items-center gap-2">
-                        <span className="font-mono font-bold text-sm text-slate-900">{po.po_number}</span>
-                        {getStatusBadge(po.status)}
-                        <span className="text-xs font-semibold text-slate-600">• {po.supplier_name}</span>
+                        <span className="tabular-nums font-bold text-sm text-slate-900">{po.po_number}</span>
+                        <StatusBadge status={po.status} />
+                        {po.supplier_dr_number && (
+                          <span className="px-2 py-0.5 text-[9px] font-bold tabular-nums uppercase bg-teal-50 text-teal-800 border border-teal-200 rounded">
+                            DR/SI: {po.supplier_dr_number}
+                          </span>
+                        )}
+                        <span className="text-xs font-semibold text-zinc-500">• {po.supplier_name}</span>
                       </div>
-                      <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 mt-1">
-                        <span>Created: {new Date(po.created_at).toLocaleDateString()}</span>
+                      <div className="flex flex-wrap items-center gap-3 text-[10px] text-zinc-400 mt-0.5">
+                        <span className="flex items-center gap-1">
+                          <Calendar className="w-2.5 h-2.5" />
+                          {formatDatePH(po.created_at, 'compact')}
+                        </span>
                         <span>•</span>
-                        <span>Total: <strong>₱{Number(po.total_amount ?? po.total_cost ?? 0).toFixed(2)}</strong></span>
+                        <span>{t('total_label', 'Total:')} <strong className="text-slate-700 tabular-nums">₱{Number(po.total_amount ?? po.total_cost ?? 0).toFixed(2)}</strong></span>
                         <span>•</span>
-                        <span>Items: {totalReceivedCount} / {totalItemsCount} units received</span>
+                        <span className="tabular-nums">{totalReceivedQty} / {totalItemsQty} {t('units_received', 'units received')}</span>
                         {(po.operator_name || po.created_by) && (
-                          <>
-                            <span>•</span>
-                            <span>By: {po.operator_name || po.created_by}</span>
-                          </>
+                          <><span>•</span><span>{t('by_operator', 'By:')} {po.operator_name || po.created_by}</span></>
                         )}
                       </div>
                     </div>
                   </div>
 
-                  {/* Actions according to status */}
-                  <div className="flex items-center gap-2 self-end md:self-auto">
-                    {/* Print PO Slip */}
-                    <button
-                      onClick={() => setPrintPo(po)}
-                      className="p-1.5 text-slate-600 hover:bg-slate-100 border border-slate-200 rounded-lg transition"
-                      title="Print Purchase Order Slip"
-                    >
-                      <Printer className="w-4 h-4" />
+                  {/* Status-based actions */}
+                  <div className="flex items-center gap-2 self-end md:self-auto shrink-0">
+                    <button onClick={() => setPrintPo(po)}
+                      className="p-1.5 text-zinc-500 hover:bg-zinc-100 border border-zinc-200 rounded-lg transition cursor-pointer" title={t('title_print_po', 'Print Purchase Order Slip')}>
+                      <Printer className="w-3.5 h-3.5" />
                     </button>
 
                     {po.status === 'draft' && (
                       <>
-                        <button
-                          onClick={() => handlePlaceOrder(po)}
-                          disabled={actionLoading}
-                          className="px-3 py-1.5 text-xs font-bold bg-amber-600 hover:bg-amber-700 text-white rounded-lg transition flex items-center gap-1 shadow-2xs"
-                        >
-                          <Send className="w-3.5 h-3.5" />
-                          <span>Place Order</span>
+                        <button onClick={() => handlePlaceOrder(po)} disabled={actionLoading}
+                          className="px-3 py-1.5 text-xs font-bold bg-amber-500 hover:bg-amber-600 text-white rounded-lg transition flex items-center gap-1 shadow-xs cursor-pointer disabled:opacity-50">
+                          <Send className="w-3.5 h-3.5" /><span>{t('btn_place_order', 'Place Order')}</span>
                         </button>
-                        <button
-                          onClick={() => handleDeleteDraftPo(po)}
-                          className="p-1.5 text-rose-600 hover:bg-rose-50 border border-rose-200 rounded-lg transition"
-                          title="Delete Draft PO"
-                        >
-                          <Trash2 className="w-4 h-4" />
+                        <button onClick={() => handleDeleteDraftPo(po)}
+                          className="p-1.5 text-rose-500 hover:bg-rose-50 border border-rose-200 rounded-lg transition cursor-pointer" title={t('title_delete_draft_po', 'Delete Draft PO')}>
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </>
                     )}
 
                     {(po.status === 'placed' || po.status === 'partially_received') && (
                       <>
-                        <button
-                          onClick={() => handleOpenReceiveModal(po)}
-                          disabled={actionLoading}
-                          className="px-3.5 py-1.5 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition flex items-center gap-1.5 shadow-2xs"
-                        >
-                          <PackageCheck className="w-4 h-4" />
-                          <span>Receive Delivery</span>
+                        <button onClick={() => handleOpenReceiveModal(po)} disabled={actionLoading}
+                          className="px-3.5 py-1.5 text-xs font-bold bg-teal-600 hover:bg-teal-700 text-white rounded-lg transition flex items-center gap-1.5 shadow-xs cursor-pointer disabled:opacity-50">
+                          <PackageCheck className="w-3.5 h-3.5" /><span>{t('btn_receive_delivery', 'Receive Delivery')}</span>
                         </button>
-                        <button
-                          onClick={() => handleOpenCancelModal(po)}
-                          className="px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-50 border border-rose-300 rounded-lg transition flex items-center gap-1"
-                          title="Cancel Remaining Unfulfilled Lines"
-                        >
-                          <XCircle className="w-3.5 h-3.5" />
-                          <span>Cancel Outstanding</span>
+                        <button onClick={() => handleOpenCancelModal(po)}
+                          className="px-2.5 py-1.5 text-xs font-bold text-rose-700 hover:bg-rose-50 border border-rose-200 rounded-lg transition flex items-center gap-1 cursor-pointer">
+                          <XCircle className="w-3.5 h-3.5" /><span>{t('cancel_outstanding', 'Cancel Outstanding')}</span>
                         </button>
                       </>
                     )}
                   </div>
                 </div>
 
-                {/* Expanded Details: Line Items */}
+                {/* Expandable Line Items Drawer */}
                 {isExpanded && (
-                  <div className="bg-slate-50/70 border-t border-slate-200 p-4 space-y-3 animate-in fade-in">
+                  <div className="bg-zinc-50/60 border-t border-zinc-200 p-4 space-y-3">
                     {po.notes && (
-                      <p className="text-xs text-slate-600 bg-white p-2.5 rounded-lg border border-slate-200">
-                        <strong>Order Notes:</strong> {po.notes}
+                      <p className="text-xs text-zinc-500 bg-white px-3 py-2 rounded-lg border border-zinc-200">
+                        <strong className="text-slate-700">{t('order_notes', 'Order Notes:')}</strong> {po.notes}
                       </p>
                     )}
-
-                    <div className="overflow-x-auto">
+                    <div className="overflow-x-auto rounded-xl border border-zinc-200 bg-white">
                       <table className="w-full text-left text-xs border-collapse">
                         <thead>
-                          <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider">
-                            <th className="py-2 px-3">Item / Medicine</th>
-                            <th className="py-2 px-3 text-right">Ordered</th>
-                            <th className="py-2 px-3 text-right">Received</th>
-                            <th className="py-2 px-3 text-right">Unit Cost</th>
-                            <th className="py-2 px-3 text-right">Line Total</th>
-                            <th className="py-2 px-3">Line Status</th>
+                          <tr className="bg-zinc-50 border-b border-zinc-100 text-zinc-400 uppercase text-[9px] tracking-widest font-bold">
+                            <th className="py-2 px-3">{t('col_item_med', 'Item / Medicine')}</th>
+                            <th className="py-2 px-3 text-right">{t('col_ordered', 'Ordered')}</th>
+                            <th className="py-2 px-3 text-right">{t('col_received', 'Received')}</th>
+                            <th className="py-2 px-3 text-right">{t('inv_unit_cost', 'Unit Cost')}</th>
+                            <th className="py-2 px-3 text-right">{t('col_line_total', 'Line Total')}</th>
+                            <th className="py-2 px-3">{t('inv_status', 'Status')}</th>
                           </tr>
                         </thead>
-                        <tbody className="divide-y divide-slate-200 bg-white">
+                        <tbody className="divide-y divide-zinc-100">
                           {items.map(item => (
-                            <tr key={item.id}>
+                            <tr key={item.id} className="hover:bg-zinc-50 transition">
                               <td className="py-2.5 px-3">
                                 <span className="font-bold text-slate-900">{item.brand_name}</span>
-                                <span className="text-[11px] text-slate-500 block">{item.generic_name} ({item.dosage_strength})</span>
+                                <span className="text-[10px] text-zinc-400 block">{item.generic_name} ({item.dosage_strength})</span>
                               </td>
-                              <td className="py-2.5 px-3 text-right font-semibold text-slate-800">{item.quantity_ordered}</td>
-                              <td className="py-2.5 px-3 text-right font-bold text-emerald-700">{item.quantity_received}</td>
-                              <td className="py-2.5 px-3 text-right font-mono text-slate-600">₱{Number(item.unit_cost).toFixed(2)}</td>
-                              <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-900">₱{Number(item.total_cost).toFixed(2)}</td>
+                              <td className="py-2.5 px-3 text-right font-bold tabular-nums text-slate-800">{item.quantity_ordered}</td>
+                              <td className="py-2.5 px-3 text-right font-bold tabular-nums text-teal-700">{item.quantity_received}</td>
+                              <td className="py-2.5 px-3 text-right tabular-nums text-zinc-500">₱{Number(item.unit_cost).toFixed(2)}</td>
+                              <td className="py-2.5 px-3 text-right tabular-nums font-bold tabular-nums text-slate-900">₱{Number(item.total_cost).toFixed(2)}</td>
                               <td className="py-2.5 px-3">
                                 {item.is_cancelled ? (
-                                  <span className="text-[10px] bg-rose-100 text-rose-800 px-2 py-0.5 rounded font-bold">Cancelled</span>
+                                  <span className="text-[9px] bg-rose-100 text-rose-800 border border-rose-200 px-1.5 py-0.5 rounded font-bold uppercase">{t('po_status_cancelled', 'Cancelled')}</span>
                                 ) : item.quantity_received >= item.quantity_ordered ? (
-                                  <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded font-bold">Fully Received</span>
+                                  <span className="text-[9px] bg-teal-100 text-teal-800 border border-teal-200 px-1.5 py-0.5 rounded font-bold uppercase">{t('po_status_fully_received', 'Fully Received')}</span>
                                 ) : item.quantity_received > 0 ? (
-                                  <span className="text-[10px] bg-blue-100 text-blue-800 px-2 py-0.5 rounded font-bold">Partial</span>
+                                  <span className="text-[9px] bg-blue-100 text-blue-800 border border-blue-200 px-1.5 py-0.5 rounded font-bold uppercase">{t('po_status_partial', 'Partial')}</span>
                                 ) : (
-                                  <span className="text-[10px] bg-slate-100 text-slate-600 px-2 py-0.5 rounded font-semibold">Pending</span>
+                                  <span className="text-[9px] bg-zinc-100 text-zinc-600 border border-zinc-200 px-1.5 py-0.5 rounded font-semibold uppercase">{t('po_status_pending', 'Pending')}</span>
                                 )}
                               </td>
                             </tr>
@@ -729,127 +533,71 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
         </div>
       )}
 
-      {/* CREATE PURCHASE ORDER MODAL */}
+      {/* ══ CREATE PO MODAL ══ */}
       {isCreateModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-200">
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                  <FileText className="w-5 h-5 text-emerald-600" />
-                  <span>Create Internal Purchase Order (PO)</span>
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Generate draft purchase order for supplier quotation and batch receiving.
-                </p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#161b22] rounded-3xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto border border-slate-200/90 dark:border-white/10">
+            <div className="bg-slate-50/90 dark:bg-[#1e2430] border-b border-slate-100 dark:border-white/10 text-slate-900 dark:text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-teal-500/10 dark:bg-teal-500/20 border border-teal-500/20 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                  <FileText className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">{t('po_create_internal_title', 'Create Internal Purchase Order (PO)')}</h3>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">{t('po_create_internal_desc', 'Generate draft purchase order for supplier quotation and batch receiving.')}</p>
+                </div>
               </div>
-              <button onClick={() => setIsCreateModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
+              <button onClick={() => setIsCreateModalOpen(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition cursor-pointer"><X className="w-5 h-5" /></button>
             </div>
 
             <form onSubmit={handleSubmitCreatePo} className="p-5 space-y-4">
               <div>
-                <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                  Supplier / Distributor Name *
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={newPoSupplier}
-                  onChange={(e) => setNewPoSupplier(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1">{t('po_supplier_name_label', 'Supplier / Distributor Name *')}</label>
+                <select value={newPoSupplier} onChange={e => setNewPoSupplier(e.target.value)} required className={`${inputCls} cursor-pointer`}>
+                  {SUPPLIERS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
               </div>
 
-              {/* Items Table */}
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
-                  <label className="block text-xs font-semibold uppercase text-slate-700">
-                    Order Line Items ({newPoItems.length})
-                  </label>
-                  <button
-                    type="button"
-                    onClick={handleAddItemRow}
-                    className="text-xs text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1"
-                  >
-                    <Plus className="w-3.5 h-3.5" />
-                    <span>Add Item</span>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-zinc-500">{t('po_col_items', 'Order Line Items')} ({newPoItems.length})</label>
+                  <button type="button" onClick={handleAddItemRow} className="text-xs text-teal-700 hover:text-teal-900 font-bold flex items-center gap-1 cursor-pointer">
+                    <Plus className="w-3.5 h-3.5" /><span>{t('po_add_item_btn', 'Add Item')}</span>
                   </button>
                 </div>
-
-                {/* Column Header Indicators */}
-                <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 rounded-lg text-[10px] font-bold uppercase tracking-wider text-slate-600 border border-slate-200">
-                  <div className="flex-1">Medicine Catalog Item</div>
-                  <div className="w-28 text-center">Order Qty</div>
-                  <div className="w-32 text-center">Unit Cost (₱)</div>
-                  {newPoItems.length > 1 && <div className="w-7"></div>}
+                <div className="flex items-center gap-2 px-3 py-1.5 bg-zinc-50 rounded-lg text-[9px] font-bold uppercase tracking-widest text-zinc-500 border border-zinc-200">
+                  <div className="flex-1">{t('po_col_catalog_item', 'Medicine Catalog Item')}</div>
+                  <div className="w-28 text-center">{t('po_col_ordered', 'Order Qty')}</div>
+                  <div className="w-32 text-center">{t('fefo_est_unit_cost', 'Unit Cost (₱)')}</div>
+                  {newPoItems.length > 1 && <div className="w-7" />}
                 </div>
-
                 <div className="space-y-2 max-h-60 overflow-y-auto p-1">
                   {newPoItems.map((item, idx) => (
-                    <div key={idx} className="flex items-center gap-2 p-2 bg-slate-50 rounded-lg border border-slate-200 text-xs shadow-2xs">
+                    <div key={idx} className="flex items-center gap-2 p-2 bg-zinc-50 rounded-xl border border-zinc-200 text-xs">
                       <div className="flex-1">
-                        <select
-                          value={item.medicine_id}
-                          onChange={(e) => handleItemChange(idx, 'medicine_id', e.target.value)}
-                          required
-                          aria-label="Medicine Catalog Item"
-                          className="w-full px-2 py-1.5 border border-slate-300 rounded bg-white text-xs text-slate-800 focus:ring-1 focus:ring-emerald-500"
-                        >
-                          <option value="">-- Choose Medicine --</option>
-                          {medicines.map(m => (
-                            <option key={m.id} value={m.id}>
-                              {m.brand_name} - {m.generic_name} ({m.dosage_strength})
-                            </option>
-                          ))}
+                        <select value={item.medicine_id} onChange={e => handleItemChange(idx, 'medicine_id', e.target.value)} required
+                          className="w-full px-2 py-1.5 border border-zinc-200 rounded-lg bg-white text-xs text-slate-800 focus:ring-1 focus:ring-teal-500 cursor-pointer">
+                          <option value="">{t('po_choose_med_prompt', '— Choose Medicine —')}</option>
+                          {(medicines || []).map(m => <option key={m.id} value={m.id}>{m.brand_name} - {m.generic_name} ({m.dosage_strength})</option>)}
                         </select>
                       </div>
-
                       <div className="w-28">
-                        <div className="flex items-center rounded border border-slate-300 bg-white overflow-hidden focus-within:ring-1 focus-within:ring-emerald-500">
-                          <span className="px-2 py-1.5 bg-slate-100 text-slate-600 font-bold text-[11px] border-r border-slate-200 select-none">
-                            Qty
-                          </span>
-                          <input
-                            type="number"
-                            min="1"
-                            required
-                            placeholder="Qty"
-                            aria-label="Order Quantity"
-                            value={item.quantity_ordered}
-                            onChange={(e) => handleItemChange(idx, 'quantity_ordered', e.target.value)}
-                            className="w-full px-2 py-1.5 border-0 bg-transparent text-right font-semibold text-xs focus:outline-none"
-                          />
+                        <div className="flex items-center rounded-lg border border-zinc-200 bg-white overflow-hidden focus-within:ring-1 focus-within:ring-teal-500">
+                          <span className="px-2 py-1.5 bg-zinc-100 text-zinc-500 font-bold text-[10px] border-r border-zinc-200 select-none">{t('col_qty', 'Qty')}</span>
+                          <input type="number" min="1" required value={item.quantity_ordered} onChange={e => handleItemChange(idx, 'quantity_ordered', e.target.value)}
+                            className="w-full px-2 py-1.5 border-0 bg-transparent text-right font-bold tabular-nums focus:outline-none" />
                         </div>
                       </div>
-
                       <div className="w-32">
-                        <div className="flex items-center rounded border border-slate-300 bg-white overflow-hidden focus-within:ring-1 focus-within:ring-emerald-500">
-                          <span className="px-2.5 py-1.5 bg-slate-100 text-emerald-800 font-bold text-xs border-r border-slate-200 select-none">
-                            ₱
-                          </span>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0.01"
-                            required
-                            placeholder="0.00"
-                            aria-label="Unit Cost in Pesos"
-                            value={item.unit_cost}
-                            onChange={(e) => handleItemChange(idx, 'unit_cost', e.target.value)}
-                            className="w-full px-2 py-1.5 border-0 bg-transparent text-right font-mono text-xs focus:outline-none font-medium"
-                          />
+                        <div className="flex items-center rounded-lg border border-zinc-200 bg-white overflow-hidden focus-within:ring-1 focus-within:ring-teal-500">
+                          <span className="px-2 py-1.5 bg-zinc-100 text-teal-700 font-bold text-xs border-r border-zinc-200 select-none">₱</span>
+                          <input type="number" step="0.01" min="0.01" required value={item.unit_cost} onChange={e => handleItemChange(idx, 'unit_cost', e.target.value)}
+                            className="w-full px-2 py-1.5 border-0 bg-transparent text-right tabular-nums focus:outline-none" />
                         </div>
                       </div>
-
                       {newPoItems.length > 1 && (
-                        <button
-                          type="button"
-                          onClick={() => handleRemoveItemRow(idx)}
-                          className="p-1.5 text-rose-500 hover:text-rose-700 rounded transition"
-                          title="Remove item row"
-                          aria-label="Remove item row"
-                        >
-                          <Trash2 className="w-4 h-4" />
+                        <button type="button" onClick={() => handleRemoveItemRow(idx)} className="p-1.5 text-rose-500 hover:text-rose-700 cursor-pointer">
+                          <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       )}
                     </div>
@@ -858,32 +606,14 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
               </div>
 
               <div>
-                <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                  Procurement Notes (Optional)
-                </label>
-                <input
-                  type="text"
-                  placeholder="e.g. Rush delivery, 30 days payment term"
-                  value={newPoNotes}
-                  onChange={(e) => setNewPoNotes(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1">{t('po_label_order_notes', 'Procurement Notes (Optional)')}</label>
+                <input type="text" placeholder={t('ph_po_notes', 'e.g. Rush delivery, 30 days payment term')} value={newPoNotes} onChange={e => setNewPoNotes(e.target.value)} className={inputCls} />
               </div>
 
-              <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCreateModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs"
-                >
-                  {actionLoading ? 'Creating...' : 'Save Draft Purchase Order'}
+              <div className="pt-3 border-t border-zinc-100 flex justify-end gap-2">
+                <button type="button" onClick={() => setIsCreateModalOpen(false)} className="px-4 py-2 border border-zinc-200 rounded-lg text-xs font-semibold text-zinc-700 hover:bg-zinc-100 cursor-pointer">{t('btn_cancel', 'Cancel')}</button>
+                <button type="submit" disabled={actionLoading} className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-xs disabled:opacity-50 cursor-pointer">
+                  {actionLoading ? (t('loading') || 'Creating…') : (t('btn_create_po', 'Save Draft Purchase Order'))}
                 </button>
               </div>
             </form>
@@ -891,21 +621,21 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
         </div>
       )}
 
-      {/* RECEIVE DELIVERY MODAL */}
+      {/* ══ RECEIVE DELIVERY MODAL ══ */}
       {isReceiveModalOpen && activePoForAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-slate-200">
-            <div className="p-5 border-b border-slate-200 flex items-center justify-between">
-              <div>
-                <h3 className="font-bold text-slate-900 text-base flex items-center gap-2">
-                  <PackageCheck className="w-5 h-5 text-emerald-600" />
-                  <span>Receive Order Delivery ({activePoForAction.po_number})</span>
-                </h3>
-                <p className="text-xs text-slate-500">
-                  Assign supplier Lot / Batch numbers and verify expiration dates into active stock.
-                </p>
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#161b22] rounded-3xl shadow-2xl max-w-3xl w-full max-h-[90vh] overflow-y-auto border border-slate-200/90 dark:border-white/10">
+            <div className="bg-slate-50/90 dark:bg-[#1e2430] border-b border-slate-100 dark:border-white/10 text-slate-900 dark:text-white p-4 flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                <div className="w-8 h-8 rounded-xl bg-teal-500/10 dark:bg-teal-500/20 border border-teal-500/20 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                  <PackageCheck className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 dark:text-white">Receive Order Delivery ({activePoForAction.po_number})</h3>
+                  <p className="text-[10px] text-slate-500 dark:text-slate-400">{t('po_batch_assign_desc', 'Assign supplier Lot / Batch numbers and verify expiration dates into active stock.')}</p>
+                </div>
               </div>
-              <button onClick={() => setIsReceiveModalOpen(false)} className="text-slate-400 hover:text-slate-600 text-lg font-bold">✕</button>
+              <button onClick={() => setIsReceiveModalOpen(false)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition cursor-pointer"><X className="w-5 h-5" /></button>
             </div>
 
             <form onSubmit={handleSubmitReceiveDelivery} className="p-5 space-y-4">
@@ -913,106 +643,59 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
                 {activePoForAction.items.map(item => {
                   const delState = deliveryItems[item.id] || {};
                   const remaining = Math.max(0, item.quantity_ordered - item.quantity_received);
-
                   return (
-                    <div key={item.id} className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+                    <div key={item.id} className="p-3 bg-zinc-50 rounded-xl border border-zinc-200 space-y-2">
                       <div className="flex items-center justify-between">
-                        <div>
-                          <span className="font-bold text-xs text-slate-900">{item.brand_name}</span>
-                          <span className="text-[11px] text-slate-500 ml-1">({item.generic_name})</span>
-                        </div>
-                        <span className="text-[11px] text-slate-600 font-semibold">
-                          Ordered: {item.quantity_ordered} | Remaining: <strong className="text-emerald-700">{remaining}</strong>
-                        </span>
+                        <div><span className="font-bold text-xs text-slate-900">{item.brand_name}</span><span className="text-[10px] text-zinc-400 ml-1">({item.generic_name})</span></div>
+                        <span className="text-[10px] text-zinc-500 font-semibold">Ordered: {item.quantity_ordered} | Remaining: <strong className="text-teal-700">{remaining}</strong></span>
                       </div>
-
                       <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
-                        <div>
-                          <label className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">
-                            Qty to Receive *
-                          </label>
-                          <input
-                            type="number"
-                            min="0"
-                            max={remaining}
-                            value={delState.quantity_to_receive || ''}
-                            onChange={(e) => handleDeliveryItemChange(item.id, 'quantity_to_receive', e.target.value)}
-                            className="w-full px-2 py-1.5 border border-slate-300 rounded bg-white font-bold"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">
-                            Batch / Lot # *
-                          </label>
-                          <input
-                            type="text"
-                            required
-                            value={delState.batch_number || ''}
-                            onChange={(e) => handleDeliveryItemChange(item.id, 'batch_number', e.target.value)}
-                            className="w-full px-2 py-1.5 border border-slate-300 rounded bg-white font-mono"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">
-                            Expiration Date *
-                          </label>
-                          <input
-                            type="date"
-                            required
-                            value={delState.expiration_date || ''}
-                            onChange={(e) => handleDeliveryItemChange(item.id, 'expiration_date', e.target.value)}
-                            className="w-full px-2 py-1.5 border border-slate-300 rounded bg-white"
-                          />
-                        </div>
-
-                        <div>
-                          <label className="block text-[10px] font-bold uppercase text-slate-500 mb-0.5">
-                            Selling Price (₱) *
-                          </label>
-                          <input
-                            type="number"
-                            step="0.01"
-                            min="0.01"
-                            required
-                            value={delState.selling_price || ''}
-                            onChange={(e) => handleDeliveryItemChange(item.id, 'selling_price', e.target.value)}
-                            className="w-full px-2 py-1.5 border border-slate-300 rounded bg-white font-bold text-emerald-800"
-                          />
-                        </div>
+                        {[['Qty to Receive *', 'quantity_to_receive', 'number'], ['Batch / Lot # *', 'batch_number', 'text'], ['Expiration Date *', 'expiration_date', 'date'], ['Selling Price (₱) *', 'selling_price', 'number']].map(([label, field, type]) => (
+                          <div key={field}>
+                            <label className="block text-[9px] font-bold uppercase text-zinc-400 mb-0.5 tracking-widest">{label}</label>
+                            <input type={type} step={field === 'selling_price' ? '0.01' : undefined} min={field === 'quantity_to_receive' ? 0 : field === 'selling_price' ? '0.01' : undefined} max={field === 'quantity_to_receive' ? remaining : undefined}
+                              required={field !== 'manufacturing_date'} value={delState[field] || ''}
+                              onChange={e => handleDeliveryItemChange(item.id, field, e.target.value)}
+                              className={`w-full px-2 py-1.5 border border-zinc-200 rounded-lg bg-white focus:ring-1 focus:ring-teal-500 focus:outline-none text-xs ${field === 'batch_number' ? 'tabular-nums' : ''} ${field === 'selling_price' ? 'font-bold text-teal-800' : ''}`} />
+                          </div>
+                        ))}
                       </div>
                     </div>
                   );
                 })}
               </div>
 
-              <div>
-                <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                  Delivery Receipt Notes / Reference
-                </label>
-                <input
-                  type="text"
-                  value={deliveryNotes}
-                  onChange={(e) => setDeliveryNotes(e.target.value)}
-                  className="w-full px-3 py-2 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-emerald-500 focus:outline-none"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1">
+                    {t('po_dr_si_label', 'Supplier DR / Sales Invoice # (FDA / COA Required)')}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={t('ph_dr_si_example', 'e.g. DR-2026-98124 or SI-88410')}
+                    value={supplierDrNumber}
+                    onChange={e => setSupplierDrNumber(e.target.value)}
+                    className={`${inputCls} tabular-nums`}
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1">
+                    {t('po_delivery_notes_label', 'Delivery Notes / Cold-Chain Reference')}
+                  </label>
+                  <input
+                    type="text"
+                    placeholder={t('ph_po_delivery_notes', 'e.g. Delivered direct, sealed insulated box')}
+                    value={deliveryNotes}
+                    onChange={e => setDeliveryNotes(e.target.value)}
+                    className={inputCls}
+                  />
+                </div>
               </div>
 
-              <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">
-                <button
-                  type="button"
-                  onClick={() => setIsReceiveModalOpen(false)}
-                  className="px-4 py-2 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-2xs"
-                >
-                  {actionLoading ? 'Recording Delivery...' : 'Confirm Delivery Intake'}
+              <div className="pt-3 border-t border-zinc-100 flex justify-end gap-2">
+                <button type="button" onClick={() => setIsReceiveModalOpen(false)} className="px-4 py-2 border border-zinc-200 rounded-lg text-xs font-semibold text-zinc-700 hover:bg-zinc-100 cursor-pointer">{t('btn_cancel', 'Cancel')}</button>
+                <button type="submit" disabled={actionLoading} className="px-5 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-lg text-xs font-bold shadow-xs disabled:opacity-50 cursor-pointer">
+                  {actionLoading ? (t('loading') || 'Recording Delivery…') : (t('po_btn_receive_delivery', 'Confirm Delivery Intake'))}
                 </button>
               </div>
             </form>
@@ -1020,47 +703,25 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
         </div>
       )}
 
-      {/* CANCEL OUTSTANDING MODAL */}
+      {/* ══ CANCEL OUTSTANDING MODAL ══ */}
       {isCancelModalOpen && activePoForAction && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-2xl shadow-xl max-w-md w-full border border-slate-200 p-5 space-y-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full border border-zinc-200 p-5 space-y-4">
             <div className="flex items-center gap-2 text-rose-700">
               <AlertTriangle className="w-5 h-5 shrink-0" />
               <h3 className="font-bold text-sm">Cancel Outstanding Lines ({activePoForAction.po_number})</h3>
             </div>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              This will cancel remaining unfulfilled items on this purchase order. This action requires an audit justification and cannot be undone.
-            </p>
-
+            <p className="text-xs text-zinc-500 leading-relaxed">{t('po_cancel_warning', 'This will cancel remaining unfulfilled items on this purchase order. This action requires an audit justification and cannot be undone.')}</p>
             <form onSubmit={handleSubmitCancelOutstanding} className="space-y-3">
               <div>
-                <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-                  Cancellation Justification *
-                </label>
-                <textarea
-                  required
-                  rows="3"
-                  placeholder="e.g. Supplier out of stock; manufacturer phased out packaging size..."
-                  value={cancellationReason}
-                  onChange={(e) => setCancellationReason(e.target.value)}
-                  className="w-full p-2.5 text-xs border border-slate-300 rounded-lg focus:ring-2 focus:ring-rose-500 focus:outline-none"
-                />
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-zinc-500 mb-1">{t('po_cancel_justification_label', 'Cancellation Justification *')}</label>
+                <textarea required rows="3" placeholder={t('ph_po_cancel_reason', 'e.g. Supplier out of stock; manufacturer phased out packaging size...')} value={cancellationReason} onChange={e => setCancellationReason(e.target.value)}
+                  className="w-full p-2.5 text-xs border border-zinc-200 rounded-lg focus:ring-2 focus:ring-rose-500 focus:outline-none" />
               </div>
-
               <div className="flex justify-end gap-2 pt-2">
-                <button
-                  type="button"
-                  onClick={() => setIsCancelModalOpen(false)}
-                  className="px-3 py-1.5 border border-slate-300 rounded-lg text-xs font-semibold text-slate-700 hover:bg-slate-100"
-                >
-                  Close
-                </button>
-                <button
-                  type="submit"
-                  disabled={actionLoading}
-                  className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-2xs"
-                >
-                  {actionLoading ? 'Processing...' : 'Confirm Cancel'}
+                <button type="button" onClick={() => setIsCancelModalOpen(false)} className="px-3 py-1.5 border border-zinc-200 rounded-lg text-xs font-semibold text-zinc-700 hover:bg-zinc-100 cursor-pointer">{t('btn_cancel', 'Cancel')}</button>
+                <button type="submit" disabled={actionLoading} className="px-4 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-xs disabled:opacity-50 cursor-pointer">
+                  {actionLoading ? (t('loading') || 'Processing…') : (t('po_btn_cancel_outstanding', 'Confirm Cancel'))}
                 </button>
               </div>
             </form>
@@ -1068,88 +729,60 @@ export default function PurchaseOrdersView({ medicines, currentUser, onRefreshIn
         </div>
       )}
 
-      {/* PRINT PO SLIP MODAL */}
+      {/* ══ PRINT PO SLIP MODAL ══ */}
       {printPo && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-xs p-4 animate-in fade-in">
-          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
-            <div className="p-4 bg-slate-900 text-white flex justify-between items-center no-print">
-              <span className="font-bold text-xs flex items-center gap-1.5">
-                <FileText className="w-4 h-4 text-emerald-400" />
-                Purchase Order Document ({printPo.po_number})
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
+          <div className="bg-white dark:bg-[#161b22] rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200/90 dark:border-white/10">
+            <div className="p-4 bg-slate-50/90 dark:bg-[#1e2430] border-b border-slate-100 dark:border-white/10 flex justify-between items-center no-print">
+              <span className="font-bold text-xs flex items-center gap-2 text-slate-900 dark:text-white">
+                <div className="w-6 h-6 rounded-lg bg-teal-500/10 dark:bg-teal-500/20 border border-teal-500/20 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
+                  <FileText className="w-3.5 h-3.5" />
+                </div>
+                <span>Purchase Order Document ({printPo.po_number})</span>
               </span>
-              <button onClick={() => setPrintPo(null)} className="text-slate-400 hover:text-white text-xs font-semibold">✕</button>
+              <button onClick={() => setPrintPo(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition cursor-pointer"><X className="w-4 h-4" /></button>
             </div>
 
-            <div className="p-6 font-mono text-xs text-slate-800 printable-area bg-white space-y-4">
-              <div className="text-center pb-3 border-b border-dashed border-slate-300">
-                <h4 className="font-extrabold text-sm uppercase">R.K.A PHARMACY</h4>
-                <p className="text-[11px] text-slate-500">San Antonio, Agoo, La Union</p>
-                <p className="text-[10px] text-slate-400">Clinic Purchase Order (PO)</p>
+            <div className="p-6 tabular-nums text-xs text-slate-800 printable-area bg-white space-y-4">
+              <div className="text-center pb-3 border-b border-dashed border-zinc-300">
+                <h4 className="font-extrabold text-sm uppercase">{t('app_title', 'R.K.A PHARMACY')}</h4>
+                <p className="text-[10px] text-zinc-500">San Antonio, Agoo, La Union</p>
+                <p className="text-[9px] text-zinc-400">{t('po_slip_title', 'Pharmacy Purchase Order (PO)')}</p>
               </div>
-
-              <div className="grid grid-cols-2 gap-2 text-[11px] border-b border-dashed border-slate-300 pb-3">
-                <div>
-                  <span className="text-slate-500 block">PO Number:</span>
-                  <span className="font-bold text-slate-900">{printPo.po_number}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Date:</span>
-                  <span>{new Date(printPo.created_at).toLocaleDateString()}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Supplier:</span>
-                  <span className="font-bold">{printPo.supplier_name}</span>
-                </div>
-                <div>
-                  <span className="text-slate-500 block">Status:</span>
-                  <span className="uppercase font-bold">{printPo.status}</span>
-                </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px] border-b border-dashed border-zinc-300 pb-3">
+                <div><span className="text-zinc-400 block">{t('po_col_id', 'PO Number')}:</span><span className="font-bold text-slate-900">{printPo.po_number}</span></div>
+                <div><span className="text-zinc-400 block">{t('po_col_date', 'Date')}:</span><span>{formatDatePH(printPo.created_at, 'medium')}</span></div>
+                <div><span className="text-zinc-400 block">{t('col_supplier', 'Supplier')}:</span><span className="font-bold">{printPo.supplier_name}</span></div>
+                <div><span className="text-zinc-400 block">{t('po_col_status', 'Status')}:</span><span className="uppercase font-bold">{printPo.status}</span></div>
               </div>
-
-              <div className="space-y-2 border-b border-dashed border-slate-300 pb-3">
-                <div className="grid grid-cols-12 text-[10px] font-bold text-slate-400 uppercase">
-                  <span className="col-span-6">Medicine</span>
-                  <span className="col-span-2 text-right">Qty</span>
-                  <span className="col-span-2 text-right">Cost</span>
-                  <span className="col-span-2 text-right">Total</span>
+              <div className="space-y-2 border-b border-dashed border-zinc-300 pb-3">
+                <div className="grid grid-cols-12 text-[9px] font-bold text-zinc-400 uppercase tracking-widest">
+                  <span className="col-span-6">{t('col_item_med', 'Medicine')}</span><span className="col-span-2 text-right">{t('col_qty', 'Qty')}</span><span className="col-span-2 text-right">{t('fefo_col_cost', 'Cost')}</span><span className="col-span-2 text-right">{t('col_line_total', 'Total')}</span>
                 </div>
                 {printPo.items?.map((item, idx) => (
                   <div key={idx} className="grid grid-cols-12 text-[11px]">
                     <span className="col-span-6 font-bold">{item.brand_name}</span>
-                    <span className="col-span-2 text-right">{item.quantity_ordered}</span>
-                    <span className="col-span-2 text-right">₱{Number(item.unit_cost).toFixed(2)}</span>
-                    <span className="col-span-2 text-right font-bold">₱{Number(item.total_cost).toFixed(2)}</span>
+                    <span className="col-span-2 text-right tabular-nums">{item.quantity_ordered}</span>
+                    <span className="col-span-2 text-right tabular-nums">₱{Number(item.unit_cost).toFixed(2)}</span>
+                    <span className="col-span-2 text-right font-bold tabular-nums">₱{Number(item.total_cost).toFixed(2)}</span>
                   </div>
                 ))}
               </div>
-
               <div className="flex justify-between items-center text-sm font-black pt-1">
-                <span>TOTAL ESTIMATED COST:</span>
-                <span>₱{Number(printPo.total_amount ?? printPo.total_cost ?? 0).toFixed(2)}</span>
+                <span>{t('po_total_est_cost', 'TOTAL ESTIMATED COST:')}</span>
+                <span className="tabular-nums">₱{Number(printPo.total_amount ?? printPo.total_cost ?? 0).toFixed(2)}</span>
               </div>
-
-              {printPo.notes && (
-                <div className="text-[10px] text-slate-500 bg-slate-50 p-2 rounded">
-                  Notes: {printPo.notes}
-                </div>
-              )}
+              {printPo.notes && <div className="text-[9px] text-zinc-400 bg-zinc-50 p-2 rounded">{t('order_notes', 'Notes:')} {printPo.notes}</div>}
             </div>
 
-            <div className="p-3 bg-slate-50 border-t border-slate-200 flex gap-2 no-print">
-              <button
-                type="button"
-                onClick={() => window.print()}
-                className="flex-1 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-2xs"
-              >
-                <Printer className="w-4 h-4" />
-                <span>Print Document</span>
+            <div className="p-3.5 bg-slate-50/90 dark:bg-[#1e2430] border-t border-slate-100 dark:border-white/10 flex gap-2 no-print">
+              <button type="button" onClick={() => window.print()}
+                className="flex-1 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
+                <Printer className="w-4 h-4" /><span>{t('po_print_doc_btn', 'Print Document')}</span>
               </button>
-              <button
-                type="button"
-                onClick={() => setPrintPo(null)}
-                className="px-4 py-2 border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 rounded-lg text-xs font-semibold transition"
-              >
-                Done
+              <button type="button" onClick={() => setPrintPo(null)}
+                className="px-4 py-2 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#21262d] hover:bg-slate-50 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer">
+                {t('btn_done', 'Done')}
               </button>
             </div>
           </div>

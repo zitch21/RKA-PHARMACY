@@ -1,6 +1,6 @@
 const express = require('express');
 const router = express.Router();
-const { db, logAudit } = require('../db');
+const { db, logAudit, performSystemReset, resetDemoDb } = require('../db');
 
 // GET all settings as a key-value dictionary
 router.get('/', (req, res) => {
@@ -65,6 +65,29 @@ router.put('/', (req, res) => {
     res.json({ message: 'Settings updated successfully', settings: updates });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST factory system reset (complete data wipe, admin login & settings retained, pre-wipe backup created)
+router.post('/system-reset', async (req, res) => {
+  try {
+    const operator = (req.body && req.body.operator_name) || (req.user && req.user.full_name) || 'Lourdes Gincen L. Cesista';
+    const result = await performSystemReset({ operator_name: operator });
+    res.json(result);
+  } catch (err) {
+    console.error('System reset error:', err);
+    res.status(500).json({ error: err.message || 'System reset failed' });
+  }
+});
+
+// POST demo sandbox reset (resets demo database back to fresh demo state)
+router.post('/demo-reset', (req, res) => {
+  try {
+    resetDemoDb();
+    res.json({ success: true, message: 'Demo sandbox reset to pristine initial state.' });
+  } catch (err) {
+    console.error('Demo reset error:', err);
+    res.status(500).json({ error: err.message || 'Demo reset failed' });
   }
 });
 

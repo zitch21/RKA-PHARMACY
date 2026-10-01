@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const path = require('path');
 const { seedDatabase } = require('./seed');
+const { dbContext } = require('./db');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -10,8 +11,18 @@ const PORT = process.env.PORT || 5000;
 app.use(cors());
 app.use(express.json());
 
+// Demo Mode Context Middleware (Header-scoped SQLite isolation)
+app.use((req, res, next) => {
+  const isDemo = req.headers['x-demo-mode'] === 'true' || req.headers['x-demo-mode'] === true;
+  dbContext.run({ isDemo }, () => next());
+});
+
 // Auto-seed if empty
 seedDatabase();
+
+// Route-Level Authentication Gate: Protects mutating operations (POST, PUT, DELETE, PATCH)
+const { authMiddleware } = require('./middleware/authMiddleware');
+app.use('/api', authMiddleware);
 
 // API Routes
 app.use('/api/auth', require('./routes/auth'));

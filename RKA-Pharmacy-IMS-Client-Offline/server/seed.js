@@ -1,7 +1,18 @@
 const { db, logAudit } = require('./db');
 
-function seedDatabase() {
-  const existingCount = db.prepare('SELECT COUNT(*) as count FROM medicines').get().count;
+function seedDatabase(targetDb = db) {
+  // Check if system was factory wiped and auto-seed is disabled
+  try {
+    const wipedSetting = targetDb.prepare("SELECT value FROM settings WHERE key = 'system_wiped'").get();
+    if (wipedSetting && wipedSetting.value === 'true') {
+      console.log('System has been factory reset (system_wiped = true). Auto-seeding prevented.');
+      return;
+    }
+  } catch (err) {
+    // If settings table doesn't have the key yet or error, proceed
+  }
+
+  const existingCount = targetDb.prepare('SELECT COUNT(*) as count FROM medicines').get().count;
   if (existingCount > 0) {
     console.log('Database already contains records. Skipping seed.');
     return;
@@ -162,7 +173,7 @@ function seedDatabase() {
     }
   ];
 
-  const insertMed = db.prepare(`
+  const insertMed = targetDb.prepare(`
     INSERT INTO medicines (
       code, barcode, brand_name, generic_name, dosage_strength, dosage_form,
       category, unit_of_measure, reorder_threshold, supplier_lead_time_days,
@@ -174,7 +185,7 @@ function seedDatabase() {
     )
   `);
 
-  const insertBatch = db.prepare(`
+  const insertBatch = targetDb.prepare(`
     INSERT INTO batches (
       medicine_id, batch_number, manufacturing_date, expiration_date,
       initial_quantity, current_quantity, unit_cost, selling_price,
@@ -186,7 +197,7 @@ function seedDatabase() {
     )
   `);
 
-  const insertTx = db.prepare(`
+  const insertTx = targetDb.prepare(`
     INSERT INTO transactions (
       transaction_code, transaction_type, medicine_id, batch_id,
       quantity, unit_price, total_amount, reference_no,
@@ -557,7 +568,7 @@ function seedDatabase() {
   });
 
   // Insert all transactions
-  const insertManyTx = db.transaction((txs) => {
+  const insertManyTx = targetDb.transaction((txs) => {
     for (const tx of txs) {
       insertTx.run(tx);
     }
@@ -565,12 +576,20 @@ function seedDatabase() {
   insertManyTx(transactionList);
 
   // Log system initialization in audit trail
-  logAudit(
-    'SYSTEM_INIT',
-    'SYSTEM',
-    'RKA-PHARMACY',
-    'System initialized with baseline inventory, multi-tier batches, and 35-day historical movement ledger for R.K.A Pharmacy.'
-  );
+  try {
+    targetDb.prepare(`
+      INSERT INTO audit_logs (action, entity_type, entity_id, operator, details)
+      VALUES (?, ?, ?, ?, ?)
+    `).run(
+      'SYSTEM_INIT',
+      'SYSTEM',
+      'RKA-PHARMACY',
+      'Lourdes Gincen L. Cesista',
+      'System initialized with baseline inventory, multi-tier batches, and 35-day historical movement ledger for R.K.A Pharmacy.'
+    );
+  } catch (e) {
+    console.error('Failed to log audit entry for seed:', e);
+  }
 
   console.log('Seed completed successfully!');
 }

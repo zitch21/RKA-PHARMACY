@@ -127,13 +127,14 @@ function handleBulkStockIn(req, res) {
         }
 
         const supp = (itemSupplier || supplier_name || med.supplier_name || 'Generic Supplier').trim();
+        const itemDrNumber = (item.supplier_dr_number || reference_no || '').trim() || null;
 
         const insertBatch = db.prepare(`
           INSERT INTO batches (
             medicine_id, batch_number, manufacturing_date, expiration_date,
             initial_quantity, current_quantity, unit_cost, selling_price,
-            supplier_name, status, received_date
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+            supplier_name, supplier_dr_number, status, received_date
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
         `);
 
         const bRes = insertBatch.run(
@@ -146,6 +147,7 @@ function handleBulkStockIn(req, res) {
           cost,
           price,
           supp,
+          itemDrNumber,
           todayStr
         );
         const newBatchId = bRes.lastInsertRowid;
@@ -185,6 +187,7 @@ function handleBulkStockIn(req, res) {
           medicine_id: med.id,
           brand_name: med.brand_name,
           batch_number: batch_number.trim(),
+          supplier_dr_number: itemDrNumber,
           quantity: qty,
           expiration_date: expDate,
           unit_cost: cost,
@@ -232,6 +235,7 @@ router.post('/', (req, res) => {
       unit_cost,
       selling_price,
       supplier_name,
+      supplier_dr_number,
       reference_no,
       notes
     } = req.body || {};
@@ -276,12 +280,14 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'Selling price is required and must be greater than zero.' });
     }
 
+    const drNumber = (supplier_dr_number || reference_no || '').trim() || null;
+
     const stmt = db.prepare(`
       INSERT INTO batches (
         medicine_id, batch_number, manufacturing_date, expiration_date,
         initial_quantity, current_quantity, unit_cost, selling_price,
-        supplier_name, status, received_date
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+        supplier_name, supplier_dr_number, status, received_date
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
     `);
 
     const result = stmt.run(
@@ -294,6 +300,7 @@ router.post('/', (req, res) => {
       cost,
       price,
       supplier_name || med.supplier_name || 'Generic Supplier',
+      drNumber,
       todayStr
     );
 
@@ -341,7 +348,8 @@ router.post('/', (req, res) => {
 router.post('/:id/dispose', (req, res) => {
   try {
     const batchId = req.params.id;
-    const { quantity, reason, notes } = req.body || {};
+    const { quantity, reason, notes, operator_name } = req.body || {};
+    const operator = (operator_name && operator_name.trim()) || (req.user && req.user.full_name) || 'Lourdes Gincen L. Cesista';
 
     const batch = db.prepare(`
       SELECT b.*, m.brand_name, m.generic_name 
@@ -377,7 +385,7 @@ router.post('/:id/dispose', (req, res) => {
         transaction_code, transaction_type, medicine_id, batch_id,
         quantity, unit_price, total_amount, reference_no,
         is_override, override_reason, operator_name, notes
-      ) VALUES (?, 'disposal', ?, ?, ?, ?, ?, ?, 0, NULL, 'Lourdes Gincen L. Cesista', ?)
+      ) VALUES (?, 'disposal', ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
     `).run(
       txCode,
       batch.medicine_id,
@@ -386,6 +394,7 @@ router.post('/:id/dispose', (req, res) => {
       batch.unit_cost,
       disposeQty * batch.unit_cost,
       reason || 'EXPIRED_DISPOSAL',
+      operator,
       notes || `Safe disposal of batch ${batch.batch_number}: ${reason}`
     );
 
@@ -395,7 +404,7 @@ router.post('/:id/dispose', (req, res) => {
       disposed_quantity: disposeQty,
       reason: reason || 'Expired/Damaged',
       notes
-    });
+    }, operator);
 
     res.json({
       message: 'Batch disposal recorded successfully in inventory and audit trail',
@@ -407,11 +416,11 @@ router.post('/:id/dispose', (req, res) => {
   }
 });
 
-// PATCH update batch cost and selling price (with mandatory audit trail)
+// PATCH update batch cost, selling price, and supplier DR/SI number (with mandatory audit trail)
 router.patch('/:id', (req, res) => {
   try {
     const batchId = req.params.id;
-    const { unit_cost, selling_price, reason, operator_name } = req.body || {};
+    const { unit_cost, selling_price, supplier_dr_number, reason, operator_name } = req.body || {};
 
     const batch = db.prepare(`
       SELECT b.*, m.brand_name, m.generic_name
@@ -435,17 +444,21 @@ router.patch('/:id', (req, res) => {
     }
 
     if (!reason || reason.trim() === '') {
-      return res.status(400).json({ error: 'A mandatory justification reason is required to adjust batch pricing in the audit trail.' });
+      return res.status(400).json({ error: 'A mandatory justification reason is required to adjust batch details in the audit trail.' });
     }
 
     const oldCost = batch.unit_cost;
     const oldPrice = batch.selling_price;
+    const oldDr = batch.supplier_dr_number;
+    const finalDrNumber = supplier_dr_number !== undefined
+      ? (supplier_dr_number ? String(supplier_dr_number).trim() : null)
+      : batch.supplier_dr_number;
 
     db.prepare(`
       UPDATE batches
-      SET unit_cost = ?, selling_price = ?
+      SET unit_cost = ?, selling_price = ?, supplier_dr_number = ?
       WHERE id = ?
-    `).run(newCost, newPrice, batchId);
+    `).run(newCost, newPrice, finalDrNumber, batchId);
 
     logAudit('PRICE_ADJUSTMENT', 'BATCH', batchId, {
       medicine: batch.brand_name,
@@ -454,14 +467,17 @@ router.patch('/:id', (req, res) => {
       new_unit_cost: newCost,
       old_selling_price: oldPrice,
       new_selling_price: newPrice,
+      old_supplier_dr_number: oldDr,
+      new_supplier_dr_number: finalDrNumber,
       reason: reason.trim()
     }, operator_name || 'Lourdes Gincen L. Cesista');
 
     res.json({
-      message: 'Batch pricing updated successfully and recorded in audit trail.',
+      message: 'Batch details updated successfully and recorded in audit trail.',
       batch_id: batchId,
       unit_cost: newCost,
-      selling_price: newPrice
+      selling_price: newPrice,
+      supplier_dr_number: finalDrNumber
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

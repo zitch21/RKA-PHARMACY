@@ -1,25 +1,443 @@
 @import "tailwindcss";
 
+@custom-variant dark (&:where(.dark, .dark *));
+
 @layer base {
   body {
-    @apply bg-slate-50 text-slate-900 antialiased font-sans min-h-[100dvh];
+    @apply text-slate-800 antialiased min-h-[100dvh];
+    background: radial-gradient(at 8% 12%, rgba(215, 230, 248, 0.7) 0px, transparent 50%),
+                radial-gradient(at 92% 88%, rgba(210, 245, 225, 0.65) 0px, transparent 50%),
+                radial-gradient(at 50% 50%, rgba(242, 238, 252, 0.5) 0px, transparent 60%),
+                #dfe2e7;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    font-feature-settings: "cv02", "cv03", "cv04", "cv11";
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
   }
 }
 
-/* Custom scrollbar styling for pharmacy tables */
+/* Custom scrollbar styling */
 ::-webkit-scrollbar {
   width: 6px;
   height: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
-  border-radius: 3px;
+  background: #cbd2d9;
+  border-radius: 9999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #9ca3af;
+}
+
+/* ── R.K.A. Pharmacy Design System Tokens ──────────────────── */
+
+/* Tabular numbers for clean numeric alignment */
+.tabular-nums,
+[data-counter] {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Eliminate typewriter monospace: force clean UI sans typography across all components */
+.font-mono,
+code,
+kbd,
+samp {
+  font-family: inherit !important;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.01em;
+}
+
+/* R.K.A. Pharmacy Brand Tokens */
+:root {
+  --rka-brand-lime: #dcf363;
+  --rka-brand-lime-hover: #d2ec50;
+  --rka-brand-lime-text: #16200a;
+  --rka-shell: #e8ebef;
+  --rka-card: #ffffff;
+  --rka-pill: #eceff2;
+
+  /* Aliases for seamless style binding */
+  --starline-lime: var(--rka-brand-lime);
+  --starline-lime-hover: var(--rka-brand-lime-hover);
+  --starline-lime-text: var(--rka-brand-lime-text);
+  --starline-shell: var(--rka-shell);
+  --starline-card: var(--rka-card);
+  --starline-pill: var(--rka-pill);
+}
+
+/* Crisp 1px border tokens */
+.border-clinical   { border-color: #e2e5ea; }
+.border-clinical-d { border-color: #d1d5db; }
+
+/* Functional badge palette matching R.K.A. Pharmacy clean aesthetic */
+.badge-active   { @apply bg-teal-50 text-teal-700 border border-teal-200; }
+.badge-safe     { @apply bg-emerald-50 text-emerald-700 border border-emerald-200; }
+.badge-low      { @apply bg-amber-50 text-amber-700 border border-amber-200; }
+.badge-risk     { @apply bg-rose-50 text-rose-700 border border-rose-200; }
+
+/* Hide scrollbar but keep scrollability */
+.no-scrollbar::-webkit-scrollbar { display: none; }
+.no-scrollbar { -ms-overflow-style: none; scrollbar-width: none; }
+
+/* ── R.K.A. Pharmacy Theme Engine (Light & Dark Mode) ───────── */
+
+html.dark body {
+  background: radial-gradient(at 8% 12%, rgba(18, 28, 45, 0.85) 0px, transparent 50%),
+              radial-gradient(at 92% 88%, rgba(16, 38, 30, 0.75) 0px, transparent 50%),
+              radial-gradient(at 50% 50%, rgba(26, 22, 38, 0.65) 0px, transparent 60%),
+              #0c0f14;
+  color: #f8fafc;
+}
+
+html.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
+}
+html.dark ::-webkit-scrollbar-thumb:hover {
+  background: #475569;
+}
+
+html.dark .starline-shell,
+html.dark .rka-shell {
+  background-color: rgba(18, 23, 32, 0.96) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6) !important;
+}
+
+html.dark .starline-sidebar,
+html.dark .rka-sidebar {
+  background-color: transparent !important;
+}
+
+html.dark .starline-pill-btn:not(.starline-pill-active),
+html.dark .rka-pill-btn:not(.rka-pill-active) {
+  background-color: #1a202c !important;
+  color: #cbd5e1 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark .starline-pill-btn:not(.starline-pill-active):hover,
+html.dark .rka-pill-btn:not(.rka-pill-active):hover {
+  background-color: #242c3d !important;
+  color: #ffffff !important;
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+html.dark .starline-subnav,
+html.dark .rka-subnav {
+  background-color: rgba(22, 28, 38, 0.9) !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #cbd5e1 !important;
+}
+
+/* Functional status badges in Dark Mode */
+html.dark .badge-active {
+  background-color: rgba(20, 184, 166, 0.16) !important;
+  color: #2dd4bf !important;
+  border-color: rgba(45, 212, 191, 0.3) !important;
+}
+html.dark .badge-safe {
+  background-color: rgba(16, 185, 129, 0.16) !important;
+  color: #34d399 !important;
+  border-color: rgba(52, 211, 153, 0.3) !important;
+}
+html.dark .badge-low {
+  background-color: rgba(245, 158, 11, 0.16) !important;
+  color: #fbbf24 !important;
+  border-color: rgba(251, 191, 36, 0.3) !important;
+}
+html.dark .badge-risk {
+  background-color: rgba(244, 63, 94, 0.16) !important;
+  color: #fb7185 !important;
+  border-color: rgba(251, 113, 133, 0.3) !important;
+}
+
+/* Table rows and headers in Dark Mode */
+html.dark thead,
+html.dark thead tr,
+html.dark thead th {
+  background-color: #1c2331 !important;
+  color: #cbd5e1 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark tbody tr {
+  border-color: rgba(255, 255, 255, 0.06) !important;
+}
+
+html.dark tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.03) !important;
+}
+
+/* Card & modal container backgrounds */
+html.dark .bg-white:not(.printable-area):not(.printable-area *) {
+  background-color: #151b26 !important;
+  border-color: rgba(255, 255, 255, 0.08) !important;
+  color: #f8fafc !important;
+}
+
+/* Modal headers and elevated panels - includes opacity variants (e.g. /90, /80) */
+html.dark [class*="bg-slate-50"],
+html.dark [class*="bg-zinc-50"],
+html.dark [class*="bg-gray-50"] {
+  background-color: #1c2331 !important;
+}
+
+html.dark [class*="bg-slate-100"],
+html.dark [class*="bg-zinc-100"],
+html.dark [class*="bg-gray-100"] {
+  background-color: #232c3d !important;
+}
+
+/* Semantic Alert, Badge, and Card surfaces in Dark Mode */
+html.dark [class*="bg-teal-50"]:not([class*="dark:bg-"]),
+html.dark [class*="bg-teal-100"]:not([class*="dark:bg-"]) {
+  background-color: rgba(20, 184, 166, 0.14) !important;
+}
+
+html.dark [class*="bg-emerald-50"]:not([class*="dark:bg-"]),
+html.dark [class*="bg-emerald-100"]:not([class*="dark:bg-"]) {
+  background-color: rgba(16, 185, 129, 0.14) !important;
+}
+
+html.dark [class*="bg-amber-50"]:not([class*="dark:bg-"]),
+html.dark [class*="bg-amber-100"]:not([class*="dark:bg-"]),
+html.dark [class*="bg-amber-200"]:not([class*="dark:bg-"]) {
+  background-color: rgba(245, 158, 11, 0.14) !important;
+}
+
+html.dark [class*="bg-rose-50"]:not([class*="dark:bg-"]),
+html.dark [class*="bg-rose-100"]:not([class*="dark:bg-"]),
+html.dark [class*="bg-red-50"]:not([class*="dark:bg-"]),
+html.dark [class*="bg-red-100"]:not([class*="dark:bg-"]) {
+  background-color: rgba(244, 63, 94, 0.14) !important;
+}
+
+html.dark [class*="bg-blue-50"]:not([class*="dark:bg-"]),
+html.dark [class*="bg-blue-100"]:not([class*="dark:bg-"]),
+html.dark [class*="bg-indigo-50"]:not([class*="dark:bg-"]) {
+  background-color: rgba(59, 130, 246, 0.14) !important;
+}
+
+/* Hover states for semantic colored surfaces */
+html.dark [class*="hover:bg-teal-50"]:not([class*="dark:hover:bg-"]):hover,
+html.dark [class*="hover:bg-teal-100"]:not([class*="dark:hover:bg-"]):hover {
+  background-color: rgba(20, 184, 166, 0.24) !important;
+}
+
+html.dark [class*="hover:bg-emerald-50"]:not([class*="dark:hover:bg-"]):hover,
+html.dark [class*="hover:bg-emerald-100"]:not([class*="dark:hover:bg-"]):hover {
+  background-color: rgba(16, 185, 129, 0.24) !important;
+}
+
+html.dark [class*="hover:bg-amber-50"]:not([class*="dark:hover:bg-"]):hover,
+html.dark [class*="hover:bg-amber-100"]:not([class*="dark:hover:bg-"]):hover {
+  background-color: rgba(245, 158, 11, 0.24) !important;
+}
+
+html.dark [class*="hover:bg-rose-50"]:not([class*="dark:hover:bg-"]):hover,
+html.dark [class*="hover:bg-rose-100"]:not([class*="dark:hover:bg-"]):hover {
+  background-color: rgba(244, 63, 94, 0.24) !important;
+}
+
+html.dark [class*="hover:bg-blue-50"]:not([class*="dark:hover:bg-"]):hover,
+html.dark [class*="hover:bg-blue-100"]:not([class*="dark:hover:bg-"]):hover {
+  background-color: rgba(59, 130, 246, 0.24) !important;
+}
+
+/* Semantic colored border tokens in Dark Mode */
+html.dark [class*="border-teal-100"]:not([class*="dark:border-"]),
+html.dark [class*="border-teal-200"]:not([class*="dark:border-"]),
+html.dark [class*="border-teal-300"]:not([class*="dark:border-"]) {
+  border-color: rgba(45, 212, 191, 0.3) !important;
+}
+
+html.dark [class*="border-emerald-100"]:not([class*="dark:border-"]),
+html.dark [class*="border-emerald-200"]:not([class*="dark:border-"]),
+html.dark [class*="border-emerald-300"]:not([class*="dark:border-"]) {
+  border-color: rgba(52, 211, 153, 0.3) !important;
+}
+
+html.dark [class*="border-amber-100"]:not([class*="dark:border-"]),
+html.dark [class*="border-amber-200"]:not([class*="dark:border-"]),
+html.dark [class*="border-amber-300"]:not([class*="dark:border-"]) {
+  border-color: rgba(251, 191, 36, 0.3) !important;
+}
+
+html.dark [class*="border-rose-100"]:not([class*="dark:border-"]),
+html.dark [class*="border-rose-200"]:not([class*="dark:border-"]),
+html.dark [class*="border-rose-300"]:not([class*="dark:border-"]),
+html.dark [class*="border-red-100"]:not([class*="dark:border-"]),
+html.dark [class*="border-red-200"]:not([class*="dark:border-"]),
+html.dark [class*="border-red-300"]:not([class*="dark:border-"]) {
+  border-color: rgba(251, 113, 133, 0.3) !important;
+}
+
+html.dark [class*="border-blue-100"]:not([class*="dark:border-"]),
+html.dark [class*="border-blue-200"]:not([class*="dark:border-"]),
+html.dark [class*="border-blue-300"]:not([class*="dark:border-"]) {
+  border-color: rgba(96, 165, 250, 0.3) !important;
+}
+
+/* Translucent modal/card/button surfaces */
+html.dark [class*="bg-white/"]:not([class*="dark:bg-"]):not([class*="bg-white/5"]):not([class*="bg-white/10"]):not([class*="bg-white/20"]) {
+  background-color: rgba(21, 27, 38, 0.95) !important;
+}
+
+/* Hover on light white surfaces in dark mode */
+html.dark [class*="hover:bg-white"]:not([class*="dark:hover:bg-"]):hover {
+  background-color: #242c3d !important;
+  color: #ffffff !important;
+}
+
+/* Dividers and separators */
+html.dark [class*="divide-zinc-"]:not([class*="dark:divide-"]),
+html.dark [class*="divide-slate-"]:not([class*="dark:divide-"]) {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Semantic High-Contrast Typography in Dark Mode (WCAG AAA/AA compliant) */
+html.dark [class*="text-teal-700"]:not([class*="dark:text-"]),
+html.dark [class*="text-teal-800"]:not([class*="dark:text-"]),
+html.dark [class*="text-teal-900"]:not([class*="dark:text-"]) {
+  color: #5eead4 !important; /* teal-300: 9.8:1 contrast on #151b26 */
+}
+html.dark [class*="text-teal-950"]:not([class*="dark:text-"]) {
+  color: #ccfbf1 !important; /* teal-100: 14.5:1 contrast */
+}
+html.dark [class*="text-teal-600"]:not([class*="dark:text-"]) {
+  color: #2dd4bf !important; /* teal-400 */
+}
+
+html.dark [class*="text-emerald-700"]:not([class*="dark:text-"]),
+html.dark [class*="text-emerald-800"]:not([class*="dark:text-"]),
+html.dark [class*="text-emerald-900"]:not([class*="dark:text-"]) {
+  color: #6ee7b7 !important; /* emerald-300: 10.2:1 contrast */
+}
+html.dark [class*="text-emerald-950"]:not([class*="dark:text-"]) {
+  color: #d1fae5 !important; /* emerald-100: 14.8:1 contrast */
+}
+html.dark [class*="text-emerald-600"]:not([class*="dark:text-"]) {
+  color: #34d399 !important; /* emerald-400 */
+}
+
+html.dark [class*="text-amber-700"]:not([class*="dark:text-"]),
+html.dark [class*="text-amber-800"]:not([class*="dark:text-"]),
+html.dark [class*="text-amber-900"]:not([class*="dark:text-"]) {
+  color: #fcd34d !important; /* amber-300: 11.5:1 contrast */
+}
+html.dark [class*="text-amber-950"]:not([class*="dark:text-"]) {
+  color: #fef3c7 !important; /* amber-100: 15.1:1 contrast */
+}
+html.dark [class*="text-amber-600"]:not([class*="dark:text-"]) {
+  color: #fbbf24 !important; /* amber-400 */
+}
+
+html.dark [class*="text-rose-700"]:not([class*="dark:text-"]),
+html.dark [class*="text-rose-800"]:not([class*="dark:text-"]),
+html.dark [class*="text-rose-900"]:not([class*="dark:text-"]),
+html.dark [class*="text-red-700"]:not([class*="dark:text-"]),
+html.dark [class*="text-red-800"]:not([class*="dark:text-"]) {
+  color: #fda4af !important; /* rose-300: 8.5:1 contrast */
+}
+html.dark [class*="text-rose-950"]:not([class*="dark:text-"]) {
+  color: #ffe4e6 !important; /* rose-100: 13.8:1 contrast */
+}
+html.dark [class*="text-rose-600"]:not([class*="dark:text-"]) {
+  color: #fb7185 !important; /* rose-400 */
+}
+
+html.dark [class*="text-blue-700"]:not([class*="dark:text-"]),
+html.dark [class*="text-blue-800"]:not([class*="dark:text-"]),
+html.dark [class*="text-blue-900"]:not([class*="dark:text-"]) {
+  color: #93c5fd !important; /* blue-300: 8.8:1 contrast */
+}
+html.dark [class*="text-blue-600"]:not([class*="dark:text-"]) {
+  color: #60a5fa !important; /* blue-400 */
+}
+
+/* High-contrast slate typography rules in Dark Mode (WCAG AAA/AA compliant) */
+html.dark .text-slate-900,
+html.dark .text-slate-800,
+html.dark .text-zinc-900,
+html.dark .text-zinc-800 {
+  color: #f8fafc !important;
+}
+
+html.dark .text-slate-700,
+html.dark .text-slate-600,
+html.dark .text-zinc-700,
+html.dark .text-zinc-600 {
+  color: #cbd5e1 !important;
+}
+
+html.dark .text-slate-500,
+html.dark .text-zinc-500 {
+  color: #94a3b8 !important;
+}
+
+html.dark .text-slate-400,
+html.dark .text-zinc-400 {
+  color: #94a3b8 !important; /* Meets WCAG AA (5.4:1 contrast ratio against #151b26) */
+}
+
+/* Border tokens in Dark Mode */
+html.dark [class*="border-slate-100"],
+html.dark [class*="border-slate-200"],
+html.dark [class*="border-zinc-100"],
+html.dark [class*="border-zinc-200"],
+html.dark [class*="border-gray-100"],
+html.dark [class*="border-gray-200"] {
+  border-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+/* Form input, select, and textarea styling in Dark Mode */
+html.dark input,
+html.dark select,
+html.dark textarea {
+  background-color: #1a202c !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #f8fafc !important;
+}
+
+html.dark input::placeholder,
+html.dark textarea::placeholder {
+  color: #94a3b8 !important;
+}
+
+html.dark input:focus,
+html.dark select:focus,
+html.dark textarea:focus {
+  border-color: #14b8a6 !important;
+  box-shadow: 0 0 0 2px rgba(20, 184, 166, 0.25) !important;
+}
+
+/* Printable Area Immunity: Keep printed documents & barcodes pure black-on-white */
+html.dark .printable-area {
+  background-color: #ffffff !important;
+  color: #0f172a !important;
+  border-color: #cbd5e1 !important;
+}
+html.dark .printable-area * {
+  color: #0f172a !important;
+}
+html.dark .printable-area [class*="text-teal-"] {
+  color: #0f766e !important;
+}
+html.dark .printable-area [class*="text-slate-4"],
+html.dark .printable-area [class*="text-slate-5"],
+html.dark .printable-area [class*="text-zinc-4"],
+html.dark .printable-area [class*="text-zinc-5"] {
+  color: #64748b !important;
+}
+html.dark .printable-area canvas {
+  background-color: #ffffff !important;
+}
+
+html.dark .starline-logo-icon {
+  color: #ffffff !important;
 }
 
 @media print {

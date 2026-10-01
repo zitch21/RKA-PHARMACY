@@ -1,5 +1,6 @@
 const express = require('express');
 const router = express.Router();
+const crypto = require('crypto');
 const { db, logAudit, getLocalDateString } = require('../db');
 
 // GET all transactions with filtering
@@ -69,7 +70,9 @@ router.post('/stock-out', (req, res) => {
 
     const processStockOut = db.transaction((dispenseItems) => {
       const processedTransactions = [];
-      const receiptNo = reference_no || `RCPT-${Date.now().toString().slice(-6)}`;
+      const dateSegment = getLocalDateString().replace(/-/g, '');
+      const entropySegment = crypto.randomBytes(3).toString('hex').toUpperCase();
+      const receiptNo = reference_no || `RCPT-${dateSegment}-${entropySegment}`;
 
       for (const item of dispenseItems) {
         let { medicine_id, batch_id, quantity, override_reason, status_confirmed, expiry_status } = item;

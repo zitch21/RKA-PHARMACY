@@ -360,10 +360,11 @@ router.post('/:id/receive', (req, res) => {
   try {
     const poId = req.params.id;
     const {
-      deliveries, // array of { item_id, quantity_received, batch_number, manufacturing_date, expiration_date, unit_cost, selling_price }
+      deliveries, // array of { item_id, quantity_received, batch_number, manufacturing_date, expiration_date, unit_cost, selling_price, supplier_dr_number }
       received_items,
       operator_name = 'Lourdes Gincen L. Cesista',
-      delivery_notes
+      delivery_notes,
+      supplier_dr_number
     } = req.body || {};
 
     const itemsToReceive = (deliveries && Array.isArray(deliveries) && deliveries.length > 0)
@@ -388,6 +389,7 @@ router.post('/:id/receive', (req, res) => {
     }
 
     const todayStr = getLocalDateString();
+    const finalDrNumber = (supplier_dr_number || po.supplier_dr_number || '').trim();
 
     const receiveTx = db.transaction((deliveryList) => {
       const createdBatches = [];
@@ -397,6 +399,7 @@ router.post('/:id/receive', (req, res) => {
         const targetItemId = del.item_id ?? del.po_item_id ?? del.id;
         const rawQty = del.quantity_received !== undefined ? del.quantity_received : del.quantity_to_receive;
         const qtyReceived = parseInt(rawQty);
+        const itemDrNumber = (del.supplier_dr_number || finalDrNumber || '').trim();
 
         if (isNaN(qtyReceived) || qtyReceived <= 0) continue; // skip zero/unreceived lines
 
@@ -423,13 +426,13 @@ router.post('/:id/receive', (req, res) => {
         const cost = parseFloat(unit_cost) || item.unit_cost;
         const price = parseFloat(selling_price) || (cost * 1.4); // fallback 40% markup if unset
 
-        // 1. Insert into batches
+        // 1. Insert into batches with supplier_dr_number
         const insertBatch = db.prepare(`
           INSERT INTO batches (
             medicine_id, batch_number, manufacturing_date, expiration_date,
             initial_quantity, current_quantity, unit_cost, selling_price,
-            supplier_name, status, received_date
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
+            supplier_name, supplier_dr_number, status, received_date
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'active', ?)
         `);
 
         const bRes = insertBatch.run(
@@ -442,13 +445,15 @@ router.post('/:id/receive', (req, res) => {
           cost,
           price,
           po.supplier_name,
+          itemDrNumber || null,
           todayStr
         );
         const newBatchId = bRes.lastInsertRowid;
 
-        // 2. Insert stock_in transaction linked to PO
+        // 2. Insert stock_in transaction linked to PO and DR
         const lastTx = db.prepare('SELECT id FROM transactions ORDER BY id DESC LIMIT 1').get();
         const txCode = `TX-POIN-${Date.now()}-${Math.floor(Math.random() * 10000)}-${lastTx ? lastTx.id + 1 : 1}`;
+        const refNo = itemDrNumber ? `${po.po_number} / DR:${itemDrNumber}` : po.po_number;
 
         db.prepare(`
           INSERT INTO transactions (
@@ -463,9 +468,9 @@ router.post('/:id/receive', (req, res) => {
           qtyReceived,
           cost,
           qtyReceived * cost,
-          po.po_number,
+          refNo,
           operator_name,
-          `Stock-in from Purchase Order ${po.po_number}: Batch ${batch_number}`
+          `Stock-in from Purchase Order ${po.po_number}${itemDrNumber ? ` (DR/SI: ${itemDrNumber})` : ''}: Batch ${batch_number}`
         );
 
         // 3. Update purchase_order_items received quantity
@@ -482,6 +487,7 @@ router.post('/:id/receive', (req, res) => {
           batch_id: newBatchId,
           medicine: med.brand_name,
           batch_number,
+          supplier_dr_number: itemDrNumber || null,
           quantity_received: qtyReceived,
           expiration_date
         });
@@ -494,9 +500,9 @@ router.post('/:id/receive', (req, res) => {
 
       db.prepare(`
         UPDATE purchase_orders
-        SET status = ?, received_date = ?, updated_at = CURRENT_TIMESTAMP
+        SET status = ?, received_date = ?, supplier_dr_number = COALESCE(?, supplier_dr_number), updated_at = CURRENT_TIMESTAMP
         WHERE id = ?
-      `).run(newPoStatus, todayStr, poId);
+      `).run(newPoStatus, todayStr, finalDrNumber || null, poId);
 
       logAudit(
         'RECEIVE_PURCHASE_ORDER_DELIVERY',
@@ -504,6 +510,7 @@ router.post('/:id/receive', (req, res) => {
         poId,
         {
           po_number: po.po_number,
+          supplier_dr_number: finalDrNumber || null,
           received_batches: createdBatches,
           new_status: newPoStatus,
           is_fully_received: isFullyReceived,
@@ -512,7 +519,11 @@ router.post('/:id/receive', (req, res) => {
         operator_name
       );
 
-      return { new_status: newPoStatus, created_batches: createdBatches };
+      return {
+        new_status: newPoStatus,
+        supplier_dr_number: finalDrNumber || null,
+        created_batches: createdBatches
+      };
     });
 
     const result = receiveTx(itemsToReceive);
@@ -520,6 +531,7 @@ router.post('/:id/receive', (req, res) => {
       message: `Delivery successfully processed. Received stock converted to active inventory batches for ${po.po_number}.`,
       po_status: result.new_status,
       new_status: result.new_status,
+      supplier_dr_number: result.supplier_dr_number,
       created_batches: result.created_batches
     });
   } catch (err) {

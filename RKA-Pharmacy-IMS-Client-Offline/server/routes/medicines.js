@@ -119,7 +119,7 @@ router.get('/barcode/:barcode', (req, res) => {
       };
     });
 
-    const totalStock = enrichedBatches.reduce((acc, b) => acc + b.current_quantity, 0);
+    const totalStock = enrichedBatches.filter(b => b.days_to_expiry > 0).reduce((acc, b) => acc + b.current_quantity, 0);
 
     // Identify recommended FEFO batch (earliest unexpired batch)
     const fefoBatch = enrichedBatches.find(b => b.days_to_expiry > 0) || null;
@@ -305,11 +305,21 @@ router.delete('/:id', (req, res) => {
       return res.status(404).json({ error: 'Medicine not found' });
     }
 
+    const operator = (req.body?.operator_name && req.body.operator_name.trim()) || (req.user && req.user.full_name) || 'Lourdes Gincen L. Cesista';
+
     // Check if recorded in transactions ledger
     const txCheck = db.prepare('SELECT COUNT(*) as count FROM transactions WHERE medicine_id = ?').get(medId);
     if (txCheck && txCheck.count > 0) {
       return res.status(400).json({
         error: `Cannot delete ${current.brand_name} because it has ${txCheck.count} recorded transactions in the audit ledger. Archive or mark inactive instead.`
+      });
+    }
+
+    // Check if referenced in purchase orders
+    const poCheck = db.prepare('SELECT COUNT(*) as count FROM purchase_order_items WHERE medicine_id = ?').get(medId);
+    if (poCheck && poCheck.count > 0) {
+      return res.status(400).json({
+        error: `Cannot delete ${current.brand_name} because it is referenced in ${poCheck.count} Purchase Order items. Cancel or complete relevant orders first.`
       });
     }
 
@@ -321,9 +331,14 @@ router.delete('/:id', (req, res) => {
       });
     }
 
-    db.prepare('DELETE FROM medicines WHERE id = ?').run(medId);
+    // Clean up within atomic transaction to prevent FOREIGN KEY constraint failures on 0-qty batches
+    const deleteTx = db.transaction(() => {
+      db.prepare('DELETE FROM batches WHERE medicine_id = ? AND current_quantity = 0').run(medId);
+      db.prepare('DELETE FROM medicines WHERE id = ?').run(medId);
+    });
+    deleteTx();
 
-    logAudit('DELETE_MEDICINE', 'MEDICINE', medId, { deleted: current });
+    logAudit('DELETE_MEDICINE', 'MEDICINE', medId, { deleted: current }, operator);
     res.json({ message: 'Medicine deleted successfully' });
   } catch (err) {
     res.status(500).json({ error: err.message });

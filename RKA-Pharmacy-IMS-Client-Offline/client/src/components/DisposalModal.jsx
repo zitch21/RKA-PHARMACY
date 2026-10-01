@@ -1,12 +1,21 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Trash2, X, AlertOctagon } from 'lucide-react';
+import { useLanguage } from '../context/LanguageContext';
 
-export default function DisposalModal({ isOpen, onClose, batch, onDisposalComplete }) {
+export default function DisposalModal({ isOpen, onClose, batch, onDisposalComplete, currentUser }) {
+  const { t } = useLanguage();
   const [quantity, setQuantity] = useState(batch?.current_quantity || 1);
   const [reason, setReason] = useState('Expired during clinic storage');
   const [notes, setNotes] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+
+  useEffect(() => {
+    if (batch) {
+      setQuantity(batch.current_quantity || 1);
+      setError(null);
+    }
+  }, [batch, isOpen]);
 
   if (!isOpen || !batch) return null;
 
@@ -22,7 +31,8 @@ export default function DisposalModal({ isOpen, onClose, batch, onDisposalComple
         body: JSON.stringify({
           quantity: parseInt(quantity),
           reason,
-          notes
+          notes,
+          operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista'
         })
       });
 
@@ -41,35 +51,50 @@ export default function DisposalModal({ isOpen, onClose, batch, onDisposalComple
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4 animate-in fade-in">
-      <div className="bg-white rounded-xl shadow-2xl max-w-md w-full overflow-hidden border border-red-200">
-        <div className="flex items-center justify-between px-6 py-4 bg-red-600 text-white">
-          <div className="flex items-center gap-2 font-bold text-lg">
-            <AlertOctagon className="w-5 h-5" />
-            <span>Record Batch Disposal</span>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md p-4 animate-in fade-in select-none">
+      <div className="bg-white dark:bg-[#181d26] rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200/90 dark:border-white/10">
+        <div className="flex items-center justify-between px-6 py-4.5 bg-slate-50/90 dark:bg-[#1e2430] border-b border-slate-100 dark:border-white/10">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-xl bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 flex items-center justify-center text-rose-600 dark:text-rose-400 shrink-0">
+              <AlertOctagon className="w-4 h-4" />
+            </div>
+            <div>
+              <h3 className="font-extrabold text-sm sm:text-base text-slate-900 dark:text-white tracking-tight">
+                {t('disposal_modal_title', 'Record Batch Disposal & Quarantine')}
+              </h3>
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                {t('disposal_modal_subtitle', 'Permanent removal of compromised stock')}
+              </p>
+            </div>
           </div>
-          <button onClick={onClose} className="p-1 hover:bg-red-700 rounded-lg transition">
-            <X className="w-5 h-5" />
+          <button onClick={onClose} className="p-1.5 text-slate-400 hover:text-slate-700 dark:hover:text-slate-200 hover:bg-slate-200/60 dark:hover:bg-slate-700/60 rounded-full transition cursor-pointer">
+            <X className="w-4 h-4" />
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="p-6 space-y-4">
+        <form onSubmit={handleSubmit} className="p-6 space-y-4 text-xs text-slate-700 dark:text-slate-300">
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 text-red-700 text-xs rounded-lg">
+            <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800/60 text-rose-800 dark:text-rose-200 text-xs rounded-xl">
               {error}
             </div>
           )}
 
-          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200 text-sm">
-            <div className="font-bold text-slate-900">{batch.brand_name || 'Medicine Batch'}</div>
-            <div className="text-xs text-slate-600">Batch Number: <span className="font-mono font-bold">{batch.batch_number}</span></div>
-            <div className="text-xs text-slate-600">Expiration Date: <span className="font-semibold text-red-600">{batch.expiration_date}</span></div>
-            <div className="text-xs text-slate-600">Available Stock: <span className="font-bold">{batch.current_quantity} units</span></div>
+          <div className="p-3.5 bg-slate-50 dark:bg-[#1e2430] rounded-2xl border border-slate-200/80 dark:border-white/10 space-y-1">
+            <div className="font-bold text-sm text-slate-900 dark:text-white">{batch.brand_name || 'Medicine Batch'}</div>
+            <div className="text-slate-500 dark:text-slate-400 tabular-nums text-[11px]">
+              {t('edit_batch_batch', 'Batch')}: <span className="font-bold text-slate-800 dark:text-slate-200">{batch.batch_number}</span>
+            </div>
+            <div className="text-slate-500 dark:text-slate-400 tabular-nums text-[11px]">
+              {t('inv_exp_date', 'Expiration Date')}: <span className="font-bold text-rose-600 dark:text-rose-400">{batch.expiration_date}</span>
+            </div>
+            <div className="text-slate-500 dark:text-slate-400 tabular-nums text-[11px]">
+              {t('disposal_available_stock', 'Available Stock')}: <span className="font-bold text-slate-800 dark:text-slate-200">{batch.current_quantity} units</span>
+            </div>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-              Quantity to Dispose *
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+              {t('disposal_qty_label', 'Quantity to Dispose *')}
             </label>
             <input
               type="number"
@@ -78,55 +103,55 @@ export default function DisposalModal({ isOpen, onClose, batch, onDisposalComple
               required
               value={quantity}
               onChange={(e) => setQuantity(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none"
+              className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none font-bold tabular-nums bg-white dark:bg-[#1e2430] text-slate-900 dark:text-slate-100"
             />
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-              Disposal Reason *
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+              {t('disposal_reason_label', 'Disposal Reason *')}
             </label>
             <select
               value={reason}
               onChange={(e) => setReason(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none bg-white"
+              className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none bg-white dark:bg-[#1e2430] text-slate-800 dark:text-slate-200 cursor-pointer"
             >
-              <option value="Expired during clinic storage">Expired during clinic storage</option>
-              <option value="Physical damage / broken seal / leakage">Physical damage / broken seal / leakage</option>
-              <option value="Manufacturer / FDA safety recall">Manufacturer / FDA safety recall</option>
-              <option value="Contamination or compromised temperature">Contamination or compromised temperature</option>
-              <option value="Quarantine disposal">Quarantine disposal</option>
+              <option value="Expired during clinic storage">{t('disposal_reason_expired', 'Expired during clinic storage')}</option>
+              <option value="Physical damage / broken seal / leakage">{t('disposal_reason_damage', 'Physical damage / broken seal / leakage')}</option>
+              <option value="Manufacturer / FDA safety recall">{t('disposal_reason_recall', 'Manufacturer / FDA safety recall')}</option>
+              <option value="Contamination or compromised temperature">{t('disposal_reason_temp', 'Contamination or compromised temperature')}</option>
+              <option value="Quarantine disposal">{t('disposal_reason_quarantine', 'Quarantine disposal')}</option>
             </select>
           </div>
 
           <div>
-            <label className="block text-xs font-semibold uppercase text-slate-700 mb-1">
-              Notes / Waste Log Reference
+            <label className="block text-[10px] font-bold uppercase tracking-wider text-slate-500 dark:text-slate-400 mb-1">
+              {t('disposal_notes_label', 'Notes / Waste Log Reference')}
             </label>
             <textarea
               rows="2"
-              placeholder="e.g. Disposed via biomedical waste protocol..."
+              placeholder={t('disposal_notes_placeholder', 'e.g. Disposed via biomedical waste protocol...')}
               value={notes}
               onChange={(e) => setNotes(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-slate-300 rounded-lg focus:ring-2 focus:ring-red-500 focus:outline-none"
+              className="w-full px-3 py-2 text-xs border border-slate-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-rose-500 focus:outline-none bg-white dark:bg-[#1e2430] text-slate-900 dark:text-slate-100"
             />
           </div>
 
-          <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
+          <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-100 dark:border-white/10">
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 rounded-lg transition"
+              className="px-4 py-2 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-xl transition cursor-pointer"
             >
-              Cancel
+              {t('btn_cancel', 'Cancel')}
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="inline-flex items-center gap-2 px-5 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg shadow-sm transition disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 px-5 py-2 text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:scale-[0.98] rounded-xl shadow-xs transition disabled:opacity-50 cursor-pointer"
             >
-              <Trash2 className="w-4 h-4" />
-              {loading ? 'Disposing...' : 'Confirm Disposal'}
+              <Trash2 className="w-3.5 h-3.5" />
+              <span>{loading ? t('disposal_disposing', 'Disposing...') : t('disposal_confirm_btn', 'Confirm Disposal')}</span>
             </button>
           </div>
         </form>

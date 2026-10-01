@@ -159,10 +159,10 @@ const handleAnalysis = (req, res) => {
             expiryRiskMargin = parseFloat((daysToExpiry - daysToConsume).toFixed(1));
             isAtWasteRisk = expiryRiskMargin < 0;
 
-            // Q_waste = Q_i,b - (D_hat_i * T_expiry)
+            // Q_waste = Predicted unconsumed units at expiration
             if (isAtWasteRisk && daysToExpiry > 0) {
               const expectedUnitsSoldBeforeExpiry = adqs * daysToExpiry;
-              qWaste = Math.max(0, Math.round(b.current_quantity - expectedUnitsSoldBeforeExpiry));
+              qWaste = Math.min(b.current_quantity, Math.max(0, Math.round(cumulativeStock - expectedUnitsSoldBeforeExpiry)));
               if (qWaste === 0 && isAtWasteRisk) qWaste = 1;
             }
           } else {

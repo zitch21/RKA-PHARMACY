@@ -2,18 +2,23 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
+const { AsyncLocalStorage } = require('async_hooks');
+
+const dbContext = new AsyncLocalStorage();
 
 const dbDir = path.join(__dirname, 'data');
 if (!fs.existsSync(dbDir)) {
   fs.mkdirSync(dbDir, { recursive: true });
 }
 
-const dbPath = path.join(dbDir, 'pharmacy_inventory.db');
-const db = new Database(dbPath);
+const prodDbPath = path.join(dbDir, 'pharmacy_inventory.db');
+const demoDbPath = path.join(dbDir, 'pharmacy_demo.db');
 
-// Enable foreign keys and WAL mode for reliability
-db.pragma('foreign_keys = ON');
-db.pragma('journal_mode = WAL');
+const prodDb = new Database(prodDbPath);
+prodDb.pragma('foreign_keys = ON');
+prodDb.pragma('journal_mode = WAL');
+
+let demoDb = null;
 
 function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex');
@@ -28,8 +33,8 @@ function verifyPassword(password, storedHash) {
   return hash === verifyHash;
 }
 
-function initSchema() {
-  db.exec(`
+function initSchema(targetDb = prodDb) {
+  targetDb.exec(`
     CREATE TABLE IF NOT EXISTS settings (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL,
@@ -66,6 +71,7 @@ function initSchema() {
       unit_cost REAL NOT NULL,
       selling_price REAL NOT NULL,
       supplier_name TEXT,
+      supplier_dr_number TEXT,
       status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active', 'consumed', 'expired', 'quarantined', 'disposed')),
       received_date DATE NOT NULL DEFAULT (DATE('now')),
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP
@@ -140,6 +146,7 @@ function initSchema() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       po_number TEXT UNIQUE NOT NULL,
       supplier_name TEXT NOT NULL,
+      supplier_dr_number TEXT,
       status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'placed', 'partially_received', 'received', 'cancelled')),
       order_date DATE DEFAULT (DATE('now')),
       placed_date DATE,
@@ -176,27 +183,48 @@ function initSchema() {
     CREATE INDEX IF NOT EXISTS idx_po_status ON purchase_orders(status);
     CREATE INDEX IF NOT EXISTS idx_po_items_po ON purchase_order_items(po_id);
     CREATE INDEX IF NOT EXISTS idx_po_items_med ON purchase_order_items(medicine_id);
+    CREATE INDEX IF NOT EXISTS idx_batches_med_id ON batches(medicine_id, id);
+    CREATE INDEX IF NOT EXISTS idx_po_items_med_id ON purchase_order_items(medicine_id, id);
   `);
+
+  // Schema migrations for incremental upgrades
+  try {
+    targetDb.exec(`ALTER TABLE purchase_orders ADD COLUMN supplier_dr_number TEXT;`);
+  } catch (e) {
+    // Column already exists
+  }
+
+  try {
+    targetDb.exec(`ALTER TABLE batches ADD COLUMN supplier_dr_number TEXT;`);
+  } catch (e) {
+    // Column already exists
+  }
+
+  try {
+    targetDb.exec(`CREATE INDEX IF NOT EXISTS idx_batches_dr ON batches(supplier_dr_number);`);
+  } catch (e) {
+    // Index fallback
+  }
 
   // Run SQLite Query Optimizer
   try {
-    db.pragma('optimize');
+    targetDb.pragma('optimize');
   } catch (e) {
     // optimize pragma fallback
   }
 
   // Seed default clinic administrator account if empty
-  const userCheck = db.prepare('SELECT COUNT(*) as count FROM users').get();
+  const userCheck = targetDb.prepare('SELECT COUNT(*) as count FROM users').get();
   if (!userCheck || userCheck.count === 0) {
     const defaultHash = hashPassword('rka2026');
-    db.prepare(`
+    targetDb.prepare(`
       INSERT INTO users (username, password_hash, full_name, role)
       VALUES (?, ?, ?, ?)
     `).run('admin', defaultHash, 'Lourdes Gincen L. Cesista', 'Owner / Clinic Administrator');
   }
 
   // Default settings
-  const insertSetting = db.prepare(`
+  const insertSetting = targetDb.prepare(`
     INSERT OR IGNORE INTO settings (key, value, description)
     VALUES (?, ?, ?)
   `);
@@ -220,21 +248,147 @@ function initSchema() {
   }
 }
 
-initSchema();
+// Initialize schema on production database
+initSchema(prodDb);
+
+function initDemoDb() {
+  if (demoDb) return demoDb;
+  demoDb = new Database(demoDbPath);
+  demoDb.pragma('foreign_keys = ON');
+  demoDb.pragma('journal_mode = WAL');
+  initSchema(demoDb);
+
+  // Check if demo database needs initial demo population
+  const count = demoDb.prepare('SELECT COUNT(*) as count FROM medicines').get().count;
+  if (count === 0) {
+    try {
+      const { seedDatabase } = require('./seed');
+      seedDatabase(demoDb);
+    } catch (err) {
+      console.error('Failed to seed demo database:', err);
+    }
+  }
+  return demoDb;
+}
+
+function resetDemoDb() {
+  if (demoDb) {
+    try { demoDb.close(); } catch (e) {}
+    demoDb = null;
+  }
+  const filesToDelete = [demoDbPath, `${demoDbPath}-wal`, `${demoDbPath}-shm`];
+  for (const f of filesToDelete) {
+    if (fs.existsSync(f)) {
+      try { fs.unlinkSync(f); } catch (e) {}
+    }
+  }
+  return initDemoDb();
+}
+
+function getActiveDb() {
+  const store = dbContext.getStore();
+  if (store && store.isDemo) {
+    return initDemoDb();
+  }
+  return prodDb;
+}
+
+// Transparent dynamic database proxy routing queries to active db (Production vs Demo Sandbox)
+const db = new Proxy({}, {
+  get(target, prop) {
+    const active = getActiveDb();
+    const val = active[prop];
+    return typeof val === 'function' ? val.bind(active) : val;
+  }
+});
+
+async function performSystemReset({ operator_name = 'Lourdes Gincen L. Cesista' } = {}) {
+  // 1. Create automatic pre-reset safety snapshot backup
+  const backupDir = path.join(dbDir, 'backups');
+  if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
+  }
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupFilename = `pharmacy_pre_reset_${timestamp}.db`;
+  const backupPath = path.join(backupDir, backupFilename);
+
+  try {
+    prodDb.pragma('wal_checkpoint(TRUNCATE)');
+  } catch (e) {}
+
+  await prodDb.backup(backupPath);
+
+  // 2. Perform complete transactional wipe on production database
+  const wipeTransaction = prodDb.transaction(() => {
+    prodDb.exec(`
+      DELETE FROM transactions;
+      DELETE FROM purchase_order_items;
+      DELETE FROM purchase_orders;
+      DELETE FROM alert_acknowledgments;
+      DELETE FROM batches;
+      DELETE FROM medicines;
+      DELETE FROM usability_evaluations;
+      DELETE FROM audit_logs;
+      DELETE FROM sqlite_sequence WHERE name IN (
+        'transactions', 'purchase_orders', 'purchase_order_items', 
+        'batches', 'medicines', 'alert_acknowledgments', 
+        'audit_logs', 'usability_evaluations'
+      );
+    `);
+
+    // Persist system_wiped flag in settings to prevent auto-seeding on reboot
+    prodDb.prepare(`
+      INSERT OR REPLACE INTO settings (key, value, description)
+      VALUES ('system_wiped', 'true', 'System reset state flag to prevent auto-reseed on restart')
+    `).run();
+
+    // Insert sole audit log entry
+    prodDb.prepare(`
+      INSERT INTO audit_logs (action, entity_type, entity_id, operator, details)
+      VALUES ('SYSTEM_RESET', 'SYSTEM', 'DATABASE', ?, 'Factory reset completed. All operational, inventory, and audit records wiped clean.')
+    `).run(operator_name);
+  });
+
+  wipeTransaction();
+
+  try {
+    prodDb.pragma('wal_checkpoint(TRUNCATE)');
+    prodDb.pragma('optimize');
+  } catch (e) {}
+
+  return {
+    success: true,
+    backup_file: backupFilename,
+    backup_path: backupPath,
+    backupFilename,
+    message: 'System wiped successfully. 0 records remaining. Clean production state active.'
+  };
+}
 
 function getLocalDateString(d = new Date()) {
-  const year = d.getFullYear();
-  const month = String(d.getMonth() + 1).padStart(2, '0');
-  const day = String(d.getDate()).padStart(2, '0');
+  const dateObj = d instanceof Date ? d : new Date(d);
+  if (isNaN(dateObj.getTime())) return new Date().toISOString().slice(0, 10);
+  const year = dateObj.getFullYear();
+  const month = String(dateObj.getMonth() + 1).padStart(2, '0');
+  const day = String(dateObj.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
 function calculateDaysToExpiry(expiryDateStr, currentDate = new Date()) {
   if (!expiryDateStr) return null;
   const parts = String(expiryDateStr).split('-').map(Number);
-  const expDate = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0);
-  const curDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 0, 0, 0);
+  if (parts.length < 3 || isNaN(parts[0]) || isNaN(parts[1]) || isNaN(parts[2])) return null;
+  // Normalize date boundaries: anchor expiration to 00:00:00.000 of expiry calendar day
+  // and reference date to 00:00:00.000 to prevent daytime hour shifts or timezone offsets from causing off-by-one errors.
+  const expDate = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+  const curDate = new Date(currentDate.getFullYear(), currentDate.getMonth(), currentDate.getDate(), 0, 0, 0, 0);
   return Math.round((expDate - curDate) / (1000 * 60 * 60 * 24));
+}
+
+function isBatchExpired(expiryDateStr, currentDate = new Date()) {
+  if (!expiryDateStr) return false;
+  const days = calculateDaysToExpiry(expiryDateStr, currentDate);
+  return days !== null && days <= 0;
 }
 
 function getSettingsMap() {
@@ -282,7 +436,7 @@ function updateExpiredBatchesStatus() {
  * Creates an automated local backup of the SQLite database
  * Rotates backups to preserve the latest 30 days
  */
-function createDatabaseBackup() {
+async function createDatabaseBackup() {
   try {
     const backupDir = path.join(dbDir, 'backups');
     if (!fs.existsSync(backupDir)) {
@@ -292,27 +446,112 @@ function createDatabaseBackup() {
     const backupFile = path.join(backupDir, `pharmacy_backup_${today}.db`);
 
     // Use better-sqlite3 native backup API to safely snapshot without locking
-    db.backup(backupFile)
-      .then(() => {
-        // Clean up backups older than 30 days
-        const files = fs.readdirSync(backupDir).filter(f => f.startsWith('pharmacy_backup_') && f.endsWith('.db'));
-        if (files.length > 30) {
-          files.sort();
-          while (files.length > 30) {
-            const oldFile = files.shift();
-            try { fs.unlinkSync(path.join(backupDir, oldFile)); } catch (err) {}
-          }
-        }
-      })
-      .catch((err) => console.error('Automated backup error:', err));
+    await db.backup(backupFile);
+
+    // Clean up backups older than 30 days
+    const files = fs.readdirSync(backupDir).filter(f => f.startsWith('pharmacy_backup_') && f.endsWith('.db'));
+    if (files.length > 30) {
+      files.sort();
+      while (files.length > 30) {
+        const oldFile = files.shift();
+        try { fs.unlinkSync(path.join(backupDir, oldFile)); } catch (err) {}
+      }
+    }
+    return backupFile;
   } catch (err) {
-    console.error('Backup directory error:', err);
+    console.error('Database backup error:', err);
+    throw err;
   }
 }
 
+/**
+ * Safely restores the active database from a candidate backup file.
+ * 1. Verifies candidate SQLite file exists and passes PRAGMA integrity_check
+ * 2. Checks schema presence (medicines, batches, transactions, settings)
+ * 3. Creates an automated pre-restore safety snapshot in data/backups/
+ * 4. Applies candidate backup to active database using native SQLite backup API
+ * 5. Checkpoints active WAL journal and logs audit entry
+ */
+async function safelyRestoreDatabase({ candidatePath, operatorName = 'Lourdes Gincen L. Cesista' }) {
+  if (!candidatePath || !fs.existsSync(candidatePath)) {
+    throw new Error(`Backup file not found at path: ${candidatePath}`);
+  }
+
+  // 1. Verify candidate database integrity and schema
+  let candidateDb = null;
+  try {
+    candidateDb = new Database(candidatePath, { readonly: true, fileMustExist: true });
+    const integrity = candidateDb.pragma('integrity_check');
+    if (!integrity || integrity.length === 0 || integrity[0].integrity_check !== 'ok') {
+      throw new Error(`Candidate backup failed SQLite integrity check: ${JSON.stringify(integrity)}`);
+    }
+
+    const tables = candidateDb.prepare(`
+      SELECT name FROM sqlite_master WHERE type='table' AND name IN ('medicines', 'batches', 'transactions', 'settings')
+    `).all();
+    if (tables.length < 4) {
+      throw new Error('Candidate backup is invalid: missing required pharmacy schema tables (medicines, batches, transactions, settings).');
+    }
+  } finally {
+    if (candidateDb) {
+      try { candidateDb.close(); } catch (e) {}
+    }
+  }
+
+  // 2. Create pre-restore safety snapshot of the active database
+  const backupDir = path.join(dbDir, 'backups');
+  if (!fs.existsSync(backupDir)) {
+    fs.mkdirSync(backupDir, { recursive: true });
+  }
+  const preRestoreFile = path.join(backupDir, `pharmacy_pre_restore_${Date.now()}_${getLocalDateString()}.db`);
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+  } catch (e) {}
+
+  await db.backup(preRestoreFile);
+
+  // 3. Restore candidate database into active database using SQLite native backup API
+  const restoreConn = new Database(candidatePath, { readonly: true });
+  try {
+    await restoreConn.backup(dbPath);
+  } finally {
+    try { restoreConn.close(); } catch (e) {}
+  }
+
+  // 4. Checkpoint active database and optimize
+  try {
+    db.pragma('wal_checkpoint(TRUNCATE)');
+    db.pragma('optimize');
+  } catch (e) {}
+
+  // 5. Update expired batches status immediately following restoration
+  updateExpiredBatchesStatus();
+
+  // 6. Record audit log
+  logAudit(
+    'DATABASE_RESTORE',
+    'SYSTEM',
+    'DATABASE',
+    {
+      source_file: path.basename(candidatePath),
+      source_full_path: candidatePath,
+      pre_restore_backup: path.basename(preRestoreFile),
+      restored_at: new Date().toISOString()
+    },
+    operatorName
+  );
+
+  return {
+    success: true,
+    source_file: path.basename(candidatePath),
+    pre_restore_backup: path.basename(preRestoreFile),
+    timestamp: new Date().toISOString()
+  };
+}
+
 // Run initial backup and schedule daily backup every 24 hours
-createDatabaseBackup();
-const backupInterval = setInterval(createDatabaseBackup, 24 * 60 * 60 * 1000);
+createDatabaseBackup().catch(() => {});
+const backupInterval = setInterval(() => { createDatabaseBackup().catch(() => {}); }, 24 * 60 * 60 * 1000);
 if (backupInterval.unref) backupInterval.unref();
 
 // Run initial status update
@@ -336,12 +575,25 @@ function logAudit(action, entityType, entityId, details, operator = 'Lourdes Gin
   }
 }
 
+const dbPath = prodDbPath;
+
 module.exports = {
   db,
+  dbPath,
+  prodDbPath,
+  demoDbPath,
+  dbDir,
+  prodDb,
+  initDemoDb,
+  resetDemoDb,
+  performSystemReset,
+  dbContext,
   logAudit,
   createDatabaseBackup,
+  safelyRestoreDatabase,
   getLocalDateString,
   calculateDaysToExpiry,
+  isBatchExpired,
   getSettingsMap,
   getExpiryTier,
   updateExpiredBatchesStatus,

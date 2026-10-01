@@ -4,33 +4,52 @@ import {
   Play,
   Copy,
   Check,
-  TrendingDown,
   ShieldCheck,
-  AlertOctagon,
-  FileSpreadsheet,
   Award,
-  Sparkles
+  Sparkles,
+  Loader2,
+  Database,
+  Calendar,
+  Layers,
+  Boxes,
 } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import HelperText from '../components/HelperText';
+import { getIsDemoMode, setIsDemoMode } from '../utils/apiInterceptor';
 
-export default function SimulationView({ uiMode = 'clean' }) {
+/* ── Methodology banner card ────────────────────── */
+function PolicyBannerCard({ icon: Icon, title, description, accentCls, bgCls, borderCls }) {
+  return (
+    <div className={`p-3.5 rounded-xl border ${bgCls} ${borderCls} space-y-1.5`}>
+      <div className="flex items-center gap-2">
+        <Icon className={`w-4 h-4 shrink-0 ${accentCls}`} />
+        <span className={`text-xs font-extrabold uppercase tracking-widest ${accentCls}`}>{title}</span>
+      </div>
+      <p className="text-[11px] text-slate-300 leading-relaxed">{description}</p>
+    </div>
+  );
+}
+
+export default function SimulationView({
+  uiMode = 'clean',
+  activeSubTab = 'stress-test',
+  _onSubTabChange,
+}) {
   const { t } = useLanguage();
+  const [isDemo, setIsDemo] = useState(getIsDemoMode());
   const [simulationDays, setSimulationDays] = useState(90);
-  const [scenario, setScenario] = useState('standard');
   const [loading, setLoading] = useState(false);
   const [results, setResults] = useState(null);
   const [copied, setCopied] = useState(false);
 
-  const runSimulation = async (days = simulationDays, targetScenario = scenario) => {
+  const runSimulation = async (days = simulationDays) => {
     setLoading(true);
     try {
       const res = await fetch('/api/simulation/run', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          days: parseInt(days),
-          scenario: targetScenario
+          days: parseInt(days)
         })
       });
       const data = await res.json();
@@ -43,274 +62,339 @@ export default function SimulationView({ uiMode = 'clean' }) {
   };
 
   useEffect(() => {
-    runSimulation(90, 'standard');
+    runSimulation(90);
   }, []);
 
-  const handleLoadBenchmark = () => {
-    setScenario('benchmark_divergence');
-    setSimulationDays(60);
-    runSimulation(60, 'benchmark_divergence');
-  };
-
-  const handleResetStandard = () => {
-    setScenario('standard');
-    setSimulationDays(90);
-    runSimulation(90, 'standard');
-  };
+  useEffect(() => {
+    const handleDemoChange = (e) => {
+      const active = e.detail?.isDemo ?? getIsDemoMode();
+      setIsDemo(active);
+      runSimulation(simulationDays);
+    };
+    window.addEventListener('rka_demo_mode_changed', handleDemoChange);
+    return () => window.removeEventListener('rka_demo_mode_changed', handleDemoChange);
+  }, [simulationDays]);
 
   const handleCopyTable = () => {
-    if (!results) return;
-    let tableText = `POLICY COMPARISON TABLE (Simulation Duration: ${results.simulation_days} Days)\n`;
-    tableText += `Policy\tTotal Units Released\tTotal Units Expired\t% Expired Units\tStockout Events\n`;
+    if (!results || !results.policy_comparison) return;
+    let txt = `POLICY COMPARISON TABLE (${results.data_source || 'Simulation'} - Duration: ${results.simulation_days} Days)\n`;
+    txt += `Policy\tUnits Released\tUnits Expired\t% Expired\tStockout Events\n`;
     results.policy_comparison.forEach(p => {
-      tableText += `${p.policy}\t${p.total_released_units}\t${p.total_expired_units}\t${p.expired_percentage}%\t${p.stockout_occurrences}\n`;
+      txt += `${p.policy}\t${p.total_released_units}\t${p.total_expired_units}\t${p.expired_percentage}%\t${p.stockout_occurrences}\n`;
     });
-    tableText += `\nREORDER MECHANISM COMPARISON:\n`;
-    tableText += `Static Fixed Threshold Stockouts: ${results.reorder_comparison.fixed_threshold.stockout_occurrences}\n`;
-    tableText += `Computed Reorder Level Stockouts: ${results.reorder_comparison.computed_threshold.stockout_occurrences}\n`;
-    tableText += `Stockout Reduction: ${results.reorder_comparison.stockout_reduction_percentage}%\n`;
-
-    navigator.clipboard.writeText(tableText);
+    txt += `\nREORDER MECHANISM COMPARISON:\n`;
+    txt += `Fixed Threshold: ${results.reorder_comparison?.fixed_threshold?.stockout_occurrences || 0} Stockouts\n`;
+    txt += `Computed Dynamic Threshold: ${results.reorder_comparison?.computed_threshold?.stockout_occurrences || 0} Stockouts\n`;
+    txt += `Stockout Reduction: ${results.reorder_comparison?.stockout_reduction_percentage || 0}%\n`;
+    navigator.clipboard.writeText(txt);
     setCopied(true);
     setTimeout(() => setCopied(false), 3000);
   };
 
   return (
-    <div className={`pb-12 ${uiMode === 'clean' ? 'p-2 sm:p-4 space-y-4' : 'p-4 sm:p-6 space-y-6'}`}>
-      {/* Header */}
-      <div className="bg-white p-4 sm:p-5 rounded-xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className={uiMode === 'clean' ? 'space-y-4 pb-8' : 'space-y-5 pb-12'}>
+
+      {/* ══ Page Header + Controls ══ */}
+      <div className="bg-white rounded-xl border border-zinc-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4 px-5 py-3.5">
         <div>
           <div className="flex items-center gap-2">
-            <h2 className="text-xl font-bold text-slate-900 tracking-tight flex items-center gap-2">
-              <FlaskConical className="w-5 h-5 text-indigo-600" />
-              <span>{t('policy_simulation_engine')}</span>
+            <h2 className="text-base font-extrabold text-slate-900 tracking-tight flex items-center gap-2">
+              <FlaskConical className="w-4 h-4 text-teal-600" />
+              {t('sim_title') || 'Empirical Operations Policy Replay'}
             </h2>
-            <span className="bg-indigo-100 text-indigo-800 text-xs font-bold px-2.5 py-0.5 rounded-full">
-              {t('badge_fefo_active') || 'Simulation Engine'}
+            <span className={`text-[10px] font-bold px-2 py-0.5 rounded border uppercase tracking-widest tabular-nums ${
+              isDemo
+                ? 'bg-amber-100 text-amber-900 border-amber-300'
+                : 'bg-teal-100 text-teal-900 border-teal-200'
+            }`}>
+              {isDemo ? (t('sim_demo_active_tag') || 'Demo Mode Active') : (t('sim_prod_active_tag') || 'Production Operations')}
             </span>
           </div>
-          <HelperText uiMode={uiMode} className="text-xs text-slate-500 mt-1">
-            {t('sim_subtitle')}
+          <HelperText uiMode={uiMode} className="text-xs text-slate-500 mt-0.5">
+            {t('sim_subtitle') || 'Evaluate FIFO vs FEFO vs FEFO+ batch release policies using clinic transactions and active inventory batches'}
           </HelperText>
         </div>
 
-        {/* Controls */}
-        <div className="flex flex-wrap items-center gap-2">
-          {scenario === 'benchmark_divergence' ? (
-            <button
-              onClick={handleResetStandard}
-              disabled={loading}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-lg transition"
-            >
-              <span>← Reset to Standard Scenario</span>
-            </button>
-          ) : (
-            <button
-              onClick={handleLoadBenchmark}
-              disabled={loading}
-              className="inline-flex items-center gap-1.5 px-3.5 py-2 text-xs font-bold text-purple-900 bg-purple-50 hover:bg-purple-100 border border-purple-300 rounded-lg shadow-2xs transition"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-purple-600" />
-              <span>{t('btn_load_benchmark')}</span>
-            </button>
-          )}
-
-          <div className="flex items-center gap-1">
-            <span className="text-[11px] text-slate-500 font-medium">{t('sim_duration') || 'Horizon'}:</span>
+        {/* Control Bar */}
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 bg-zinc-50 border border-zinc-200 rounded-lg px-2.5 py-1.5">
+            <span className="text-[10px] text-zinc-500 font-semibold shrink-0">
+              {t('sim_horizon_label') || 'Evaluation Horizon:'}
+            </span>
             <select
               value={simulationDays}
               onChange={(e) => {
                 const d = e.target.value;
                 setSimulationDays(d);
-                runSimulation(d, scenario);
+                runSimulation(d);
               }}
-              className="px-2.5 py-2 text-xs border border-slate-300 rounded-lg bg-white font-semibold text-slate-800 focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+              className="text-xs border-0 bg-transparent font-bold text-slate-800 focus:ring-0 focus:outline-none cursor-pointer"
             >
-              <option value="30">30 Days (Early Horizon)</option>
-              <option value="60">60 Days (Divergence Horizon)</option>
-              <option value="90">90 Days (Standard Horizon)</option>
-              <option value="180">180 Days (Extended Horizon)</option>
+              <option value="30">{t('sim_horizon_30') || '30 Days (Early)'}</option>
+              <option value="60">{t('sim_horizon_60') || '60 Days (Divergence)'}</option>
+              <option value="90">{t('sim_horizon_90') || '90 Days (Standard Horizon)'}</option>
+              <option value="180">{t('sim_horizon_180') || '180 Days (Extended)'}</option>
             </select>
           </div>
 
           <button
-            onClick={() => runSimulation(simulationDays, scenario)}
+            onClick={() => runSimulation(simulationDays)}
             disabled={loading}
-            className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-indigo-600 hover:bg-indigo-700 rounded-lg shadow-sm transition disabled:opacity-50"
+            className="inline-flex items-center gap-1.5 px-4 py-1.5 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-sm transition disabled:opacity-60 cursor-pointer"
           >
-            <Play className="w-3.5 h-3.5 fill-current" />
-            <span>{loading ? 'Simulating...' : t('btn_run_simulation')}</span>
+            {loading ? (
+              <>
+                <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                <span>{t('sim_evaluating_btn') || 'Evaluating…'}</span>
+              </>
+            ) : (
+              <>
+                <Play className="w-3.5 h-3.5 fill-current" />
+                <span>{t('sim_replay_btn') || 'Replay Operations'}</span>
+              </>
+            )}
           </button>
         </div>
       </div>
 
-      {/* Benchmark Divergence Scenario Banner */}
-      {results?.benchmark_info && (
-        <div className="p-5 bg-purple-950 text-purple-100 rounded-xl border border-purple-800 shadow-md space-y-3 animate-in fade-in">
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-purple-800/60 pb-2.5">
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-purple-400 animate-pulse"></span>
-              <span className="font-bold text-sm text-white tracking-tight">
-                {results.benchmark_info.title}
-              </span>
-              <span className="bg-purple-800/80 text-purple-200 text-[10px] font-bold px-2 py-0.5 rounded-full border border-purple-700">
-                Horizon: {results.simulation_days} Days
-              </span>
-            </div>
-            <span className="text-[11px] text-purple-300">
-              Evaluates FIFO vs FEFO vs FEFO+ Under Non-Sequential Expiry Arrivals
-            </span>
+      {/* ══ Empty Database State Notice (When 0 real transactions exist) ══ */}
+      {results?.is_empty && (
+        <div className="bg-amber-50/70 border border-amber-200 rounded-xl p-6 text-center space-y-3 shadow-xs">
+          <div className="w-12 h-12 rounded-xl bg-amber-100 border border-amber-200 flex items-center justify-center mx-auto text-amber-700">
+            <Database className="w-6 h-6" />
           </div>
-
-          <p className="text-xs text-purple-200 leading-relaxed">
-            {results.benchmark_info.description}
-          </p>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs pt-1 font-mono">
-            <div className="p-3 bg-purple-900/60 rounded-lg border border-purple-700/60 font-sans">
-              <div className="font-bold text-amber-300 text-xs mb-1">Batch A (Distant Expiry, Arrived First)</div>
-              <div className="text-white text-xs">{results.benchmark_info.batch_a}</div>
-              <p className="text-[11px] text-purple-300 mt-1 font-sans">
-                <strong>FIFO Behavior:</strong> {results.benchmark_info.fifo_behavior}
-              </p>
-            </div>
-
-            <div className="p-3 bg-purple-900/60 rounded-lg border border-purple-700/60 font-sans">
-              <div className="font-bold text-emerald-300 text-xs mb-1">Batch B (Imminent Expiry, Arrived Later)</div>
-              <div className="text-white text-xs">{results.benchmark_info.batch_b}</div>
-              <p className="text-[11px] text-purple-300 mt-1 font-sans">
-                <strong>FEFO / FEFO+ Behavior:</strong> {results.benchmark_info.fefo_behavior}
-              </p>
-            </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-900">
+              {isDemo ? (t('sim_demo_empty_title') || 'Demo Database Empty') : (t('sim_prod_empty_title') || 'No Counter Dispensing Records Yet (Clean Production System)')}
+            </h3>
+            <p className="text-xs text-slate-600 max-w-lg mx-auto mt-1 leading-relaxed">
+              {isDemo
+                ? (t('sim_demo_empty_desc') || 'The demo database currently has no dispensing logs. You can reset demo data in Settings to restore initial demonstration scenarios.')
+                : (t('sim_prod_empty_desc') || 'The production database has no dispensing transactions logged yet. When actual physical clinic operations start and batches are dispensed at the counter (F2), genuine operational transaction logs will automatically accumulate here for empirical policy comparison.')}
+            </p>
           </div>
-
-          <div className="p-2.5 bg-slate-900/60 rounded-lg border border-slate-700 text-[11px] text-slate-200 flex items-center gap-2 font-sans">
-            <span className="font-bold text-amber-400 flex items-center gap-1">
+          {!isDemo && (
+            <button
+              onClick={() => {
+                setIsDemoMode(true);
+              }}
+              className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-bold text-white bg-slate-900 hover:bg-slate-800 rounded-lg shadow-xs transition cursor-pointer"
+            >
               <Sparkles className="w-3.5 h-3.5 text-amber-400" />
-              Horizon Expansion Impact:
-            </span>
-            <span>{results.benchmark_info.horizon_note}</span>
+              <span>{t('sim_switch_demo_btn') || 'Switch to Demo Mode to Explore Simulation →'}</span>
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* ══ Operations Telemetry Strip ══ */}
+      {results && !results.is_empty && (
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="p-3.5 bg-white rounded-xl border border-zinc-200 shadow-xs">
+            <div className="flex items-center justify-between text-zinc-500 text-[10px] font-bold uppercase tracking-wider mb-1">
+              <span>{t('sim_telemetry_historical_logs') || 'Historical Replay Logs'}</span>
+              <Database className="w-3.5 h-3.5 text-teal-600" />
+            </div>
+            <div className="text-xl font-black tabular-nums text-slate-900">
+              {results.historical_transactions_count || 0} <span className="text-xs font-sans font-medium text-slate-500">{t('sim_telemetry_records') || 'records'}</span>
+            </div>
+            <div className="text-[10px] text-zinc-400 mt-0.5 truncate">
+              {results.date_range ? `${results.date_range.start_date} to ${results.date_range.end_date}` : (t('sim_source_prod') || 'SQLite stock_out logs')}
+            </div>
+          </div>
+
+          <div className="p-3.5 bg-white rounded-xl border border-zinc-200 shadow-xs">
+            <div className="flex items-center justify-between text-zinc-500 text-[10px] font-bold uppercase tracking-wider mb-1">
+              <span>{t('sim_telemetry_batches') || 'Inventory Batches'}</span>
+              <Layers className="w-3.5 h-3.5 text-teal-600" />
+            </div>
+            <div className="text-xl font-black tabular-nums text-slate-900">
+              {results.total_inventory_batches || 0} <span className="text-xs font-sans font-medium text-slate-500">{t('sim_telemetry_batches') || 'batches'}</span>
+            </div>
+            <div className="text-[10px] text-zinc-400 mt-0.5">{t('sim_telemetry_batches_desc') || 'Clinical stock lots evaluated'}</div>
+          </div>
+
+          <div className="p-3.5 bg-white rounded-xl border border-zinc-200 shadow-xs">
+            <div className="flex items-center justify-between text-zinc-500 text-[10px] font-bold uppercase tracking-wider mb-1">
+              <span>{t('sim_telemetry_skus') || 'Catalog SKUs'}</span>
+              <Boxes className="w-3.5 h-3.5 text-teal-600" />
+            </div>
+            <div className="text-xl font-black tabular-nums text-slate-900">
+              {results.total_catalog_medicines || 0} <span className="text-xs font-sans font-medium text-slate-500">{t('sim_telemetry_medicines') || 'medicines'}</span>
+            </div>
+            <div className="text-[10px] text-zinc-400 mt-0.5">{t('sim_telemetry_skus_desc') || 'Empirical sales velocity mapped'}</div>
+          </div>
+
+          <div className="p-3.5 bg-teal-50/60 rounded-xl border border-teal-200 shadow-xs">
+            <div className="flex items-center justify-between text-teal-700 text-[10px] font-bold uppercase tracking-wider mb-1">
+              <span>{t('sim_telemetry_eval_window') || 'Evaluation Window'}</span>
+              <Calendar className="w-3.5 h-3.5 text-teal-600" />
+            </div>
+            <div className="text-xl font-black tabular-nums text-teal-950">
+              {results.simulation_days} <span className="text-xs font-sans font-medium text-teal-800">{t('sim_telemetry_days') || 'Days'}</span>
+            </div>
+            <div className="text-[10px] text-teal-700 font-medium mt-0.5">{t('sim_telemetry_window_desc') || 'Replay + forward projection'}</div>
           </div>
         </div>
       )}
 
-      {/* Policy Simulation Methodology Box */}
-      <div className="p-4 bg-slate-900 text-slate-200 rounded-xl border border-slate-800 text-xs space-y-2">
-        <div className="flex items-center gap-2 text-amber-400 font-bold uppercase tracking-wider">
-          <Award className="w-4 h-4" />
-          <span>Policy Simulation Methodology</span>
+      {/* ══ Methodology Banner ══ */}
+      <div className="bg-slate-900 dark:bg-[#161b22] border border-slate-800 dark:border-white/10 rounded-2xl overflow-hidden">
+        <div className="px-5 py-2.5 border-b border-slate-800 dark:border-white/10 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Award className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-[10px] font-bold uppercase tracking-widest text-amber-400">
+              {t('sim_eval_methodology_title') || 'Empirical Inventory Policy Evaluation'}
+            </span>
+          </div>
+          <span className="text-[11px] text-zinc-400 hidden sm:inline">
+            {t('sim_source_label') || 'Source:'} {results?.data_source || (isDemo ? (t('sim_source_demo') || 'Demo Clinic Sandbox Database') : (t('sim_source_prod') || 'Production SQLite Database'))}
+          </span>
         </div>
-        <p className="text-slate-300 leading-relaxed">
-          This simulation compares inventory performance across three batch release policies: <strong>First-In-First-Out (FIFO)</strong>, <strong>Standard First-Expiry-First-Out (FEFO)</strong>, and the <strong>Enhanced First-Expiry-First-Out (FEFO+)</strong> mechanism. It evaluates total expired units, percentage of product waste, and zero-stock occurrences across simulated operational periods.
-        </p>
+        <div className="p-5 grid grid-cols-1 md:grid-cols-3 gap-3">
+          <PolicyBannerCard
+            icon={Database}
+            title={t('sim_fifo_title') || 'FIFO (Traditional)'}
+            description={t('sim_fifo_desc') || 'First-In-First-Out: Oldest stock lot released first based purely on arrival order, ignoring expiration dates. Highest product waste.'}
+            accentCls="text-rose-400"
+            bgCls="bg-zinc-900"
+            borderCls="border-zinc-700/50"
+          />
+          <PolicyBannerCard
+            icon={ShieldCheck}
+            title={t('sim_fefo_title') || 'FEFO (Standard)'}
+            description={t('sim_fefo_desc') || 'First-Expiry-First-Out: Earliest expiration batch released without consumption velocity risk check. Reduces waste vs FIFO.'}
+            accentCls="text-amber-400"
+            bgCls="bg-zinc-900"
+            borderCls="border-zinc-700/50"
+          />
+          <PolicyBannerCard
+            icon={Sparkles}
+            title={t('sim_fefoplus_title') || 'FEFO+ (Proposed Predictive)'}
+            description={t('sim_fefoplus_desc') || 'Enhanced FEFO: Earliest expiry prioritized + negative risk-margin batches automatically accelerated for release. Minimum waste.'}
+            accentCls="text-teal-400"
+            bgCls="bg-zinc-900"
+            borderCls="border-teal-700/40"
+          />
+        </div>
       </div>
 
-      {results && (
+      {results && !results.is_empty && (
         <>
-          {/* Batch Release Policy Comparison */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xs overflow-hidden">
-            <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          {/* ══ Prominent Demand Forecasting Card when activeSubTab === 'demand-forecast' ══ */}
+          {activeSubTab === 'demand-forecast' && (
+            <div className="bg-white rounded-xl border-2 border-teal-500 shadow-sm p-5 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-zinc-100 pb-3">
+                <div>
+                  <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                    <Boxes className="w-4 h-4 text-teal-600" />
+                    <span>{t('sim_demand_model_title') || 'Dynamic Replenishment & Demand Forecasting Model'}</span>
+                  </h3>
+                  <HelperText uiMode={uiMode} className="text-xs text-slate-500">
+                    {t('sim_demand_model_desc') || 'Comparative evaluation of fixed reorder thresholds against consumption-weighted dynamic replenishment: Reorder Point = [ADQS × (Supplier Lead Time + Buffer Days)]'}
+                  </HelperText>
+                </div>
+                <span className="text-xs font-bold text-teal-800 bg-teal-50 px-3 py-1.5 rounded-lg border border-teal-200 self-start sm:self-auto">
+                  {t('sim_stockout_reduction_badge', { pct: results.reorder_comparison?.stockout_reduction_percentage || 0 }) || `${results.reorder_comparison?.stockout_reduction_percentage || 0}% Stockout Reduction`}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200 space-y-2">
+                  <span className="text-[10px] uppercase text-zinc-500 font-bold block tracking-widest">
+                    {results.reorder_comparison?.fixed_threshold?.method || t('sim_fixed_threshold_label') || '1. Fixed Static Threshold'}
+                  </span>
+                  <div className="text-3xl font-black text-rose-700 tabular-nums">
+                    {t('sim_stockout_events', { count: results.reorder_comparison?.fixed_threshold?.stockout_occurrences || 0 }) || `${results.reorder_comparison?.fixed_threshold?.stockout_occurrences || 0} Stockout Events`}
+                  </div>
+                  <p className="text-xs text-slate-500">{results.reorder_comparison?.fixed_threshold?.description}</p>
+                </div>
+                <div className="p-4 bg-teal-50/60 rounded-xl border border-teal-200 space-y-2">
+                  <span className="text-[10px] uppercase text-teal-700 font-bold block tracking-widest">
+                    {results.reorder_comparison?.computed_threshold?.method || t('sim_dynamic_level_label') || '2. Computed Dynamic Level'}
+                  </span>
+                  <div className="text-3xl font-black text-teal-800 tabular-nums">
+                    {t('sim_stockout_events', { count: results.reorder_comparison?.computed_threshold?.stockout_occurrences || 0 }) || `${results.reorder_comparison?.computed_threshold?.stockout_occurrences || 0} Stockout Events`}
+                  </div>
+                  <p className="text-xs text-slate-600">{results.reorder_comparison?.computed_threshold?.description}</p>
+                  <div className="pt-1">
+                    <span className="text-xs font-bold text-teal-700 bg-teal-100 border border-teal-200 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                      <Check className="w-3 h-3" />
+                      {t('sim_stockout_reduction_achieved', { pct: results.reorder_comparison?.stockout_reduction_percentage || 0 }) || `${results.reorder_comparison?.stockout_reduction_percentage || 0}% Stockout Reduction Achieved`}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* ══ Policy Comparison Matrix ══ */}
+          <div className="bg-white rounded-xl border border-zinc-200 shadow-xs overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-zinc-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h3 className="font-bold text-slate-900 text-sm">
-                  {t('sim_policy_table_title')}
+                  {t('sim_policy_table_title') || 'Batch Release Policy Comparison Matrix'}
                 </h3>
                 <HelperText uiMode={uiMode} className="text-xs text-slate-500">
-                  Simulation over {results.simulation_days} operational days with identical incoming clinic shipments
+                  {`Empirical transaction replay across ${results.historical_transactions_count} dispensing records over ${results.simulation_days} operational days`}
                 </HelperText>
               </div>
 
               <button
                 onClick={handleCopyTable}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-lg transition"
-              >
-                {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
-                <span>{copied ? 'Copied to Clipboard!' : 'Copy Analysis Table'}</span>
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-zinc-700 bg-zinc-100 hover:bg-zinc-200 border border-zinc-200 rounded-lg transition cursor-pointer shrink-0">
+                {copied ? <Check className="w-3.5 h-3.5 text-teal-600" /> : <Copy className="w-3.5 h-3.5" />}
+                <span>{copied ? (t('sim_copied_toast') || 'Copied to Clipboard!') : (t('sim_copy_btn') || 'Copy Analysis Table')}</span>
               </button>
             </div>
 
             <div className="overflow-x-auto">
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-600 font-bold uppercase tracking-wider text-[11px]">
-                    <th className="py-3 px-4">{t('sim_col_policy')}</th>
-                    <th className="py-3 px-4 text-center">{t('sim_col_released')}</th>
-                    <th className="py-3 px-4 text-center">{t('sim_col_expired')}</th>
-                    <th className="py-3 px-4 text-center">{t('sim_col_spoilage')}</th>
-                    <th className="py-3 px-4 text-center">{t('sim_col_stockouts')}</th>
-                    <th className="py-3 px-4 text-center">{t('relative_performance_spoilage')}</th>
+                  <tr className="bg-zinc-50 border-b border-zinc-200 text-zinc-500 text-[10px] font-bold uppercase tracking-widest">
+                    <th className="py-2.5 px-4">{t('sim_col_policy') || 'Inventory Policy'}</th>
+                    <th className="py-2.5 px-4 text-center">{t('sim_col_released') || 'Units Released'}</th>
+                    <th className="py-2.5 px-4 text-center">{t('sim_col_expired') || 'Units Expired'}</th>
+                    <th className="py-2.5 px-4 text-center">{t('sim_col_spoilage') || 'Spoilage Rate (%)'}</th>
+                    <th className="py-2.5 px-4 text-center">{t('sim_col_stockouts') || 'Stockout Events'}</th>
+                    <th className="py-2.5 px-4 text-center">{t('relative_performance_spoilage') || 'Relative Performance'}</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-100">
+                <tbody className="divide-y divide-zinc-100">
                   {results.policy_comparison.map((p) => {
                     const isFefoPlus = p.policy === 'FEFO+';
-                    const isFifo = p.policy === 'FIFO';
-
+                    const isFifo    = p.policy === 'FIFO';
                     return (
-                      <tr
-                        key={p.policy}
-                        className={`transition ${isFefoPlus ? 'bg-emerald-50/60 font-medium' : 'hover:bg-slate-50'}`}
-                      >
+                      <tr key={p.policy} className={`transition ${isFefoPlus ? 'bg-teal-50/40 font-medium' : 'hover:bg-zinc-50'}`}>
                         <td className="py-3.5 px-4">
                           <div className="flex items-center gap-2 font-bold text-slate-900 text-sm">
                             <span>{p.policy}</span>
-                            {isFefoPlus && (
-                              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-extrabold px-2 py-0.5 rounded uppercase">
-                                Proposed System
-                              </span>
-                            )}
-                            {isFifo && (
-                              <span className="bg-slate-100 text-slate-600 text-[10px] font-medium px-2 py-0.5 rounded uppercase">
-                                Conventional
-                              </span>
-                            )}
+                            {isFefoPlus && <span className="bg-teal-100 text-teal-800 text-[9px] font-extrabold px-2 py-0.5 rounded border border-teal-200 uppercase tracking-widest">{t('sim_proposed_tag') || 'Proposed System'}</span>}
+                            {isFifo && <span className="bg-zinc-100 text-zinc-600 text-[9px] font-semibold px-2 py-0.5 rounded uppercase">{t('sim_conventional_tag') || 'Conventional'}</span>}
                           </div>
-                          <span className="text-[11px] text-slate-500 font-normal">
-                            {p.policy === 'FIFO' && 'Oldest received batch released first without expiry consideration'}
-                            {p.policy === 'FEFO' && 'Earliest expiration batch released without consumption velocity risk check'}
-                            {p.policy === 'FEFO+' && 'Earliest expiry prioritized + negative margin risk batches accelerated'}
+                          <span className="text-[10px] text-zinc-400 font-normal">
+                            {p.policy === 'FIFO'  && (t('sim_fifo_row_desc') || 'Oldest received batch released first without expiry consideration')}
+                            {p.policy === 'FEFO'  && (t('sim_fefo_row_desc') || 'Earliest expiration batch released without consumption velocity risk check')}
+                            {p.policy === 'FEFO+' && (t('sim_fefoplus_row_desc') || 'Earliest expiry prioritized + negative margin risk batches accelerated')}
                           </span>
                         </td>
-
-                        <td className="py-3.5 px-4 text-center font-bold text-slate-800 text-sm">
-                          {p.total_released_units} units
+                        <td className="py-3.5 px-4 text-center font-bold text-slate-900 tabular-nums text-sm">
+                          {p.total_released_units}
                         </td>
-
-                        <td className="py-3.5 px-4 text-center">
-                          <span className={`inline-block font-extrabold text-sm px-2.5 py-1 rounded ${
-                            isFefoPlus
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : isFifo
-                              ? 'bg-red-100 text-red-800'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}>
-                            {p.total_expired_units} units
+                        <td className="py-3.5 px-4 text-center font-bold tabular-nums text-sm">
+                          <span className={p.total_expired_units > 0 ? 'text-rose-700' : 'text-emerald-700'}>
+                            {p.total_expired_units}
                           </span>
                         </td>
-
-                        <td className="py-3.5 px-4 text-center font-mono font-bold text-sm">
-                          <span className={isFefoPlus ? 'text-emerald-700' : isFifo ? 'text-red-700' : 'text-amber-700'}>
+                        <td className="py-3.5 px-4 text-center font-bold tabular-nums text-sm">
+                          <span className={isFefoPlus ? 'text-teal-700' : isFifo ? 'text-rose-700' : 'text-amber-700'}>
                             {p.expired_percentage}%
                           </span>
                         </td>
-
-                        <td className="py-3.5 px-4 text-center font-semibold text-slate-700">
-                          {p.stockout_occurrences} events
-                        </td>
-
+                        <td className="py-3.5 px-4 text-center font-semibold text-slate-700 tabular-nums">{p.stockout_occurrences}</td>
                         <td className="py-3.5 px-4 text-center">
-                          {isFefoPlus && (
-                            <span className="text-emerald-700 font-bold text-xs bg-emerald-100/70 border border-emerald-300 px-2 py-1 rounded">
-                              ★ Lowest Expiration Waste
-                            </span>
-                          )}
-                          {p.policy === 'FEFO' && (
-                            <span className="text-slate-600 text-xs">Standard Baseline</span>
-                          )}
-                          {isFifo && (
-                            <span className="text-red-700 text-xs bg-red-50 px-2 py-1 rounded">
-                              Highest Product Waste
-                            </span>
-                          )}
+                          {isFefoPlus && <span className="text-teal-700 font-bold text-xs bg-teal-50 border border-teal-200 px-2 py-1 rounded">{t('sim_lowest_waste_badge') || '★ Lowest Expiration Waste'}</span>}
+                          {p.policy === 'FEFO' && <span className="text-zinc-500 text-xs">{t('sim_standard_baseline') || 'Standard Baseline'}</span>}
+                          {isFifo && <span className="text-rose-700 text-xs bg-rose-50 border border-rose-200 px-2 py-1 rounded">{t('sim_highest_waste_badge') || 'Highest Product Waste'}</span>}
                         </td>
                       </tr>
                     );
@@ -320,82 +404,77 @@ export default function SimulationView({ uiMode = 'clean' }) {
             </div>
           </div>
 
-          {/* Visual Waste Comparison Bars */}
-          <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
-            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-700">
-              Expired Units Comparison Across Simulated Policies
+          {/* ══ Visual Waste Comparison Bars ══ */}
+          <div className="bg-white rounded-xl border border-zinc-200 shadow-xs p-5 space-y-4">
+            <h4 className="font-bold text-xs uppercase tracking-widest text-slate-600">
+              {t('sim_expired_units_heading', { days: results.simulation_days, source: results.data_source }) || `Expired Units Comparison — ${results.simulation_days}-Day Evaluation (${results.data_source})`}
             </h4>
-
             <div className="space-y-3">
               {results.policy_comparison.map(p => {
                 const maxUnits = Math.max(...results.policy_comparison.map(x => x.total_expired_units), 1);
-                const widthPct = Math.max(5, (p.total_expired_units / maxUnits) * 100);
-
+                const widthPct = Math.max(4, (p.total_expired_units / maxUnits) * 100);
                 return (
                   <div key={p.policy}>
                     <div className="flex justify-between text-xs font-semibold text-slate-700 mb-1">
-                      <span>{p.policy} Policy</span>
-                      <span>{p.total_expired_units} Units Expired ({p.expired_percentage}% of total released)</span>
+                      <span>{t('sim_policy_label', { policy: p.policy }) || `${p.policy} Policy`}</span>
+                      <span className="tabular-nums">{t('sim_units_expired_summary', { units: p.total_expired_units, pct: p.expired_percentage }) || `${p.total_expired_units} Units Expired (${p.expired_percentage}% spoilage rate)`}</span>
                     </div>
-                    <div className="w-full h-4 bg-slate-100 rounded-full overflow-hidden">
-                      <div
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          p.policy === 'FEFO+' ? 'bg-emerald-500' : p.policy === 'FEFO' ? 'bg-amber-400' : 'bg-red-500'
-                        }`}
-                        style={{ width: `${widthPct}%` }}
-                      />
+                    <div className="w-full h-4 bg-zinc-100 rounded-full overflow-hidden border border-zinc-200">
+                      <div className={`h-full rounded-full transition-all duration-700 ${
+                        p.policy === 'FEFO+' ? 'bg-teal-500' : p.policy === 'FEFO' ? 'bg-amber-400' : 'bg-rose-500'
+                      }`} style={{ width: `${widthPct}%` }} />
                     </div>
                   </div>
                 );
               })}
             </div>
-
-            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-lg text-xs text-emerald-900 font-medium">
-              Key Finding: <strong>{results.summary_findings.best_policy_for_waste}</strong> achieved superior performance, saving {results.summary_findings.waste_reduction_vs_fifo} compared to traditional FIFO, and {results.summary_findings.waste_reduction_vs_fefo} compared to standard FEFO.
+            <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl text-xs text-teal-900 font-medium">
+              {t('sim_key_finding_label') || 'Key Empirical Finding:'} <strong>{results.summary_findings?.best_policy_for_waste || 'FEFO+'}</strong> {t('sim_finding_text', { fifo: results.summary_findings?.waste_reduction_vs_fifo || '0 units', fefo: results.summary_findings?.waste_reduction_vs_fefo || '0 units' }) || `achieved superior performance, saving ${results.summary_findings?.waste_reduction_vs_fifo || '0 units'} compared to FIFO, and ${results.summary_findings?.waste_reduction_vs_fefo || '0 units'} compared to standard FEFO.`}
             </div>
           </div>
 
-          {/* Reorder Threshold Performance (Fixed Static vs Computed Dynamic) */}
-          <div className="bg-white rounded-xl border border-slate-200 shadow-xs p-5 space-y-4">
+          {/* ══ Reorder Threshold Comparison ══ */}
+          <div className="bg-white rounded-xl border border-zinc-200 shadow-xs p-5 space-y-4">
             <div>
-              <h3 className="font-bold text-slate-900 text-sm">
-                {t('sim_reorder_comparison_title')}
-              </h3>
+              <h3 className="font-bold text-slate-900 text-sm">{t('sim_reorder_comparison_title') || 'Reorder Mechanism Performance'}</h3>
               <HelperText uiMode={uiMode} className="text-xs text-slate-500">
-                Evaluation of fixed threshold vs dynamic consumption-based model [ADQS × (Lead Time + Buffer Days)]
+                Evaluation of static fixed reorder threshold vs dynamic consumption-based model [ADQS × (Lead Time + Buffer Days)]
               </HelperText>
             </div>
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
-                <span className="text-xs uppercase text-slate-500 font-bold block mb-1">
-                  1. {t('sim_fixed_stockouts')}
+              <div className="p-4 bg-zinc-50 rounded-xl border border-zinc-200">
+                <span className="text-[10px] uppercase text-zinc-500 font-bold block mb-1 tracking-widest">
+                  1. {results.reorder_comparison?.fixed_threshold?.method || t('sim_fixed_threshold_label') || 'Fixed Static Threshold'}
                 </span>
-                <div className="text-2xl font-bold text-red-700">
-                  {results.reorder_comparison.fixed_threshold.stockout_occurrences} Stockout Events
+                <div className="text-2xl font-black text-rose-700 tabular-nums">
+                  {t('sim_stockout_events', { count: results.reorder_comparison?.fixed_threshold?.stockout_occurrences || 0 }) || `${results.reorder_comparison?.fixed_threshold?.stockout_occurrences || 0} Stockout Events`}
                 </div>
-                <p className="text-xs text-slate-600 mt-2">
-                  {results.reorder_comparison.fixed_threshold.description}
-                </p>
+                <p className="text-xs text-slate-500 mt-2">{results.reorder_comparison?.fixed_threshold?.description}</p>
               </div>
-
-              <div className="p-4 bg-emerald-50/70 rounded-xl border border-emerald-200">
-                <span className="text-xs uppercase text-emerald-700 font-bold block mb-1">
-                  2. {t('sim_computed_stockouts')}
+              <div className="p-4 bg-teal-50/60 rounded-xl border border-teal-200">
+                <span className="text-[10px] uppercase text-teal-700 font-bold block mb-1 tracking-widest">
+                  2. {results.reorder_comparison?.computed_threshold?.method || t('sim_dynamic_level_label') || 'Computed Dynamic Level'}
                 </span>
-                <div className="text-2xl font-bold text-emerald-800">
-                  {results.reorder_comparison.computed_threshold.stockout_occurrences} Stockout Events
+                <div className="text-2xl font-black text-teal-800 tabular-nums">
+                  {t('sim_stockout_events', { count: results.reorder_comparison?.computed_threshold?.stockout_occurrences || 0 }) || `${results.reorder_comparison?.computed_threshold?.stockout_occurrences || 0} Stockout Events`}
                 </div>
-                <p className="text-xs text-slate-600 mt-2">
-                  {results.reorder_comparison.computed_threshold.description}
-                </p>
-                <div className="mt-3 text-xs font-bold text-emerald-700 bg-emerald-100/80 px-2.5 py-1 rounded inline-block">
-                  ✓ {results.reorder_comparison.stockout_reduction_percentage}% {t('sim_stockout_reduction')}
+                <p className="text-xs text-slate-600 mt-2">{results.reorder_comparison?.computed_threshold?.description}</p>
+                <div className="mt-3 text-xs font-bold text-teal-700 bg-teal-100 border border-teal-200 px-2.5 py-1 rounded-lg inline-flex items-center gap-1">
+                  <Check className="w-3 h-3" />
+                  {t('sim_stockout_reduction_achieved', { pct: results.reorder_comparison?.stockout_reduction_percentage || 0 }) || `${results.reorder_comparison?.stockout_reduction_percentage || 0}% Stockout Reduction Achieved`}
                 </div>
               </div>
             </div>
           </div>
         </>
+      )}
+
+      {/* Loading overlay */}
+      {loading && !results && (
+        <div className="bg-white rounded-xl border border-zinc-200 shadow-xs p-12 text-center">
+          <Loader2 className="w-8 h-8 text-teal-500 animate-spin mx-auto mb-3" />
+          <p className="text-xs text-zinc-500 font-medium">{t('sim_running_msg', { days: simulationDays }) || `Running policy simulation across ${simulationDays} operational days…`}</p>
+        </div>
       )}
     </div>
   );

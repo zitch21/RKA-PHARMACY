@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useState } from 'react';
 import { translations } from '../i18n/translations';
 
-const LanguageContext = createContext();
+export const LanguageContext = createContext();
 
 export function LanguageProvider({ children }) {
   const [language, setLanguageState] = useState(() => {
@@ -15,16 +15,22 @@ export function LanguageProvider({ children }) {
     }
   };
 
-  const t = (key, fallback = '') => {
+  const t = (key, paramsOrFallback = '', fallback = '') => {
+    let str = '';
     const dict = translations[language] || translations.en;
     if (dict && dict[key] !== undefined) {
-      return dict[key];
+      str = dict[key];
+    } else if (translations.en && translations.en[key] !== undefined) {
+      str = translations.en[key];
+    } else {
+      str = typeof paramsOrFallback === 'string' && paramsOrFallback ? paramsOrFallback : (typeof fallback === 'string' ? fallback : '') || key;
     }
-    // Fallback to English
-    if (translations.en && translations.en[key] !== undefined) {
-      return translations.en[key];
+    if (typeof paramsOrFallback === 'object' && paramsOrFallback !== null) {
+      Object.entries(paramsOrFallback).forEach(([k, v]) => {
+        str = str.replace(new RegExp(`\\{${k}\\}`, 'g'), String(v));
+      });
     }
-    return fallback || key;
+    return str;
   };
 
   return (

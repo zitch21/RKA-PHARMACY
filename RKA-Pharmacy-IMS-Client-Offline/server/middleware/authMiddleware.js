@@ -7,6 +7,7 @@ function getOrGenerateSessionSecret() {
   if (process.env.SESSION_SECRET) {
     return process.env.SESSION_SECRET;
   }
+
   const secretPath = path.join(__dirname, '../data/.session_secret');
   try {
     if (fs.existsSync(secretPath)) {
@@ -15,15 +16,17 @@ function getOrGenerateSessionSecret() {
         return existing;
       }
     }
+
     const generated = crypto.randomBytes(32).toString('hex');
     const dataDir = path.dirname(secretPath);
     if (!fs.existsSync(dataDir)) {
       fs.mkdirSync(dataDir, { recursive: true });
     }
-    fs.writeFileSync(secretPath, generated, { encoding: 'utf8' });
+    fs.writeFileSync(secretPath, generated, { encoding: 'utf8', mode: 0o600 });
     return generated;
-  } catch {
-    return 'rka-pharmacy-session-hmac-secret-agoo-la-union-2026';
+  } catch (err) {
+    console.warn('Failed to persist session secret, generating ephemeral secret for this process only:', err.message);
+    return crypto.randomBytes(32).toString('hex');
   }
 }
 

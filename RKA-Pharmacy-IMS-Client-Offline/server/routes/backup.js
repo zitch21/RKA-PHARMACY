@@ -10,7 +10,7 @@ const dbDir = path.join(__dirname, '../data');
 const backupDir = path.join(dbDir, 'backups');
 
 // GET list of available local backups
-router.get('/list', (req, res) => {
+router.get('/list', requireAdminRole, (req, res) => {
   try {
     if (!fs.existsSync(backupDir)) {
       return res.json({ backups: [] });
@@ -35,7 +35,7 @@ router.get('/list', (req, res) => {
 });
 
 // Download database backup file directly to client (Save to USB via browser)
-router.get('/download', async (req, res) => {
+router.get('/download', requireAdminRole, async (req, res) => {
   try {
     // Flush WAL to ensure complete snapshot
     try {
@@ -62,7 +62,7 @@ router.get('/download', async (req, res) => {
 });
 
 // List system storage drives (identifying connected USB flash drives)
-router.get('/drives', (req, res) => {
+router.get('/drives', requireAdminRole, (req, res) => {
   try {
     const drives = [];
     if (process.platform === 'win32') {
@@ -100,7 +100,7 @@ router.get('/drives', (req, res) => {
 });
 
 // Directly copy backup to detected removable USB drive
-router.post('/export-removable', async (req, res) => {
+router.post('/export-removable', requireAdminRole, async (req, res) => {
   try {
     const { drive_letter, operator_name = 'Lourdes Gincen L. Cesista' } = req.body || {};
 
@@ -174,13 +174,19 @@ router.post('/restore', requireAdminRole, async (req, res) => {
     }
 
     let candidatePath = null;
+    const backupRoot = path.resolve(backupDir);
     if (backup_filename) {
       const safeFilename = path.basename(backup_filename);
-      candidatePath = path.join(backupDir, safeFilename);
+      candidatePath = path.resolve(backupRoot, safeFilename);
     } else if (backup_path) {
       candidatePath = path.resolve(backup_path);
     } else {
       return res.status(400).json({ error: 'Please specify a backup filename or candidate file path to restore.' });
+    }
+
+    const isWithinBackupDir = candidatePath === backupRoot || candidatePath.startsWith(`${backupRoot}${path.sep}`);
+    if (!isWithinBackupDir) {
+      return res.status(400).json({ error: 'Restoration source must be a backup file inside the local backup directory.' });
     }
 
     if (!fs.existsSync(candidatePath)) {

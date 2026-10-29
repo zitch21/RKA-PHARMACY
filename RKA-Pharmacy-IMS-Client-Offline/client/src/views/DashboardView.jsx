@@ -73,6 +73,13 @@ export default function DashboardView({
   const [dispensedTodayCount, setDispensedTodayCount] = useState(0);
   const [eodBackupLoading, setEodBackupLoading] = useState(false);
   const [eodBackupSuccess, setEodBackupSuccess] = useState(false);
+  const backupTimersRef = useRef([]);
+
+  useEffect(() => {
+    return () => {
+      backupTimersRef.current.forEach(clearTimeout);
+    };
+  }, []);
 
   const batchesEnteringCriticalTomorrow = (batches || []).filter(b => 
     b.status === 'active' && b.current_quantity > 0 && b.days_to_expiry === 31
@@ -83,11 +90,13 @@ export default function DashboardView({
     try {
       window.location.href = '/api/backup/download';
       setEodBackupSuccess(true);
-      setTimeout(() => setEodBackupSuccess(false), 6000);
+      const t1 = setTimeout(() => setEodBackupSuccess(false), 6000);
+      backupTimersRef.current.push(t1);
     } catch (err) {
       console.error('Failed to trigger EOD backup:', err);
     } finally {
-      setTimeout(() => setEodBackupLoading(false), 1000);
+      const t2 = setTimeout(() => setEodBackupLoading(false), 1000);
+      backupTimersRef.current.push(t2);
     }
   };
 

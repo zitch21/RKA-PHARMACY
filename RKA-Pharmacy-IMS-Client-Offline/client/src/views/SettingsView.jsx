@@ -9,6 +9,7 @@ import {
   Building,
   RotateCcw,
   HardDrive,
+  Database,
   Download,
   Key,
   Lock,
@@ -135,6 +136,47 @@ export default function SettingsView({
       setError(err.message);
     } finally {
       setDemoResetLoading(false);
+    }
+  };
+
+  // Database Compaction & Optimization States
+  const [dbStats, setDbStats] = useState(null);
+  const [dbStatsLoading, setDbStatsLoading] = useState(false);
+  const [dbOptimizeLoading, setDbOptimizeLoading] = useState(false);
+  const [dbOptimizeMessage, setDbOptimizeMessage] = useState(null);
+  const [dbOptimizeError, setDbOptimizeError] = useState(null);
+
+  const fetchDbStats = () => {
+    setDbStatsLoading(true);
+    fetch('/api/settings/db-stats')
+      .then(res => res.json())
+      .then(data => {
+        if (data && !data.error) setDbStats(data);
+      })
+      .catch(err => console.error('Failed to load db stats:', err))
+      .finally(() => setDbStatsLoading(false));
+  };
+
+  const handleOptimizeDb = async () => {
+    setDbOptimizeLoading(true);
+    setDbOptimizeMessage(null);
+    setDbOptimizeError(null);
+    try {
+      const res = await fetch('/api/settings/optimize', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista'
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || 'Database optimization failed');
+      setDbOptimizeMessage(`Database successfully optimized! Pages before: ${data.details.pages_before} → Pages after: ${data.details.pages_after}. Reclaimed: ${data.details.reclaimed_kb} KB.`);
+      fetchDbStats();
+    } catch (err) {
+      setDbOptimizeError(err.message);
+    } finally {
+      setDbOptimizeLoading(false);
     }
   };
 
@@ -266,6 +308,7 @@ export default function SettingsView({
 
     fetchDrives();
     fetchBackupList();
+    fetchDbStats();
   }, []);
 
   const handleChange = (e) => {
@@ -275,6 +318,7 @@ export default function SettingsView({
 
   const handleSave = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setLoading(true);
     setSaved(false);
     setError(null);
@@ -1140,7 +1184,96 @@ export default function SettingsView({
         </form>
       </div>
 
-      {/* Section 6: Factory Data Wipe & System Reset */}
+      {/* Section 6: Database Compaction & Storage Optimization */}
+      <div className="bg-white dark:bg-[#151b26] p-5 rounded-xl border border-zinc-200 dark:border-white/10 shadow-xs space-y-3.5">
+        <div className="flex items-center justify-between border-b border-zinc-100 dark:border-white/10 pb-3">
+          <div className="flex items-center gap-2">
+            <Database className="w-4 h-4 text-teal-600" />
+            <div>
+              <h3 className="font-bold text-slate-900 dark:text-slate-100 text-sm">
+                {t('set_db_optimize_heading') || 'Database Compaction & Storage Optimization'}
+              </h3>
+              <p className="text-xs text-zinc-500 dark:text-slate-400">
+                {t('set_db_optimize_desc') || 'Reclaim unused database disk space, truncate SQLite WAL files, and rebuild query planner statistics'}
+              </p>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={fetchDbStats}
+            disabled={dbStatsLoading}
+            className="p-1.5 text-zinc-600 dark:text-slate-400 hover:bg-zinc-100 dark:hover:bg-white/5 border border-zinc-300 dark:border-white/10 rounded-lg transition cursor-pointer"
+            title="Refresh database statistics"
+          >
+            <RefreshCw className={`w-3.5 h-3.5 ${dbStatsLoading ? 'animate-spin' : ''}`} />
+          </button>
+        </div>
+
+        {dbOptimizeMessage && (
+          <div className="p-3 bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800 rounded-xl flex items-center gap-2 text-xs text-teal-900 dark:text-teal-200">
+            <CheckCircle2 className="w-4 h-4 text-teal-600 shrink-0" />
+            <span>{dbOptimizeMessage}</span>
+          </div>
+        )}
+
+        {dbOptimizeError && (
+          <div className="p-3 bg-rose-50 dark:bg-rose-950/40 border border-rose-200 dark:border-rose-800 rounded-xl flex items-center gap-2 text-xs text-rose-800 dark:text-rose-200">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{dbOptimizeError}</span>
+          </div>
+        )}
+
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          <div className="p-3 bg-zinc-50 dark:bg-[#1a202c] border border-zinc-200 dark:border-white/10 rounded-lg text-center">
+            <span className="text-[10px] font-bold text-zinc-500 dark:text-slate-400 uppercase tracking-wider block">
+              {t('set_db_pages_label') || 'Allocated Pages'}
+            </span>
+            <span className="text-sm font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">
+              {dbStats ? Number(dbStats.page_count).toLocaleString() : '—'}
+            </span>
+          </div>
+          <div className="p-3 bg-zinc-50 dark:bg-[#1a202c] border border-zinc-200 dark:border-white/10 rounded-lg text-center">
+            <span className="text-[10px] font-bold text-zinc-500 dark:text-slate-400 uppercase tracking-wider block">
+              {t('set_db_page_size_label') || 'Page Size'}
+            </span>
+            <span className="text-sm font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">
+              {dbStats ? `${dbStats.page_size} B` : '—'}
+            </span>
+          </div>
+          <div className="p-3 bg-zinc-50 dark:bg-[#1a202c] border border-zinc-200 dark:border-white/10 rounded-lg text-center">
+            <span className="text-[10px] font-bold text-zinc-500 dark:text-slate-400 uppercase tracking-wider block">
+              {t('set_db_total_size_label') || 'Total Database Size'}
+            </span>
+            <span className="text-sm font-extrabold text-slate-800 dark:text-slate-100 tabular-nums">
+              {dbStats ? `${dbStats.total_kb} KB` : '—'}
+            </span>
+          </div>
+          <div className="p-3 bg-zinc-50 dark:bg-[#1a202c] border border-zinc-200 dark:border-white/10 rounded-lg text-center">
+            <span className="text-[10px] font-bold text-zinc-500 dark:text-slate-400 uppercase tracking-wider block">
+              {t('set_db_freelist_label') || 'Reclaimable Pages'}
+            </span>
+            <span className="text-sm font-extrabold text-teal-600 dark:text-teal-400 tabular-nums">
+              {dbStats ? Number(dbStats.freelist_count).toLocaleString() : '—'}
+            </span>
+          </div>
+        </div>
+
+        <div className="flex justify-end pt-1">
+          <button
+            type="button"
+            onClick={handleOptimizeDb}
+            disabled={dbOptimizeLoading}
+            className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 disabled:opacity-50 rounded-lg shadow-xs transition cursor-pointer"
+          >
+            <Sparkles className={`w-3.5 h-3.5 ${dbOptimizeLoading ? 'animate-spin' : ''}`} />
+            <span>
+              {dbOptimizeLoading ? (t('set_db_optimizing_btn') || 'Compacting Database...') : (t('set_db_optimize_btn') || 'Compact & Optimize Database')}
+            </span>
+          </button>
+        </div>
+      </div>
+
+      {/* Section 7: Factory Data Wipe & System Reset */}
       <div className="bg-rose-50/40 p-5 rounded-xl border border-rose-300 shadow-xs space-y-3.5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-rose-200 pb-3">
           <div className="flex items-center gap-2">

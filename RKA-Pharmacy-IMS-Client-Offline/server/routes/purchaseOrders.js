@@ -138,7 +138,7 @@ router.get('/recommendations', (req, res) => {
         adqs = parseFloat((totalSold / N).toFixed(2));
         effectiveThreshold = adqs > 0 
           ? Math.ceil(adqs * (leadTime + bufferDays))
-          : (med.reorder_threshold || 20);
+          : (med.reorder_threshold ?? 20);
 
         needsReorder = med.total_stock <= effectiveThreshold;
         if (needsReorder) {
@@ -246,13 +246,14 @@ router.post('/', (req, res) => {
     const createPoTx = db.transaction((orderItems) => {
       let totalAmount = 0;
       for (const item of orderItems) {
-        const qty = parseInt(item.quantity_ordered);
+        const qty = parseInt(item.quantity_ordered, 10);
         const cost = parseFloat(item.unit_cost);
-        if (isNaN(qty) || qty <= 0 || isNaN(cost) || cost <= 0) {
+        if (isNaN(qty) || qty <= 0 || !Number.isInteger(Number(item.quantity_ordered)) || isNaN(cost) || !isFinite(cost) || cost <= 0) {
           throw new Error('All order items must have positive quantity and unit cost.');
         }
-        totalAmount += qty * cost;
+        totalAmount += Math.round(qty * cost * 100) / 100;
       }
+      totalAmount = Math.round(totalAmount * 100) / 100;
 
       const insertPo = db.prepare(`
         INSERT INTO purchase_orders (
@@ -276,9 +277,9 @@ router.post('/', (req, res) => {
       `);
 
       for (const item of orderItems) {
-        const qty = parseInt(item.quantity_ordered);
+        const qty = parseInt(item.quantity_ordered, 10);
         const cost = parseFloat(item.unit_cost);
-        insertItem.run(poId, item.medicine_id, qty, cost, qty * cost, item.notes || '');
+        insertItem.run(poId, item.medicine_id, qty, cost, Math.round(qty * cost * 100) / 100, item.notes || '');
       }
 
       logAudit(
@@ -362,10 +363,12 @@ router.post('/:id/receive', (req, res) => {
     const {
       deliveries, // array of { item_id, quantity_received, batch_number, manufacturing_date, expiration_date, unit_cost, selling_price, supplier_dr_number }
       received_items,
-      operator_name = 'Lourdes Gincen L. Cesista',
+      operator_name,
       delivery_notes,
       supplier_dr_number
     } = req.body || {};
+
+    const operator = req.user?.username || (operator_name && operator_name.trim()) || 'admin';
 
     const itemsToReceive = (deliveries && Array.isArray(deliveries) && deliveries.length > 0)
       ? deliveries
@@ -398,10 +401,14 @@ router.post('/:id/receive', (req, res) => {
         const { batch_number, manufacturing_date, expiration_date, unit_cost, selling_price } = del;
         const targetItemId = del.item_id ?? del.po_item_id ?? del.id;
         const rawQty = del.quantity_received !== undefined ? del.quantity_received : del.quantity_to_receive;
-        const qtyReceived = parseInt(rawQty);
+        
+        if (rawQty === undefined || rawQty === null || rawQty === '' || rawQty === 0 || rawQty === '0') continue; // skip unreceived
+        const qtyReceived = parseInt(rawQty, 10);
         const itemDrNumber = (del.supplier_dr_number || finalDrNumber || '').trim();
 
-        if (isNaN(qtyReceived) || qtyReceived <= 0) continue; // skip zero/unreceived lines
+        if (isNaN(qtyReceived) || qtyReceived <= 0 || !Number.isInteger(Number(rawQty))) {
+          throw new Error(`Received quantity for ${batch_number || 'item'} must be a positive whole number.`);
+        }
 
         if (!batch_number || !expiration_date) {
           throw new Error('Batch number and expiration date are required for all received items.');
@@ -423,8 +430,10 @@ router.post('/:id/receive', (req, res) => {
         }
 
         const med = db.prepare('SELECT * FROM medicines WHERE id = ?').get(item.medicine_id);
-        const cost = parseFloat(unit_cost) || item.unit_cost;
-        const price = parseFloat(selling_price) || (cost * 1.4); // fallback 40% markup if unset
+        const parsedCost = unit_cost !== undefined ? parseFloat(unit_cost) : item.unit_cost;
+        const cost = (!isNaN(parsedCost) && isFinite(parsedCost) && parsedCost > 0) ? parsedCost : item.unit_cost;
+        const parsedPrice = selling_price !== undefined ? parseFloat(selling_price) : (cost * 1.4);
+        const price = (!isNaN(parsedPrice) && isFinite(parsedPrice) && parsedPrice > 0) ? Math.round(parsedPrice * 100) / 100 : Math.round(cost * 1.4 * 100) / 100;
 
         // 1. Insert into batches with supplier_dr_number
         const insertBatch = db.prepare(`
@@ -467,9 +476,9 @@ router.post('/:id/receive', (req, res) => {
           newBatchId,
           qtyReceived,
           cost,
-          qtyReceived * cost,
+          Math.round(qtyReceived * cost * 100) / 100,
           refNo,
-          operator_name,
+          operator,
           `Stock-in from Purchase Order ${po.po_number}${itemDrNumber ? ` (DR/SI: ${itemDrNumber})` : ''}: Batch ${batch_number}`
         );
 
@@ -491,6 +500,10 @@ router.post('/:id/receive', (req, res) => {
           quantity_received: qtyReceived,
           expiration_date
         });
+      }
+
+      if (createdBatches.length === 0) {
+        throw new Error('Please specify a positive received quantity greater than zero for at least one item.');
       }
 
       // Check overall PO status
@@ -516,7 +529,7 @@ router.post('/:id/receive', (req, res) => {
           is_fully_received: isFullyReceived,
           delivery_notes: delivery_notes || ''
         },
-        operator_name
+        operator
       );
 
       return {

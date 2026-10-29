@@ -4,6 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
 const { db, logAudit, getLocalDateString, createDatabaseBackup, safelyRestoreDatabase, verifyPassword } = require('../db');
+const { requireAdminRole } = require('../middleware/authMiddleware');
 
 const dbDir = path.join(__dirname, '../data');
 const backupDir = path.join(dbDir, 'backups');
@@ -156,7 +157,7 @@ router.post('/export-removable', async (req, res) => {
 });
 
 // POST safely restore database from backup with password verification
-router.post('/restore', async (req, res) => {
+router.post('/restore', requireAdminRole, async (req, res) => {
   try {
     const { password, backup_filename, backup_path, operator_name = 'Lourdes Gincen L. Cesista' } = req.body || {};
 

@@ -34,9 +34,9 @@ export default function EditMedicineModal({ isOpen, onClose, medicine, onMedicin
         dosage_form: medicine.dosage_form || 'Tablet',
         category: medicine.category || 'Analgesic / Antipyretic',
         unit_of_measure: medicine.unit_of_measure || 'Tablet',
-        reorder_threshold: medicine.reorder_threshold || 20,
-        supplier_lead_time_days: medicine.supplier_lead_time_days || 5,
-        buffer_days: medicine.buffer_days || 3,
+        reorder_threshold: (medicine.reorder_threshold !== undefined && medicine.reorder_threshold !== null) ? medicine.reorder_threshold : 20,
+        supplier_lead_time_days: (medicine.supplier_lead_time_days !== undefined && medicine.supplier_lead_time_days !== null) ? medicine.supplier_lead_time_days : 5,
+        buffer_days: (medicine.buffer_days !== undefined && medicine.buffer_days !== null) ? medicine.buffer_days : 3,
         supplier_name: medicine.supplier_name || '',
         barcode: medicine.barcode || '',
         description: medicine.description || ''
@@ -44,6 +44,15 @@ export default function EditMedicineModal({ isOpen, onClose, medicine, onMedicin
       setError(null);
     }
   }, [medicine]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
 
   if (!isOpen || !medicine) return null;
 
@@ -54,8 +63,26 @@ export default function EditMedicineModal({ isOpen, onClose, medicine, onMedicin
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
+    if (loading) return;
     setError(null);
+
+    const reorder = parseInt(formData.reorder_threshold, 10);
+    const leadTime = parseInt(formData.supplier_lead_time_days, 10);
+    const buffer = parseInt(formData.buffer_days, 10);
+    if (isNaN(reorder) || reorder < 0) {
+      setError('Reorder threshold must be a non-negative whole number.');
+      return;
+    }
+    if (isNaN(leadTime) || leadTime < 0) {
+      setError('Supplier lead time must be a non-negative whole number.');
+      return;
+    }
+    if (isNaN(buffer) || buffer < 0) {
+      setError('Safety buffer days must be a non-negative whole number.');
+      return;
+    }
+
+    setLoading(true);
 
     try {
       const res = await fetch(`/api/medicines/${medicine.id}`, {
@@ -63,9 +90,9 @@ export default function EditMedicineModal({ isOpen, onClose, medicine, onMedicin
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           ...formData,
-          reorder_threshold: parseInt(formData.reorder_threshold),
-          supplier_lead_time_days: parseInt(formData.supplier_lead_time_days),
-          buffer_days: parseInt(formData.buffer_days)
+          reorder_threshold: reorder,
+          supplier_lead_time_days: leadTime,
+          buffer_days: buffer
         })
       });
 
@@ -82,7 +109,10 @@ export default function EditMedicineModal({ isOpen, onClose, medicine, onMedicin
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md p-4 overflow-y-auto select-none animate-in fade-in">
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md p-4 overflow-y-auto select-none animate-in fade-in"
+    >
       <div className="bg-white dark:bg-[#181d26] rounded-3xl shadow-2xl max-w-xl w-full overflow-hidden border border-slate-200/90 dark:border-white/10 my-8">
         {/* Header */}
         <div className="px-6 py-4.5 bg-slate-50/90 dark:bg-[#1e2430] border-b border-slate-100 dark:border-white/10 flex items-center justify-between">

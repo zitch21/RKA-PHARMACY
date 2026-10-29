@@ -12,6 +12,29 @@
 
 let audioCtx = null;
 
+// Eagerly unlock Web Audio API on first operator interaction (mouse click, touch, or HID scanner keystroke)
+if (typeof window !== 'undefined') {
+  const unlockAudio = () => {
+    try {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (!audioCtx && AudioContextClass) {
+        audioCtx = new AudioContextClass();
+      }
+      if (audioCtx && audioCtx.state === 'suspended') {
+        audioCtx.resume().catch(() => {});
+      }
+    } catch {
+      // Non-blocking fallback
+    }
+    ['keydown', 'pointerdown', 'touchstart'].forEach(evt => {
+      window.removeEventListener(evt, unlockAudio);
+    });
+  };
+  ['keydown', 'pointerdown', 'touchstart'].forEach(evt => {
+    window.addEventListener(evt, unlockAudio, { passive: true });
+  });
+}
+
 function getAudioContext() {
   if (typeof window === 'undefined') return null;
   const AudioContextClass = window.AudioContext || window.webkitAudioContext;

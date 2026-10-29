@@ -133,17 +133,6 @@ function runActualOperationsSimulation({ days = 90, start_date = null, end_date 
         // Standard FEFO: release earliest expiration date
         available.sort((a, b) => a.expiration_date.localeCompare(b.expiration_date) || a.received_date.localeCompare(b.received_date));
       } else if (policy === 'FEFO+') {
-        // Enhanced FEFO+: Identify negative Expiry Risk Margin batches and prioritize release
-        const hasAtRisk = available.some(b => {
-          const daysToExpiry = (new Date(b.expiration_date) - txDate) / (1000 * 86400);
-          const daysToConsume = b.current_qty / (adqsMap[b.medicine_id] || 1);
-          return (daysToExpiry - daysToConsume) < 0;
-        });
-
-        if (hasAtRisk) {
-          txDemand = Math.round(txDemand * 1.25); // accelerated clinical clearance
-        }
-
         available.sort((a, b) => {
           const aDaysToExpiry = (new Date(a.expiration_date) - txDate) / (1000 * 86400);
           const bDaysToExpiry = (new Date(b.expiration_date) - txDate) / (1000 * 86400);
@@ -200,24 +189,13 @@ function runActualOperationsSimulation({ days = 90, start_date = null, end_date 
         }
 
         const baseDemand = adqsMap[m.id] || 1;
-        const variance = (Math.sin(d + m.id) * 0.25) + 1;
-        let dayDemand = Math.max(1, Math.round(baseDemand * variance));
+        let dayDemand = Math.max(1, Math.round(baseDemand));
 
         if (policy === 'FIFO') {
           available.sort((a, b) => a.received_date.localeCompare(b.received_date) || a.id - b.id);
         } else if (policy === 'FEFO') {
           available.sort((a, b) => a.expiration_date.localeCompare(b.expiration_date) || a.received_date.localeCompare(b.received_date));
         } else if (policy === 'FEFO+') {
-          const hasAtRisk = available.some(b => {
-            const daysToExpiry = (new Date(b.expiration_date) - projDate) / (1000 * 86400);
-            const daysToConsume = b.current_qty / (adqsMap[b.medicine_id] || 1);
-            return (daysToExpiry - daysToConsume) < 0;
-          });
-
-          if (hasAtRisk) {
-            dayDemand = Math.round(dayDemand * 1.3);
-          }
-
           available.sort((a, b) => {
             const aDaysToExpiry = (new Date(a.expiration_date) - projDate) / (1000 * 86400);
             const bDaysToExpiry = (new Date(b.expiration_date) - projDate) / (1000 * 86400);
@@ -272,9 +250,9 @@ function runActualOperationsSimulation({ days = 90, start_date = null, end_date 
 
   for (const m of medicines) {
     const daily = adqsMap[m.id] || 2;
-    const leadTime = m.supplier_lead_time_days || 5;
-    const buffer = m.buffer_days || 3;
-    const fixedThreshold = m.reorder_threshold || 20;
+    const leadTime = m.supplier_lead_time_days ?? 5;
+    const buffer = m.buffer_days ?? 3;
+    const fixedThreshold = m.reorder_threshold ?? 20;
     const computedThreshold = Math.ceil(daily * (leadTime + buffer));
 
     let stockStatic = fixedThreshold * 2;
@@ -285,7 +263,7 @@ function runActualOperationsSimulation({ days = 90, start_date = null, end_date 
     let orderTimerComputed = 0;
 
     for (let day = 1; day <= simHorizonDays; day++) {
-      const demand = Math.round(daily * (1 + (Math.sin(day + m.id) * 0.3)));
+      const demand = Math.max(1, Math.round(daily));
 
       if (orderTimerStatic > 0) {
         orderTimerStatic--;
@@ -362,7 +340,9 @@ function runActualOperationsSimulation({ days = 90, start_date = null, end_date 
     fefo_plus: fefoPlusResult,
     reorder_comparison: reorderComparison,
     summary_findings: {
-      best_policy_for_waste: 'FEFO+',
+      best_policy_for_waste: (fefoPlusResult.total_expired_units <= fefoResult.total_expired_units && fefoPlusResult.total_expired_units <= fifoResult.total_expired_units)
+        ? 'FEFO+'
+        : (fefoResult.total_expired_units <= fifoResult.total_expired_units ? 'FEFO' : 'FIFO'),
       waste_reduction_vs_fifo: `${(fifoResult.total_expired_units - fefoPlusResult.total_expired_units)} units (${(fifoResult.expired_percentage - fefoPlusResult.expired_percentage).toFixed(1)}% drop)`,
       waste_reduction_vs_fefo: `${(fefoResult.total_expired_units - fefoPlusResult.total_expired_units)} units (${(fefoResult.expired_percentage - fefoPlusResult.expired_percentage).toFixed(1)}% drop)`
     }

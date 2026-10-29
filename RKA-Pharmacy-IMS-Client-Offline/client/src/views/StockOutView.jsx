@@ -30,6 +30,7 @@ import {
 } from 'lucide-react';
 import OverrideModal from '../components/OverrideModal';
 import BatchStatusConfirmModal from '../components/BatchStatusConfirmModal';
+import PrintableReceiptModal from '../components/PrintableReceiptModal';
 import HelperText from '../components/HelperText';
 import { useLanguage } from '../context/LanguageContext';
 import { playScanSuccess, playScanError, playWarningBeep } from '../utils/audioTelemetry';
@@ -49,6 +50,9 @@ export default function StockOutView({
   batches,
   onRefresh,
   onNavigate: _onNavigate,
+  onOpenAddMedicine,
+  externalBarcode,
+  onClearExternalBarcode,
   uiMode = 'clean',
   onOpenHelp,
   currentUser,
@@ -58,6 +62,16 @@ export default function StockOutView({
 }) {
   const { t } = useLanguage();
   const [dispenseMode, setDispenseMode] = useState('single'); // 'single' | 'prescription'
+  const [unregisteredBarcode, setUnregisteredBarcode] = useState(null);
+  const [rapidScan, setRapidScan] = useState(true);
+  const [cashTendered, setCashTendered] = useState('');
+
+  useEffect(() => {
+    if (externalBarcode) {
+      processScannedBarcode(externalBarcode);
+      onClearExternalBarcode?.();
+    }
+  }, [externalBarcode]);
 
   /* Today Sales Sub-Tab State */
   const [todaySales, setTodaySales] = useState([]);
@@ -120,9 +134,10 @@ export default function StockOutView({
   const [pendingStatusConfirmItem, setPendingStatusConfirmItem] = useState(null);
 
   /* Status & receipt */
-  const [loading,     setLoading]     = useState(false);
-  const [error,       setError]       = useState(null);
-  const [lastReceipt, setLastReceipt] = useState(null);
+  const [loading,          setLoading]          = useState(false);
+  const [error,            setError]            = useState(null);
+  const [lastReceipt,      setLastReceipt]      = useState(null);
+  const [scanAnnouncement, setScanAnnouncement] = useState('');
 
   const barcodeInputRef = useRef(null);
 
@@ -177,12 +192,47 @@ export default function StockOutView({
   const unexpiredBatches    = medBatches.filter(b => b.days_to_expiry > 0);
   const totalUnexpiredStock = unexpiredBatches.reduce((acc, b) => acc + b.current_quantity, 0);
 
+  const addItemToCartInternal = ({ medicine, batch, quantity, unitPrice, isOverride, overrideReason, statusConfirmed, expiryStatus }) => {
+    setCart(prev => {
+      const idx = prev.findIndex(i => i.batch_id === batch.id);
+      if (idx >= 0) {
+        const existing = prev[idx];
+        const newQty = existing.quantity + quantity;
+        if (newQty > batch.current_quantity) { setError(`Cannot add ${quantity} more. Exceeds batch total stock (${batch.current_quantity}).`); return prev; }
+        const updated = [...prev];
+        const newSubtotal = Math.round(newQty * unitPrice * 100) / 100;
+        updated[idx] = { ...existing, quantity: newQty, subtotal: newSubtotal, is_override: isOverride || existing.is_override, override_reason: overrideReason || existing.override_reason, status_confirmed: statusConfirmed || existing.status_confirmed };
+        return updated;
+      }
+      return [...prev, {
+        id: Date.now() + Math.random(),
+        medicine_id: medicine.id,
+        batch_id: batch.id,
+        brand_name: medicine.brand_name,
+        generic_name: medicine.generic_name,
+        dosage_strength: medicine.dosage_strength,
+        batch_number: batch.batch_number,
+        expiration_date: batch.expiration_date,
+        days_to_expiry: batch.days_to_expiry,
+        expiry_tier: batch.expiry_tier,
+        unit_price: unitPrice,
+        quantity,
+        subtotal: Math.round(quantity * unitPrice * 100) / 100,
+        is_override: isOverride,
+        override_reason: overrideReason,
+        status_confirmed: statusConfirmed,
+        expiry_status: expiryStatus,
+      }];
+    });
+  };
+
   /* ── Barcode processing ── */
   const processScannedBarcode = (query) => {
     if (!query) {
       playScanError();
       return;
     }
+    window.dispatchEvent(new CustomEvent('rka_barcode_scanned', { detail: { barcode: query } }));
     const match = medList.find(
       m => m.barcode?.toLowerCase() === query.toLowerCase() ||
            m.code?.toLowerCase()    === query.toLowerCase()
@@ -195,11 +245,13 @@ export default function StockOutView({
       if (activeUnexp.length === 0) {
         playScanError();
         setError(`Stock Depleted: No unexpired inventory available for ${match.brand_name}.`);
+        setScanAnnouncement(`Stock Depleted: No unexpired inventory available for ${match.brand_name}.`);
         return;
       }
 
       const earliest = activeUnexp.sort((a, b) => new Date(a.expiration_date) - new Date(b.expiration_date))[0];
-      if (earliest && (earliest.expiry_tier === 'Critical' || (earliest.days_to_expiry > 0 && earliest.days_to_expiry <= 30))) {
+      const isCriticalOrNearExpiry = earliest && (earliest.expiry_tier === 'Critical' || (earliest.days_to_expiry > 0 && earliest.days_to_expiry <= 30));
+      if (isCriticalOrNearExpiry) {
         playWarningBeep();
       } else {
         playScanSuccess();
@@ -210,6 +262,7 @@ export default function StockOutView({
         if (existingIdx >= 0) {
           setRxLines(prev => prev.map((l, i) => i === existingIdx
             ? { ...l, quantity: ((parseInt(l.quantity, 10) || 0) + 1).toString() } : l));
+          setScanAnnouncement(`Prescription line quantity for ${match.brand_name} incremented.`);
         } else {
           const emptyIdx = rxLines.findIndex(l => !l.medicine_id);
           if (emptyIdx >= 0) {
@@ -218,15 +271,45 @@ export default function StockOutView({
           } else {
             setRxLines(prev => [...prev, { id: Date.now() + Math.random(), medicine_id: match.id.toString(), quantity: '1', instructions: '' }]);
           }
+          setScanAnnouncement(`Added ${match.brand_name} to prescription lines.`);
+        }
+      } else if (rapidScan && earliest) {
+        if (isCriticalOrNearExpiry) {
+          // CLINICAL SAFETY GATE:
+          // Do not bypass confirmation when stock is within Critical countdown horizon (1-30 days)
+          setPendingStatusConfirmItem({
+            medicine: match,
+            selectedBatch: earliest,
+            quantity: 1,
+            unitPrice: earliest.selling_price
+          });
+          setStatusConfirmModalOpen(true);
+          setScanAnnouncement(`Warning: ${match.brand_name} lot ${earliest.batch_number} is near expiry (${earliest.days_to_expiry} days remaining). Confirmation required.`);
+        } else {
+          addItemToCartInternal({
+            medicine: match,
+            batch: earliest,
+            quantity: 1,
+            unitPrice: earliest.selling_price,
+            isOverride: false,
+            overrideReason: null,
+            statusConfirmed: false,
+            expiryStatus: earliest.expiry_tier,
+          });
+          setScanAnnouncement(`Added ${match.brand_name} ${match.dosage_strength || ''} to cart.`);
+          resetSingleSelection();
         }
       } else {
         handleSelectMedicine(match);
       }
       setBarcodeInput('');
       setError(null);
+      setUnregisteredBarcode(null);
     } else {
       playScanError();
+      setUnregisteredBarcode(query);
       setError(`No registered medicine found for barcode "${query}".`);
+      setScanAnnouncement(`No registered medicine found for barcode ${query}.`);
     }
   };
 
@@ -239,28 +322,97 @@ export default function StockOutView({
     processScannedBarcode(barcodeInput.trim());
   };
 
-  /* Global scanner buffer */
+  /* Global scanner buffer (Ref-stabilized against stale closures) */
+  const processScannedBarcodeRef = useRef(processScannedBarcode);
+  useEffect(() => {
+    processScannedBarcodeRef.current = processScannedBarcode;
+  });
+
   useEffect(() => {
     let buffer = '';
     let lastKeyTime = Date.now();
+    let burstStart = Date.now();
+
     const handler = (e) => {
-      const tag = e.target?.tagName?.toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+      // Modal isolation: pause background barcode scanning if modal dialog or receipt overlay is open
+      if (
+        overrideModalOpen ||
+        statusConfirmModalOpen ||
+        Boolean(lastReceipt) ||
+        document.querySelector('[role="dialog"]') ||
+        document.querySelector('.modal-open')
+      ) {
+        buffer = '';
+        return;
+      }
+
       const now = Date.now();
-      if (now - lastKeyTime > 120) buffer = '';
+      const interval = now - lastKeyTime;
       lastKeyTime = now;
+
+      // Human typing is spaced >100ms; scanner HID bursts are spaced <65ms
+      if (interval > 65) {
+        buffer = '';
+        burstStart = now;
+      }
+
+      const isBarcodeInput = e.target === barcodeInputRef.current;
+      const tag = e.target?.tagName?.toLowerCase();
+      const isOtherInput = (tag === 'input' || tag === 'textarea' || tag === 'select') && !isBarcodeInput;
+
       if (e.key === 'Enter') {
-        if (buffer.length >= 2) { e.preventDefault(); processScannedBarcode(buffer.trim()); buffer = ''; }
-      } else if (e.key?.length === 1) {
+        if (buffer.length >= 2 && (now - burstStart) < 600) {
+          e.preventDefault();
+          const scannedCode = buffer.trim();
+          buffer = '';
+
+          // If barcode scanner discharged while focus was accidentally in Notes/Ref field, clean that input
+          if (isOtherInput && e.target && typeof e.target.value === 'string') {
+            const val = e.target.value;
+            if (val.endsWith(scannedCode)) {
+              e.target.value = val.slice(0, -scannedCode.length).trim();
+              e.target.dispatchEvent(new Event('input', { bubbles: true }));
+            }
+          }
+
+          processScannedBarcodeRef.current(scannedCode);
+          barcodeInputRef.current?.focus();
+        } else {
+          buffer = '';
+        }
+      } else if (e.key && e.key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
         buffer += e.key;
       }
     };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [medList]);
+
+    window.addEventListener('keydown', handler, true);
+    return () => window.removeEventListener('keydown', handler, true);
+  }, [overrideModalOpen, statusConfirmModalOpen, lastReceipt]);
 
   /* ── Medicine select ── */
   const handleSelectMedicine = (med) => {
+    // Multi-scan increment: if medicine is already selected, increment quantity up to available batch stock
+    if (parseInt(selectedMedId) === med.id) {
+      const active = batchList
+        .filter(b => b.medicine_id === med.id && b.status === 'active' && b.current_quantity > 0)
+        .sort((a, b) => new Date(a.expiration_date) - new Date(b.expiration_date));
+      const targetBatch = active.find(b => b.id === parseInt(selectedBatchId)) || active.find(b => b.days_to_expiry > 0) || active[0];
+      if (targetBatch) {
+        const nextQty = (parseInt(quantityInput, 10) || 0) + 1;
+        if (nextQty > targetBatch.current_quantity) {
+          setError(`Stock Limit Reached: Maximum available quantity in batch is ${targetBatch.current_quantity}.`);
+          setScanAnnouncement(`Cannot increment. Batch stock limit of ${targetBatch.current_quantity} reached.`);
+          playScanError();
+          return;
+        }
+        setQuantityInput(nextQty);
+        setError(null);
+        setScanAnnouncement(`Updated quantity for ${med.brand_name} to ${nextQty}.`);
+        playScanSuccess();
+        return;
+      }
+    }
+
     setSelectedMedId(med.id);
     const active = batchList
       .filter(b => b.medicine_id === med.id && b.status === 'active' && b.current_quantity > 0)
@@ -269,6 +421,7 @@ export default function StockOutView({
     setSelectedBatchId(early?.id || active[0]?.id || '');
     setQuantityInput(1);
     setError(null);
+    setScanAnnouncement(`Selected ${med.brand_name} ${med.dosage_strength || ''}, quantity 1.`);
 
     if (early && (early.expiry_tier === 'Critical' || (early.days_to_expiry > 0 && early.days_to_expiry <= 30))) {
       playWarningBeep();
@@ -346,39 +499,6 @@ export default function StockOutView({
     resetSingleSelection();
   };
 
-  const addItemToCartInternal = ({ medicine, batch, quantity, unitPrice, isOverride, overrideReason, statusConfirmed, expiryStatus }) => {
-    setCart(prev => {
-      const idx = prev.findIndex(i => i.batch_id === batch.id);
-      if (idx >= 0) {
-        const existing = prev[idx];
-        const newQty = existing.quantity + quantity;
-        if (newQty > batch.current_quantity) { setError(`Cannot add ${quantity} more. Exceeds batch total stock (${batch.current_quantity}).`); return prev; }
-        const updated = [...prev];
-        updated[idx] = { ...existing, quantity: newQty, subtotal: newQty * unitPrice, is_override: isOverride || existing.is_override, override_reason: overrideReason || existing.override_reason, status_confirmed: statusConfirmed || existing.status_confirmed };
-        return updated;
-      }
-      return [...prev, {
-        id: Date.now() + Math.random(),
-        medicine_id: medicine.id,
-        batch_id: batch.id,
-        brand_name: medicine.brand_name,
-        generic_name: medicine.generic_name,
-        dosage_strength: medicine.dosage_strength,
-        batch_number: batch.batch_number,
-        expiration_date: batch.expiration_date,
-        days_to_expiry: batch.days_to_expiry,
-        expiry_tier: batch.expiry_tier,
-        unit_price: unitPrice,
-        quantity,
-        subtotal: quantity * unitPrice,
-        is_override: isOverride,
-        override_reason: overrideReason,
-        status_confirmed: statusConfirmed,
-        expiry_status: expiryStatus,
-      }];
-    });
-  };
-
   const handleConfirmOverride = (reason) => {
     if (!pendingOverrideItem) return;
     addItemToCartInternal({ medicine: pendingOverrideItem.medicine, batch: pendingOverrideItem.selectedBatch, quantity: pendingOverrideItem.quantity, unitPrice: pendingOverrideItem.selectedBatch.selling_price, isOverride: true, overrideReason: reason, statusConfirmed: false, expiryStatus: pendingOverrideItem.selectedBatch.expiry_tier });
@@ -433,11 +553,11 @@ export default function StockOutView({
   };
 
   const handleRemoveFromCart = (id) => setCart(prev => prev.filter(item => item.id !== id));
-  const totalCartAmount = cart.reduce((sum, item) => sum + item.subtotal, 0);
+  const totalCartAmount = Math.round(cart.reduce((sum, item) => sum + item.subtotal, 0) * 100) / 100;
 
   /* ── Checkout ── */
   const handleCheckout = async () => {
-    if (cart.length === 0) return;
+    if (cart.length === 0 || loading) return;
     setLoading(true); setError(null);
     try {
       const res = await fetch('/api/transactions/stock-out', {
@@ -460,8 +580,21 @@ export default function StockOutView({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to complete dispensing');
-      setLastReceipt({ receipt_no: data.receipt_no, date: formatDatePH(new Date(), 'full'), items: [...cart], total: totalCartAmount, notes: dispenseNotes, reference: patientOrRef });
-      setCart([]); setPatientOrRef(''); setDispenseNotes('');
+      const tenderedNum = parseFloat(cashTendered);
+      const effectiveTendered = !isNaN(tenderedNum) && tenderedNum >= totalCartAmount ? tenderedNum : totalCartAmount;
+      const effectiveChange = Math.round((effectiveTendered - totalCartAmount) * 100) / 100;
+
+      setLastReceipt({
+        receipt_no: data.receipt_no,
+        date: formatDatePH(new Date(), 'full'),
+        items: [...cart],
+        total: totalCartAmount,
+        cashTendered: effectiveTendered,
+        change: effectiveChange,
+        notes: dispenseNotes,
+        reference: patientOrRef,
+      });
+      setCart([]); setPatientOrRef(''); setDispenseNotes(''); setCashTendered('');
       onRefresh();
       try { confetti({ particleCount: 50, spread: 60, origin: { y: 0.8 } }); } catch {}
     } catch (err) {
@@ -502,6 +635,10 @@ export default function StockOutView({
 
   return (
     <div className={uiMode === 'clean' ? 'space-y-4 pb-8' : 'space-y-5 pb-12'}>
+      {/* A11y Live Announcement Region (WCAG 2.1 Level AA 4.1.3 Status Messages) */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">
+        {scanAnnouncement}
+      </div>
 
       {/* ══ Page Header ══ */}
       <div className="bg-white rounded-xl border border-zinc-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5">
@@ -537,11 +674,26 @@ export default function StockOutView({
               {uiMode === 'clean' ? t('barcode_scanner_rapid', 'Barcode Scanner / Rapid Medicine Finder') : t('global_barcode_input', 'Global Barcode Input')}
             </span>
           </div>
-          <kbd className={`px-2 py-0.5 rounded text-[10px] tabular-nums font-bold ${
-            uiMode === 'clean' ? 'bg-teal-50 dark:bg-teal-900/30 text-teal-800 dark:text-teal-300 border border-teal-200 dark:border-teal-700/40' : 'bg-slate-800 border border-slate-700 text-slate-300'
-          }`}>
-            {t('f2_to_focus', 'F2 to focus')}
-          </kbd>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setRapidScan(prev => !prev)}
+              className={`px-2.5 py-1 rounded-lg text-xs font-bold transition flex items-center gap-1.5 cursor-pointer ${
+                rapidScan
+                  ? 'bg-teal-600 text-white shadow-xs hover:bg-teal-700'
+                  : 'bg-zinc-200 dark:bg-white/10 text-zinc-600 dark:text-zinc-300 hover:bg-zinc-300'
+              }`}
+              title={t('rapid_scan_toggle_tip', 'When enabled, scanning a barcode directly adds 1 unit to the cart using the earliest FEFO batch')}
+            >
+              <Zap className="w-3.5 h-3.5" />
+              <span>{rapidScan ? t('rapid_scan_on', 'Auto-Add: ON') : t('rapid_scan_off', 'Auto-Add: OFF')}</span>
+            </button>
+            <kbd className={`px-2 py-0.5 rounded text-[10px] tabular-nums font-bold ${
+              uiMode === 'clean' ? 'bg-teal-50 dark:bg-teal-900/30 text-teal-800 dark:text-teal-300 border border-teal-200 dark:border-teal-700/40' : 'bg-slate-800 border border-slate-700 text-slate-300'
+            }`}>
+              {t('f2_to_focus', 'F2 to focus')}
+            </kbd>
+          </div>
         </div>
         <form onSubmit={handleBarcodeSubmit} className="flex items-center gap-3">
           <Barcode className={`w-6 h-6 shrink-0 ${uiMode === 'clean' ? 'text-teal-600' : 'text-zinc-500'}`} />
@@ -578,10 +730,34 @@ export default function StockOutView({
         </div>
       )}
       {error && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center gap-2">
-          <AlertOctagon className="w-4 h-4 text-rose-600 shrink-0" />
-          <span className="font-medium">{error}</span>
-          <button type="button" onClick={() => setError(null)} className="ml-auto text-rose-400 hover:text-rose-700 font-bold"><X className="w-3.5 h-3.5" /></button>
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center justify-between flex-wrap gap-2 shadow-xs">
+          <div className="flex items-center gap-2">
+            <AlertOctagon className="w-4 h-4 text-rose-600 shrink-0" />
+            <span className="font-medium">{error}</span>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            {unregisteredBarcode && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenAddMedicine?.(unregisteredBarcode);
+                  setError(null);
+                  setUnregisteredBarcode(null);
+                }}
+                className="px-2.5 py-1 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-xs inline-flex items-center gap-1 transition cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t('btn_register_barcode_now', 'Register')} "{unregisteredBarcode}" {t('btn_now', 'Now')}</span>
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => { setError(null); setUnregisteredBarcode(null); }}
+              className="text-rose-400 hover:text-rose-700 font-bold cursor-pointer"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
@@ -672,8 +848,8 @@ export default function StockOutView({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-100">
-                  {todaySales
-                    .filter(tx => {
+                  {(() => {
+                    const filtered = todaySales.filter(tx => {
                       if (!todaySalesSearch) return true;
                       const q = todaySalesSearch.toLowerCase();
                       return (
@@ -682,8 +858,33 @@ export default function StockOutView({
                         (tx.batch_number && tx.batch_number.toLowerCase().includes(q)) ||
                         (tx.notes && tx.notes.toLowerCase().includes(q))
                       );
-                    })
-                    .map((tx) => {
+                    });
+
+                    if (todaySales.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                            <Receipt className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                            <p className="font-semibold text-slate-600">{t('no_tx_today', 'No transactions recorded today yet.')}</p>
+                            <p className="text-[11px] mt-0.5">{t('stockout_no_tx_desc', 'Dispensed transactions made today will appear here for audit and instant receipt reprinting.')}</p>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    if (filtered.length === 0) {
+                      return (
+                        <tr>
+                          <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
+                            <Search className="w-8 h-8 mx-auto mb-2 text-slate-300" />
+                            <p className="font-semibold text-slate-600">{t('no_matching_tx', 'No transactions matching your search.')}</p>
+                            <p className="text-[11px] mt-0.5">{t('try_adjusting_search', 'Try adjusting your search keywords.')}</p>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    return filtered.map((tx) => {
                       const qty = Math.abs(Number(tx.quantity || 1));
                       const price = Number(tx.selling_price || tx.unit_price || 0);
                       const subtotal = Math.abs(Number(tx.total_amount || 0)) || (qty * price);
@@ -724,16 +925,8 @@ export default function StockOutView({
                           </td>
                         </tr>
                       );
-                    })}
-                  {todaySales.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="px-4 py-12 text-center text-slate-400">
-                        <Receipt className="w-8 h-8 mx-auto mb-2 text-slate-300" />
-                        <p className="font-semibold text-slate-600">{t('no_tx_today', 'No transactions recorded today yet.')}</p>
-                        <p className="text-[11px] mt-0.5">{t('stockout_no_tx_desc', 'Dispensed transactions made today will appear here for audit and instant receipt reprinting.')}</p>
-                      </td>
-                    </tr>
-                  )}
+                    });
+                  })()}
                 </tbody>
               </table>
             </div>
@@ -1477,12 +1670,57 @@ export default function StockOutView({
             </div>
           </div>
 
-          {/* Summary Bar + CTA */}
-          <div className="px-4 pb-4 pt-3 border-t border-zinc-200">
-            <div className="flex justify-between items-center mb-3">
+          {/* Summary Bar + Cash Tendered + CTA */}
+          <div className="px-4 pb-4 pt-3 border-t border-zinc-200 space-y-3">
+            <div className="flex justify-between items-center">
               <span className="text-xs font-semibold text-zinc-500">{t('dispense_total_payable', 'Total Payable:')}</span>
               <span className="text-xl font-extrabold text-slate-900 tabular-nums">₱{totalCartAmount.toFixed(2)}</span>
             </div>
+
+            {cart.length > 0 && (
+              <div className="space-y-2 pt-2 border-t border-zinc-100">
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="font-bold text-slate-700">{t('cash_tendered_label', 'Cash Tendered (₱):')}</span>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => setCashTendered(totalCartAmount.toFixed(2))}
+                      className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 transition cursor-pointer"
+                    >
+                      {t('btn_exact_amount', 'Exact')}
+                    </button>
+                    {[50, 100, 200, 500, 1000].filter(amt => amt >= totalCartAmount).slice(0, 3).map(amt => (
+                      <button
+                        key={amt}
+                        type="button"
+                        onClick={() => setCashTendered(amt.toString())}
+                        className="px-2 py-0.5 rounded text-[10px] font-bold bg-slate-100 hover:bg-teal-100 text-slate-700 hover:text-teal-900 border border-slate-300 transition cursor-pointer"
+                      >
+                        ₱{amt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <input
+                  type="number"
+                  min="0"
+                  step="any"
+                  placeholder="0.00"
+                  value={cashTendered}
+                  onChange={e => setCashTendered(e.target.value)}
+                  className="w-full px-3 py-1.5 text-sm font-bold text-right border border-zinc-300 rounded-lg focus:ring-2 focus:ring-teal-500 tabular-nums bg-white"
+                />
+                {parseFloat(cashTendered) >= totalCartAmount && (
+                  <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-lg flex items-center justify-between text-emerald-950 font-bold text-xs">
+                    <span>{t('change_label', 'Change / Sukli:')}</span>
+                    <span className="text-sm font-black text-emerald-800 tabular-nums">
+                      ₱{(parseFloat(cashTendered) - totalCartAmount).toFixed(2)}
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
+
             <button
               type="button"
               disabled={loading || cart.length === 0}
@@ -1498,66 +1736,11 @@ export default function StockOutView({
       )}
 
       {/* ══ Printable Receipt Modal ══ */}
-      {lastReceipt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-          <div className="bg-white dark:bg-[#161b22] rounded-3xl shadow-2xl max-w-sm w-full overflow-hidden border border-slate-200/90 dark:border-white/10">
-            <div className="p-4 bg-slate-50/90 dark:bg-[#1e2430] border-b border-slate-100 dark:border-white/10 flex justify-between items-center no-print">
-              <span className="font-bold text-xs flex items-center gap-2 text-slate-900 dark:text-white">
-                <div className="w-6 h-6 rounded-lg bg-teal-500/10 dark:bg-teal-500/20 border border-teal-500/20 text-teal-600 dark:text-teal-400 flex items-center justify-center shrink-0">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                </div>
-                <span>{t('dispense_completed_receipt', 'Dispense Completed')} — {lastReceipt.receipt_no}</span>
-              </span>
-              <button onClick={() => setLastReceipt(null)} className="p-1 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-white/5 transition cursor-pointer">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-            {/* Receipt Paper */}
-            <div className="p-6 tabular-nums text-xs text-slate-800 printable-area bg-white">
-              <div className="text-center pb-3 border-b border-dashed border-zinc-300 mb-3">
-                <h4 className="font-extrabold text-sm uppercase">{t('app_title', 'R.K.A PHARMACY')}</h4>
-                <p className="text-[10px] text-zinc-500">San Antonio, Agoo, La Union</p>
-                <p className="text-[9px] text-zinc-400">{t('ims_app_subtag', 'FEFO-Tracked Clinic Pharmacy IMS')}</p>
-              </div>
-              <div className="space-y-1 text-[10px] border-b border-dashed border-zinc-300 pb-3 mb-3">
-                <div className="flex justify-between"><span className="text-zinc-400">{t('receipt_num_label', 'Receipt #:')}</span><span className="font-bold">{lastReceipt.receipt_no}</span></div>
-                <div className="flex justify-between"><span className="text-zinc-400">{t('date_label', 'Date:')}</span><span>{lastReceipt.date}</span></div>
-                {lastReceipt.reference && <div className="flex justify-between"><span className="text-zinc-400">{t('ref_patient_label', 'Ref / Patient:')}</span><span className="font-bold">{lastReceipt.reference}</span></div>}
-                {currentUser && <div className="flex justify-between"><span className="text-zinc-400">{t('dispenser_label', 'Dispenser:')}</span><span>{currentUser.full_name || 'Lourdes Gincen L. Cesista'}</span></div>}
-              </div>
-              <div className="space-y-2 border-b border-dashed border-zinc-300 pb-3 mb-3">
-                {lastReceipt.items.map((item, idx) => (
-                  <div key={idx} className="flex justify-between items-start">
-                    <div>
-                      <div className="font-bold">{item.brand_name}</div>
-                      <div className="text-[9px] text-zinc-400">{item.quantity}× @ ₱{item.unit_price.toFixed(2)} · Lot: {item.batch_number} · Exp: {formatDatePH(item.expiration_date, 'compact')}</div>
-                    </div>
-                    <span className="font-bold tabular-nums">₱{item.subtotal.toFixed(2)}</span>
-                  </div>
-                ))}
-              </div>
-              <div className="flex justify-between items-center text-sm font-black pt-1 mb-4 tabular-nums">
-                <span>{t('total_label', 'TOTAL:')}</span>
-                <span>₱{lastReceipt.total.toFixed(2)}</span>
-              </div>
-              <div className="text-center text-[9px] text-zinc-400 space-y-0.5">
-                <p>{t('receipt_thank_you', 'Thank you for choosing R.K.A Pharmacy!')}</p>
-                <p>{t('receipt_fefo_notice', 'FEFO-Tracked for Patient Safety & Quality')}</p>
-              </div>
-            </div>
-            <div className="p-3.5 bg-slate-50/90 dark:bg-[#1e2430] border-t border-slate-100 dark:border-white/10 flex gap-2 no-print">
-              <button type="button" onClick={() => window.print()}
-                className="flex-1 py-2 bg-teal-600 hover:bg-teal-700 text-white rounded-xl text-xs font-bold transition flex items-center justify-center gap-1.5 shadow-xs cursor-pointer">
-                <Printer className="w-3.5 h-3.5" /> {t('print_receipt_btn', 'Print Receipt')}
-              </button>
-              <button type="button" onClick={() => setLastReceipt(null)}
-                className="px-4 py-2 border border-slate-200 dark:border-white/10 bg-white dark:bg-[#21262d] hover:bg-slate-50 dark:hover:bg-white/5 text-slate-700 dark:text-slate-200 rounded-xl text-xs font-semibold transition cursor-pointer">
-                {t('btn_done', 'Done')}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <PrintableReceiptModal
+        receipt={lastReceipt}
+        onClose={() => setLastReceipt(null)}
+        currentUser={currentUser}
+      />
 
       {/* Override Modal */}
       <OverrideModal

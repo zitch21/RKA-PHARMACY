@@ -4,8 +4,8 @@ function seedDatabase(targetDb = db) {
   // Check if system was factory wiped and auto-seed is disabled
   try {
     const wipedSetting = targetDb.prepare("SELECT value FROM settings WHERE key = 'system_wiped'").get();
-    if (wipedSetting && wipedSetting.value === 'true') {
-      console.log('System has been factory reset (system_wiped = true). Auto-seeding prevented.');
+    if (wipedSetting && (wipedSetting.value === '1' || wipedSetting.value === 'true' || String(wipedSetting.value) === '1')) {
+      console.log('System has been factory reset (system_wiped sentinel active). Auto-seeding prevented.');
       return;
     }
   } catch (err) {

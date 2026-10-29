@@ -1,39 +1,80 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { X, PlusCircle, Sparkles, Layers, Check } from 'lucide-react';
 import { useLanguage } from '../context/LanguageContext';
 import { getLocalDateISO } from '../utils/dateFormatter';
+import { PHILIPPINE_MEDICINE_PRESETS } from '../data/philippineMedicinePresets';
 
 const inputCls = "w-full px-3 py-2 text-xs border border-slate-200 dark:border-white/10 rounded-xl focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white dark:bg-[#1e2430] text-slate-800 dark:text-slate-100 placeholder:text-slate-400";
 const inputMonoCls = `${inputCls} tabular-nums`;
 
-export default function AddMedicineModal({ isOpen, onClose, onMedicineAdded }) {
-  const { t } = useLanguage();
-  const [formData, setFormData] = useState({
-    code: '',
-    barcode: '',
-    brand_name: '',
-    generic_name: '',
-    dosage_strength: '',
-    dosage_form: 'Tablet',
-    category: 'Analgesic / Antipyretic',
-    unit_of_measure: 'Tablet',
-    reorder_threshold: 30,
-    supplier_lead_time_days: 5,
-    buffer_days: 3,
-    supplier_name: 'United Laboratories (Unilab)',
-    description: '',
-    has_initial_batch: false,
-    batch_number: '',
-    expiration_date: '',
-    initial_quantity: '',
-    unit_cost: '',
-    selling_price: ''
-  });
+const initialFormState = {
+  code: '',
+  barcode: '',
+  brand_name: '',
+  generic_name: '',
+  dosage_strength: '',
+  dosage_form: 'Tablet',
+  category: 'Analgesic / Antipyretic',
+  unit_of_measure: 'Tablet',
+  reorder_threshold: 30,
+  supplier_lead_time_days: 5,
+  buffer_days: 3,
+  supplier_name: 'United Laboratories (Unilab)',
+  description: '',
+  has_initial_batch: false,
+  batch_number: '',
+  expiration_date: '',
+  initial_quantity: '',
+  unit_cost: '',
+  selling_price: ''
+};
 
+export default function AddMedicineModal({ isOpen, onClose, onMedicineAdded, initialBarcode = '' }) {
+  const { t } = useLanguage();
+  const [formData, setFormData] = useState(initialFormState);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        ...initialFormState,
+        barcode: initialBarcode || ''
+      });
+      setError(null);
+      setLoading(false);
+    }
+  }, [isOpen, initialBarcode]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
+
+  const handleSelectPreset = (preset) => {
+    if (!preset) return;
+    setFormData(prev => ({
+      ...prev,
+      brand_name: preset.brand_name,
+      generic_name: preset.generic_name,
+      dosage_strength: preset.dosage_strength,
+      dosage_form: preset.dosage_form,
+      category: preset.category,
+      unit_of_measure: preset.unit_of_measure,
+      reorder_threshold: preset.reorder_threshold,
+      supplier_lead_time_days: preset.supplier_lead_time_days,
+      buffer_days: preset.buffer_days,
+      supplier_name: preset.supplier_name,
+      description: preset.description,
+      barcode: prev.barcode ? prev.barcode : (preset.barcode || '')
+    }));
+  };
 
   const handleChange = (e) => {
     const { name, value, type, checked } = e.target;
@@ -66,7 +107,7 @@ export default function AddMedicineModal({ isOpen, onClose, onMedicineAdded }) {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setLoading(true);
+    if (loading) return;
     setError(null);
 
     if (formData.has_initial_batch) {
@@ -95,6 +136,24 @@ export default function AddMedicineModal({ isOpen, onClose, onMedicineAdded }) {
       }
     }
 
+    const reorder = parseInt(formData.reorder_threshold, 10);
+    const leadTime = parseInt(formData.supplier_lead_time_days, 10);
+    const buffer = parseInt(formData.buffer_days, 10);
+    if (isNaN(reorder) || reorder < 0) {
+      setError('Reorder threshold must be a non-negative whole number.');
+      return;
+    }
+    if (isNaN(leadTime) || leadTime < 0) {
+      setError('Supplier lead time must be a non-negative whole number.');
+      return;
+    }
+    if (isNaN(buffer) || buffer < 0) {
+      setError('Safety buffer days must be a non-negative whole number.');
+      return;
+    }
+
+    setLoading(true);
+
     try {
       const res = await fetch('/api/medicines', {
         method: 'POST',
@@ -108,9 +167,9 @@ export default function AddMedicineModal({ isOpen, onClose, onMedicineAdded }) {
           dosage_form: formData.dosage_form,
           category: formData.category,
           unit_of_measure: formData.unit_of_measure,
-          reorder_threshold: formData.reorder_threshold,
-          supplier_lead_time_days: formData.supplier_lead_time_days,
-          buffer_days: formData.buffer_days,
+          reorder_threshold: reorder,
+          supplier_lead_time_days: leadTime,
+          buffer_days: buffer,
           supplier_name: formData.supplier_name,
           description: formData.description
         })
@@ -153,7 +212,10 @@ export default function AddMedicineModal({ isOpen, onClose, onMedicineAdded }) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md p-4 overflow-y-auto select-none">
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md p-4 overflow-y-auto select-none"
+    >
       <div className="bg-white dark:bg-[#181d26] rounded-3xl shadow-2xl max-w-2xl w-full overflow-hidden border border-slate-200/90 dark:border-white/10 animate-in fade-in my-8">
         {/* Header */}
         <div className="px-6 py-4.5 bg-slate-50/90 dark:bg-[#1e2430] border-b border-slate-100 dark:border-white/10 flex items-center justify-between">
@@ -184,6 +246,39 @@ export default function AddMedicineModal({ isOpen, onClose, onMedicineAdded }) {
               {error}
             </div>
           )}
+
+          {/* Quick-Preset Template Picker */}
+          <div className="p-3 bg-teal-50/80 dark:bg-teal-950/30 border border-teal-200 dark:border-teal-800/60 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-teal-600 dark:text-teal-400 shrink-0" />
+              <div>
+                <div className="text-[11px] font-bold text-teal-900 dark:text-teal-200">
+                  {t('preset_template_title', '⚡ Fast-Fill from Standard Philippine Formularies')}
+                </div>
+                <div className="text-[10px] text-teal-700/80 dark:text-teal-300/80">
+                  {t('preset_template_sub', 'Auto-fills generic name, dosage, form, and category in 1 click')}
+                </div>
+              </div>
+            </div>
+            <select
+              defaultValue=""
+              onChange={(e) => {
+                const idx = parseInt(e.target.value, 10);
+                if (!isNaN(idx) && PHILIPPINE_MEDICINE_PRESETS[idx]) {
+                  handleSelectPreset(PHILIPPINE_MEDICINE_PRESETS[idx]);
+                  e.target.value = "";
+                }
+              }}
+              className="w-full sm:w-auto px-3 py-1.5 text-xs font-semibold bg-white dark:bg-[#1e2430] border border-teal-300 dark:border-teal-700 rounded-xl text-teal-800 dark:text-teal-200 focus:outline-none focus:ring-2 focus:ring-teal-500 cursor-pointer"
+            >
+              <option value="">{t('select_preset_placeholder', 'Choose Common Medicine (Biogesic, Neozep, etc.)...')}</option>
+              {PHILIPPINE_MEDICINE_PRESETS.map((p, idx) => (
+                <option key={`${p.brand_name}-${p.dosage_strength}-${idx}`} value={idx}>
+                  {p.brand_name} ({p.generic_name} {p.dosage_strength})
+                </option>
+              ))}
+            </select>
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             <div>

@@ -441,6 +441,10 @@ html.dark .starline-logo-icon {
 }
 
 @media print {
+  @page {
+    size: 80mm auto;
+    margin: 0mm;
+  }
   body * {
     visibility: hidden;
   }
@@ -452,6 +456,7 @@ html.dark .starline-logo-icon {
     left: 0;
     top: 0;
     width: 100%;
+    margin: 0;
   }
   .no-print {
     display: none !important;

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   X,
   ShieldAlert,
@@ -40,6 +40,15 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
   const [guideVersion, setGuideVersion] = useState('v1'); // 'v1' = Basic, 'v2' = Advance
   const [activeTopic, setActiveTopic] = useState('dispense');
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const guide = getHelpGuideData(language);
@@ -71,7 +80,10 @@ export default function HelpGuideModal({ isOpen, onClose, onNavigate }) {
   const BannerIcon = TOPIC_ICONS[activeTopic] || CheckCircle2;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in select-none">
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-3 sm:p-4 animate-in fade-in select-none"
+    >
       <div className="bg-white dark:bg-[#161b22] rounded-3xl shadow-2xl max-w-4xl w-full overflow-hidden border border-slate-200/90 dark:border-white/10 flex flex-col max-h-[92vh]">
         
         {/* Modal Header */}

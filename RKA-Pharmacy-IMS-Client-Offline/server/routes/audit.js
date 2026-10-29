@@ -60,10 +60,14 @@ router.get('/export-csv', (req, res) => {
   try {
     const logs = db.prepare('SELECT * FROM audit_logs ORDER BY timestamp DESC').all();
 
+    const escapeCsv = (val) => {
+      if (val === null || val === undefined) return '""';
+      return `"${String(val).replace(/"/g, '""')}"`;
+    };
+
     let csv = 'ID,Timestamp,Action,Entity Type,Entity ID,Operator,Details\n';
     for (const log of logs) {
-      const detailsClean = (log.details || '').replace(/"/g, '""');
-      csv += `${log.id},"${log.timestamp}","${log.action}","${log.entity_type}","${log.entity_id}","${log.operator}","${detailsClean}"\n`;
+      csv += `${log.id},${escapeCsv(log.timestamp)},${escapeCsv(log.action)},${escapeCsv(log.entity_type)},${escapeCsv(log.entity_id)},${escapeCsv(log.operator)},${escapeCsv(log.details)}\n`;
     }
 
     res.setHeader('Content-Type', 'text/csv');

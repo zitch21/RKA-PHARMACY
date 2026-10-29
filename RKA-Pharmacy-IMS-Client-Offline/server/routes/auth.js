@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const { db, logAudit, hashPassword, verifyPassword } = require('../db');
-const { createSessionToken, invalidateSessionToken } = require('../middleware/authMiddleware');
+const { createSessionToken, invalidateSessionToken, verifySessionToken } = require('../middleware/authMiddleware');
 
 // Login
 router.post('/login', (req, res) => {
@@ -37,6 +37,7 @@ router.post('/login', (req, res) => {
 
     // Generate authenticated session token
     const token = createSessionToken(user);
+    const isDefaultPassword = password === 'rka2026';
 
     // Return session payload
     res.json({
@@ -46,7 +47,8 @@ router.post('/login', (req, res) => {
         full_name: user.full_name,
         role: user.role
       },
-      token
+      token,
+      requires_password_change: isDefaultPassword
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -78,12 +80,19 @@ router.post('/logout', (req, res) => {
   }
 });
 
-// Get session status
+// Get session status (verifies active session token; no auto-login)
 router.get('/session', (req, res) => {
   try {
-    const admin = db.prepare('SELECT id, username, full_name, role, last_login FROM users ORDER BY id ASC LIMIT 1').get();
-    const token = admin ? createSessionToken(admin) : null;
-    res.json({ authenticated: true, active_operator: admin, token });
+    const authHeader = req.headers['authorization'];
+    const token = (authHeader && authHeader.startsWith('Bearer '))
+      ? authHeader.slice(7).trim()
+      : req.headers['x-session-token'];
+
+    const user = verifySessionToken(token);
+    if (!user) {
+      return res.status(401).json({ authenticated: false, error: 'No active authenticated session.' });
+    }
+    res.json({ authenticated: true, active_operator: user });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

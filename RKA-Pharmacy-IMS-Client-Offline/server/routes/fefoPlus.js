@@ -110,8 +110,8 @@ const handleAnalysis = (req, res) => {
           analysis_window_days: N,
           is_cold_start: true,
           suggested_reorder_level: null,
-          suggested_purchase_quantity: totalCurrentStock <= med.reorder_threshold
-            ? Math.max(0, (med.reorder_threshold * 2) - totalCurrentStock)
+          suggested_purchase_quantity: totalCurrentStock <= (med.reorder_threshold ?? 20)
+            ? Math.max(0, (Math.max(1, med.reorder_threshold ?? 20) * 2) - totalCurrentStock)
             : 0,
           lead_time_days: leadTime,
           buffer_days: bufferDays,
@@ -132,7 +132,7 @@ const handleAnalysis = (req, res) => {
         const computedReorder = Math.ceil(adqs * (leadTime + bufferDays));
         // Safe floor: if ADQS == 0 (no sales recorded or drug was out of stock),
         // fallback to manual threshold to protect against censored demand wiping threshold to 0
-        const suggestedReorder = adqs > 0 ? computedReorder : (med.reorder_threshold || 20);
+        const suggestedReorder = adqs > 0 ? computedReorder : (med.reorder_threshold ?? 20);
 
         // Suggested purchase quantity when replenishment is needed
         const suggestedPurchaseQty = totalCurrentStock <= suggestedReorder
@@ -156,8 +156,8 @@ const handleAnalysis = (req, res) => {
             // Using cumulative stock along queue accounts for batches waiting behind earlier stock
             daysToConsume = parseFloat((cumulativeStock / adqs).toFixed(1));
             // Delta T_i,b = T_expiry - T_consume
-            expiryRiskMargin = parseFloat((daysToExpiry - daysToConsume).toFixed(1));
-            isAtWasteRisk = expiryRiskMargin < 0;
+            expiryRiskMargin = (daysToExpiry !== null) ? parseFloat((daysToExpiry - daysToConsume).toFixed(1)) : null;
+            isAtWasteRisk = expiryRiskMargin !== null && expiryRiskMargin < 0;
 
             // Q_waste = Predicted unconsumed units at expiration
             if (isAtWasteRisk && daysToExpiry > 0) {
@@ -168,8 +168,8 @@ const handleAnalysis = (req, res) => {
           } else {
             // Zero demand velocity -> high risk if expiring within warning/critical range
             daysToConsume = 9999;
-            expiryRiskMargin = daysToExpiry - 9999;
-            isAtWasteRisk = daysToExpiry <= 90;
+            expiryRiskMargin = daysToExpiry !== null ? daysToExpiry - 9999 : null;
+            isAtWasteRisk = daysToExpiry !== null && daysToExpiry <= 90;
             if (isAtWasteRisk && daysToExpiry > 0) {
               qWaste = b.current_quantity;
             }
@@ -219,7 +219,7 @@ const handleAnalysis = (req, res) => {
     }
 
     // Sort at-risk batches by lowest/most negative margin
-    atRiskBatches.sort((a, b) => a.expiry_risk_margin - b.expiry_risk_margin);
+    atRiskBatches.sort((a, b) => (a.expiry_risk_margin ?? 0) - (b.expiry_risk_margin ?? 0));
 
     res.json({
       is_cold_start: isColdStart,
@@ -249,9 +249,9 @@ router.post('/apply-suggested-threshold/:id', (req, res) => {
       return res.status(404).json({ error: 'Medicine not found' });
     }
 
-    const newThreshold = parseInt(suggested_value);
-    if (isNaN(newThreshold) || newThreshold < 0) {
-      return res.status(400).json({ error: 'Invalid suggested reorder threshold value.' });
+    const newThreshold = parseInt(suggested_value, 10);
+    if (isNaN(newThreshold) || newThreshold < 0 || !Number.isInteger(Number(suggested_value))) {
+      return res.status(400).json({ error: 'Invalid suggested reorder threshold value. Must be a non-negative whole number.' });
     }
 
     db.prepare('UPDATE medicines SET reorder_threshold = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?')
@@ -292,7 +292,7 @@ router.post('/bulk-apply-suggested', (req, res) => {
       const getMedStmt = db.prepare('SELECT id, brand_name, reorder_threshold FROM medicines WHERE id = ?');
       for (const item of list) {
         const val = parseInt(item.suggested_value, 10);
-        if (isNaN(val) || val < 0) continue;
+        if (isNaN(val) || val < 0 || !Number.isInteger(Number(item.suggested_value))) continue;
         const med = getMedStmt.get(item.medicine_id);
         if (med) {
           updateStmt.run(val, med.id);

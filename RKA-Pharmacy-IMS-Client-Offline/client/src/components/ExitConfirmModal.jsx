@@ -22,6 +22,15 @@ export default function ExitConfirmModal({ isOpen, onClose, currentUser }) {
     }
   }, [isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape' && !backingUp) onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, backingUp, onClose]);
+
   const fetchDrives = async () => {
     setLoadingDrives(true);
     try {
@@ -110,7 +119,10 @@ export default function ExitConfirmModal({ isOpen, onClose, currentUser }) {
   const targetDrive = drives.find(d => d.device_id === selectedDrive);
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md p-4 animate-in fade-in select-none">
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget && !backingUp) onClose(); }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md p-4 animate-in fade-in select-none"
+    >
       <div className="bg-white dark:bg-[#181d26] rounded-3xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200/90 dark:border-white/10">
         <div className="px-6 py-4.5 bg-slate-50/90 dark:bg-[#1e2430] border-b border-slate-100 dark:border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">

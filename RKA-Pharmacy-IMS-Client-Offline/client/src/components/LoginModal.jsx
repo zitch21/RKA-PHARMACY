@@ -45,6 +45,11 @@ export default function LoginModal({ onLogin }) {
 
       sessionStorage.setItem('rka_auth_token', data.token);
       sessionStorage.setItem('rka_user', JSON.stringify(data.user));
+      if (data.requires_password_change) {
+        sessionStorage.setItem('rka_default_pwd_warn', 'true');
+      } else {
+        sessionStorage.removeItem('rka_default_pwd_warn');
+      }
 
       if (onLogin) {
         onLogin(data.user, data.token);
@@ -124,6 +129,7 @@ export default function LoginModal({ onLogin }) {
               <input
                 type={showPassword ? 'text' : 'password'}
                 required
+                autoFocus
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder={t('login_password_placeholder', 'Enter password')}
@@ -137,9 +143,6 @@ export default function LoginModal({ onLogin }) {
                 {showPassword ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
               </button>
             </div>
-            <span className="text-[10px] text-slate-400 dark:text-slate-400 mt-1.5 block tabular-nums">
-              {t('login_default_password', 'Default password:')} <code className="bg-slate-100 dark:bg-slate-800 px-1.5 py-0.5 rounded text-slate-700 dark:text-slate-300 font-mono text-[10px] font-bold">rka2026</code>
-            </span>
           </div>
 
           <div className="pt-2">

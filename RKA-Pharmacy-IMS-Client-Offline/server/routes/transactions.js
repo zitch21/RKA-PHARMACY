@@ -59,7 +59,8 @@ router.get('/', (req, res) => {
 // Supports single or batch items
 router.post('/stock-out', (req, res) => {
   try {
-    const { items, reference_no, notes, operator_name = 'Lourdes Gincen L. Cesista' } = req.body || {};
+    const { items, reference_no, notes, operator_name } = req.body || {};
+    const operator = req.user?.username || (operator_name && operator_name.trim()) || 'admin';
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Please provide at least one item to dispense.' });
@@ -76,15 +77,15 @@ router.post('/stock-out', (req, res) => {
 
       for (const item of dispenseItems) {
         let { medicine_id, batch_id, quantity, override_reason, status_confirmed, expiry_status } = item;
-        const qtyToDispense = parseInt(quantity);
+        const qtyToDispense = parseInt(quantity, 10);
 
         if (!medicine_id && batch_id) {
           const bRow = db.prepare('SELECT medicine_id FROM batches WHERE id = ?').get(batch_id);
           if (bRow) medicine_id = bRow.medicine_id;
         }
 
-        if (!medicine_id || qtyToDispense <= 0) {
-          throw new Error('Invalid item or quantity specified.');
+        if (!medicine_id || isNaN(qtyToDispense) || qtyToDispense <= 0 || !Number.isInteger(Number(quantity))) {
+          throw new Error('Invalid item or quantity specified. Quantity must be a positive whole number.');
         }
 
         const med = db.prepare('SELECT * FROM medicines WHERE id = ?').get(medicine_id);
@@ -182,7 +183,7 @@ router.post('/stock-out', (req, res) => {
           if (isNaN(unitPrice) || unitPrice <= 0) {
             throw new Error(`Batch ${targetBatch.batch_number} does not have a valid selling price configured.`);
           }
-          const totalAmount = allocQty * unitPrice;
+          const totalAmount = Math.round(allocQty * unitPrice * 100) / 100;
 
           db.prepare(`
             INSERT INTO transactions (
@@ -200,7 +201,7 @@ router.post('/stock-out', (req, res) => {
             receiptNo,
             isOverride,
             finalReason,
-            operator_name,
+            operator,
             notes || (allocations.length > 1 ? `Multi-batch FEFO split (${targetBatch.batch_number})` : 'Clinic stock-out')
           );
 
@@ -223,7 +224,7 @@ router.post('/stock-out', (req, res) => {
               remaining_batch_qty: remainingQty,
               is_multi_batch_split: allocations.length > 1
             },
-            operator_name
+            operator
           );
 
           processedTransactions.push({
@@ -255,7 +256,8 @@ router.post('/stock-out', (req, res) => {
 // POST Stock Adjustment (Count reconciliation or damage)
 router.post('/adjustment', (req, res) => {
   try {
-    const { batch_id, actual_quantity, reason, notes, operator_name = 'Lourdes Gincen L. Cesista' } = req.body || {};
+    const { batch_id, actual_quantity, reason, notes, operator_name } = req.body || {};
+    const operator = req.user?.username || (operator_name && operator_name.trim()) || 'admin';
 
     if (!batch_id || actual_quantity === undefined || !reason) {
       return res.status(400).json({ error: 'Batch ID, actual quantity, and reason are required.' });
@@ -272,9 +274,9 @@ router.post('/adjustment', (req, res) => {
       return res.status(404).json({ error: 'Batch not found' });
     }
 
-    const newQty = parseInt(actual_quantity);
-    if (newQty < 0) {
-      return res.status(400).json({ error: 'Actual quantity cannot be negative.' });
+    const newQty = parseInt(actual_quantity, 10);
+    if (isNaN(newQty) || newQty < 0 || !Number.isInteger(Number(actual_quantity))) {
+      return res.status(400).json({ error: 'Actual quantity must be a non-negative whole number.' });
     }
 
     const diff = newQty - batch.current_quantity;
@@ -305,9 +307,9 @@ router.post('/adjustment', (req, res) => {
       batch_id,
       Math.abs(diff),
       batch.unit_cost,
-      Math.abs(diff) * batch.unit_cost,
+      Math.round(Math.abs(diff) * (batch.unit_cost || 0) * 100) / 100,
       reason,
-      operator_name,
+      operator,
       notes || `Stock adjusted from ${batch.current_quantity} to ${newQty} (difference: ${diff > 0 ? '+' : ''}${diff})`
     );
 
@@ -324,7 +326,7 @@ router.post('/adjustment', (req, res) => {
         reason,
         notes
       },
-      operator_name
+      operator
     );
 
     res.json({

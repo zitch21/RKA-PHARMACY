@@ -21,12 +21,14 @@ import {
   ArrowDownToLine,
   LayoutGrid,
   List,
+  Upload,
 } from 'lucide-react';
 import BarcodeModal from '../components/BarcodeModal';
 import DisposalModal from '../components/DisposalModal';
 import StockAdjustmentModal from '../components/StockAdjustmentModal';
 import EditMedicineModal from '../components/EditMedicineModal';
 import EditBatchModal from '../components/EditBatchModal';
+import BulkImportModal from '../components/BulkImportModal';
 import { useLanguage } from '../context/LanguageContext';
 import HelperText from '../components/HelperText';
 import { formatDatePH } from '../utils/dateFormatter';
@@ -96,7 +98,7 @@ function BatchStatusBadge({ status }) {
 /* Color-coded shelf-life chip */
 function ShelfLifeChip({ days, expDate }) {
   const { t } = useLanguage();
-  if (!expDate) {
+  if (!expDate || days === null || days === undefined) {
     return <span className="text-slate-400 text-xs italic">{t('no_batches', 'No batches')}</span>;
   }
   if (days <= 0) {
@@ -162,7 +164,7 @@ export default function InventoryView({
   const [viewMode,         setViewMode]         = useState(() => {
     try {
       return localStorage.getItem('rka_inventory_view_mode') || 'cards';
-    } catch (_) {
+    } catch {
       return 'cards';
     }
   });
@@ -171,7 +173,7 @@ export default function InventoryView({
     setViewMode(mode);
     try {
       localStorage.setItem('rka_inventory_view_mode', mode);
-    } catch (_) {}
+    } catch {}
   };
 
   const [barcodeMedicine, setBarcodeMedicine] = useState(null);
@@ -179,6 +181,7 @@ export default function InventoryView({
   const [adjustmentBatch, setAdjustmentBatch] = useState(null);
   const [editMedicine,    setEditMedicine]    = useState(null);
   const [editPriceBatch,  setEditPriceBatch]  = useState(null);
+  const [isBulkImportOpen, setIsBulkImportOpen] = useState(false);
 
   // Sync subnav pills with inventory status filter
   useEffect(() => {
@@ -291,15 +294,29 @@ export default function InventoryView({
             {t('inv_catalog_subtitle', 'Batch-level records, barcodes, lead times, and expiration monitoring')}
           </HelperText>
         </div>
-        <button
-          onClick={onOpenAddMedicine}
-          className={`flex items-center justify-center gap-2 font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl shadow-xs transition cursor-pointer shrink-0 ${
-            uiMode === 'clean' ? 'min-h-[48px] px-5 text-sm' : 'px-3.5 py-1.5 text-xs'
-          }`}
-        >
-          <Plus className="w-4 h-4" />
-          <span>{t('btn_add_medicine', '+ Add Medicine Profile')}</span>
-        </button>
+        <div className="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            onClick={() => setIsBulkImportOpen(true)}
+            className={`flex items-center justify-center gap-1.5 font-bold border border-zinc-200 hover:border-teal-500 bg-zinc-50 hover:bg-teal-50/50 text-zinc-700 hover:text-teal-700 rounded-xl shadow-xs transition cursor-pointer ${
+              uiMode === 'clean' ? 'min-h-[48px] px-4 text-sm' : 'px-3 py-1.5 text-xs'
+            }`}
+            title={t('bulk_import_btn_tip', 'Import medicines via CSV or load standard Philippine pharmacy presets')}
+          >
+            <Upload className="w-4 h-4 text-teal-600" />
+            <span>{t('btn_bulk_import', 'Bulk Import')}</span>
+          </button>
+          <button
+            type="button"
+            onClick={onOpenAddMedicine}
+            className={`flex items-center justify-center gap-2 font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-xl shadow-xs transition cursor-pointer ${
+              uiMode === 'clean' ? 'min-h-[48px] px-5 text-sm' : 'px-3.5 py-1.5 text-xs'
+            }`}
+          >
+            <Plus className="w-4 h-4" />
+            <span>{t('btn_add_medicine', '+ Add Medicine Profile')}</span>
+          </button>
+        </div>
       </div>
 
       {/* ══ Fast Filter Toolbar ══ */}
@@ -928,6 +945,7 @@ export default function InventoryView({
       )}
 
       {/* ══ Modals ══ */}
+      <BulkImportModal isOpen={isBulkImportOpen} onClose={() => setIsBulkImportOpen(false)} onImportComplete={onRefresh} />
       <BarcodeModal medicine={barcodeMedicine} isOpen={Boolean(barcodeMedicine)} onClose={() => setBarcodeMedicine(null)} />
       <EditMedicineModal medicine={editMedicine} isOpen={Boolean(editMedicine)} onClose={() => setEditMedicine(null)} onMedicineUpdated={onRefresh} />
       <DisposalModal batch={disposalBatch} isOpen={Boolean(disposalBatch)} onClose={() => setDisposalBatch(null)} onDisposalComplete={onRefresh} currentUser={currentUser} />

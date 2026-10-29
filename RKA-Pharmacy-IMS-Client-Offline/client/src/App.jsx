@@ -1,15 +1,18 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import Navbar from './components/Navbar';
 import AddMedicineModal from './components/AddMedicineModal';
-import DashboardView from './views/DashboardView';
-import InventoryView from './views/InventoryView';
-import StockInView from './views/StockInView';
-import StockOutView from './views/StockOutView';
-import FefoPlusView from './views/FefoPlusView';
-import AuditTrailView from './views/AuditTrailView';
-import SimulationView from './views/SimulationView';
-import SettingsView from './views/SettingsView';
-import PurchaseOrdersView from './views/PurchaseOrdersView';
+import StockOutView from './views/StockOutView'; // Instant counter load for POS
+
+// Asynchronous code-splitting for secondary views
+const DashboardView = React.lazy(() => import('./views/DashboardView'));
+const InventoryView = React.lazy(() => import('./views/InventoryView'));
+const StockInView = React.lazy(() => import('./views/StockInView'));
+const FefoPlusView = React.lazy(() => import('./views/FefoPlusView'));
+const AuditTrailView = React.lazy(() => import('./views/AuditTrailView'));
+const SimulationView = React.lazy(() => import('./views/SimulationView'));
+const SettingsView = React.lazy(() => import('./views/SettingsView'));
+const PurchaseOrdersView = React.lazy(() => import('./views/PurchaseOrdersView'));
+
 import HelpGuideModal from './components/HelpGuideModal';
 import ExitConfirmModal from './components/ExitConfirmModal';
 import LoginModal from './components/LoginModal';
@@ -19,6 +22,20 @@ import DispensaryCalendarModal from './components/DispensaryCalendarModal';
 import { useLanguage } from './context/LanguageContext';
 import { getSyncChannel, broadcastInventoryUpdate } from './utils/syncChannel';
 import { getIsDemoMode, setIsDemoMode } from './utils/apiInterceptor';
+
+function ViewLoadingFallback() {
+  return (
+    <div className="flex flex-col items-center justify-center min-h-[50vh] p-8 text-center animate-in fade-in">
+      <div className="w-10 h-10 rounded-2xl bg-teal-50 dark:bg-teal-950/40 border border-teal-200 dark:border-teal-800/60 flex items-center justify-center text-teal-600 dark:text-teal-400 mb-3 shadow-xs">
+        <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24" fill="none">
+          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="3" />
+          <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+        </svg>
+      </div>
+      <p className="text-xs font-bold text-slate-600 dark:text-slate-400">Loading dispensary workspace...</p>
+    </div>
+  );
+}
 
 const DEFAULT_SUB_TABS = {
   dashboard: '',
@@ -34,13 +51,24 @@ const DEFAULT_SUB_TABS = {
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
+  const activeTabRef = useRef(activeTab);
+  useEffect(() => {
+    activeTabRef.current = activeTab;
+  }, [activeTab]);
+  const [externalBarcode, setExternalBarcode] = useState(null);
   const [activeSubTab, setActiveSubTab] = useState('');
   const [medicines, setMedicines] = useState([]);
   const [batches, setBatches] = useState([]);
   const [alerts, setAlerts] = useState(null);
   const [fefoData, setFefoData] = useState(null);
   const [isAddMedOpen, setIsAddMedOpen] = useState(false);
+  const [addMedBarcode, setAddMedBarcode] = useState('');
   const [isHelpOpen, setIsHelpOpen] = useState(false);
+
+  const handleOpenAddMedicine = (barcode = '') => {
+    setAddMedBarcode(typeof barcode === 'string' ? barcode : '');
+    setIsAddMedOpen(true);
+  };
   const [isExitModalOpen, setIsExitModalOpen] = useState(false);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [isCalendarOpen, setIsCalendarOpen] = useState(false);
@@ -55,7 +83,8 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(() => {
     try {
       const saved = sessionStorage.getItem('rka_user');
-      return saved ? JSON.parse(saved) : null;
+      const token = sessionStorage.getItem('rka_auth_token');
+      return (saved && token) ? JSON.parse(saved) : null;
     } catch {
       return null;
     }
@@ -84,19 +113,8 @@ export default function App() {
     sessionStorage.removeItem('rka_auth_token');
   };
 
-  // Synchronize auth session token on mount / unauthorized response
+  // Handle unauthorized response across views
   useEffect(() => {
-    if (currentUser && !sessionStorage.getItem('rka_auth_token')) {
-      fetch('/api/auth/session')
-        .then(res => res.json())
-        .then(data => {
-          if (data?.token) {
-            sessionStorage.setItem('rka_auth_token', data.token);
-          }
-        })
-        .catch(() => {});
-    }
-
     const handleUnauthorized = () => {
       setCurrentUser(null);
       sessionStorage.removeItem('rka_user');
@@ -104,7 +122,7 @@ export default function App() {
     };
     window.addEventListener('rka_session_unauthorized', handleUnauthorized);
     return () => window.removeEventListener('rka_session_unauthorized', handleUnauthorized);
-  }, [currentUser]);
+  }, []);
 
   const handleAcknowledgeAlert = async (alertKey, alertType, entityId) => {
     try {
@@ -276,17 +294,46 @@ export default function App() {
     };
     window.addEventListener('beforeunload', handleBeforeUnload);
 
+    let scanBuf = '';
+    let lastScanKeyTime = Date.now();
+
     // Hotkey listener: F1 opens quick help guide, F2 switches to dispensing / quick scan, / or Ctrl+K opens omni search
     const handleKeyDown = (e) => {
+      const activeEl = document.activeElement;
+      const tag = activeEl?.tagName?.toLowerCase();
+      const inInput = tag === 'input' || tag === 'textarea' || tag === 'select';
+
       if (e.key === 'F1') {
         e.preventDefault();
         setIsHelpOpen(true);
+        return;
       } else if (e.key === 'F2') {
         e.preventDefault();
         setActiveTab('stock-out');
-      } else if ((e.key === '/' || (e.ctrlKey && e.key.toLowerCase() === 'k')) && !['INPUT', 'TEXTAREA'].includes(document.activeElement.tagName)) {
+        return;
+      } else if ((e.key === '/' || (e.ctrlKey && e.key.toLowerCase() === 'k')) && !inInput) {
         e.preventDefault();
         setIsSearchOpen(true);
+        return;
+      }
+
+      // Omnipresent barcode scanner listener: captures hardware scanner keystrokes outside form inputs
+      if (!inInput && activeTabRef.current !== 'stock-in' && activeTabRef.current !== 'stock-out') {
+        const now = Date.now();
+        if (now - lastScanKeyTime > 120) scanBuf = '';
+        lastScanKeyTime = now;
+        if (e.key === 'Enter') {
+          if (scanBuf.length >= 2) {
+            e.preventDefault();
+            const scanned = scanBuf.trim();
+            scanBuf = '';
+            window.dispatchEvent(new CustomEvent('rka_barcode_scanned', { detail: { barcode: scanned } }));
+            setExternalBarcode(scanned);
+            setActiveTab('stock-out');
+          }
+        } else if (e.key?.length === 1) {
+          scanBuf += e.key;
+        }
       }
     };
     window.addEventListener('keydown', handleKeyDown);
@@ -399,115 +446,119 @@ export default function App() {
             </div>
           ) : (
             <ErrorBoundary key={activeTab} onNavigateHome={() => setActiveTab('dashboard')}>
-              {activeTab === 'dashboard' && (
-                <DashboardView
-                  medicines={medicines}
-                  batches={batches}
-                  alerts={alerts}
-                  fefoData={fefoData}
-                  onNavigate={handleNavigate}
-                  onRefresh={() => handleRefreshAndBroadcast('DASHBOARD_REFRESH')}
-                  onOpenAddMedicine={() => setIsAddMedOpen(true)}
-                  uiMode={uiMode}
-                  onOpenHelp={() => setIsHelpOpen(true)}
-                  onAcknowledgeAlert={handleAcknowledgeAlert}
-                />
-              )}
+              <React.Suspense fallback={<ViewLoadingFallback />}>
+                {activeTab === 'dashboard' && (
+                  <DashboardView
+                    medicines={medicines}
+                    batches={batches}
+                    alerts={alerts}
+                    fefoData={fefoData}
+                    onNavigate={handleNavigate}
+                    onRefresh={() => handleRefreshAndBroadcast('DASHBOARD_REFRESH')}
+                    onOpenAddMedicine={handleOpenAddMedicine}
+                    uiMode={uiMode}
+                    onOpenHelp={() => setIsHelpOpen(true)}
+                    onAcknowledgeAlert={handleAcknowledgeAlert}
+                  />
+                )}
 
-              {activeTab === 'inventory' && (
-                <InventoryView
-                  medicines={medicines}
-                  batches={batches}
-                  currentUser={currentUser}
-                  onRefresh={() => handleRefreshAndBroadcast('INVENTORY_MUTATION')}
-                  onOpenAddMedicine={() => setIsAddMedOpen(true)}
-                  onNavigate={handleNavigate}
-                  uiMode={uiMode}
-                  initialFilter={inventoryFilter}
-                  initialSearch={inventorySearch}
-                  activeSubTab={activeSubTab}
-                  onSubTabChange={handleSubTabChange}
-                />
-              )}
+                {activeTab === 'inventory' && (
+                  <InventoryView
+                    medicines={medicines}
+                    batches={batches}
+                    currentUser={currentUser}
+                    onRefresh={() => handleRefreshAndBroadcast('INVENTORY_MUTATION')}
+                    onOpenAddMedicine={handleOpenAddMedicine}
+                    onNavigate={handleNavigate}
+                    uiMode={uiMode}
+                    initialFilter={inventoryFilter}
+                    initialSearch={inventorySearch}
+                    activeSubTab={activeSubTab}
+                    onSubTabChange={handleSubTabChange}
+                  />
+                )}
 
-              {activeTab === 'stock-in' && (
-                <StockInView
-                  medicines={medicines}
-                  batches={batches}
-                  onRefresh={() => handleRefreshAndBroadcast('STOCK_IN_COMPLETE')}
-                  onOpenAddMedicine={() => setIsAddMedOpen(true)}
-                  uiMode={uiMode}
-                  activeSubTab={activeSubTab}
-                  onSubTabChange={handleSubTabChange}
-                  initialMedicineId={stockInMedId}
-                  onNavigate={handleNavigate}
-                />
-              )}
+                {activeTab === 'stock-in' && (
+                  <StockInView
+                    medicines={medicines}
+                    batches={batches}
+                    onRefresh={() => handleRefreshAndBroadcast('STOCK_IN_COMPLETE')}
+                    onOpenAddMedicine={handleOpenAddMedicine}
+                    uiMode={uiMode}
+                    activeSubTab={activeSubTab}
+                    onSubTabChange={handleSubTabChange}
+                    initialMedicineId={stockInMedId}
+                    onNavigate={handleNavigate}
+                  />
+                )}
 
-              {activeTab === 'purchase-orders' && (
-                <PurchaseOrdersView
-                  medicines={medicines}
-                  currentUser={currentUser}
-                  onRefreshInventory={() => handleRefreshAndBroadcast('PO_MUTATION')}
-                  uiMode={uiMode}
-                  activeSubTab={activeSubTab}
-                  onSubTabChange={handleSubTabChange}
-                />
-              )}
+                {activeTab === 'purchase-orders' && (
+                  <PurchaseOrdersView
+                    medicines={medicines}
+                    currentUser={currentUser}
+                    onRefreshInventory={() => handleRefreshAndBroadcast('PO_MUTATION')}
+                    uiMode={uiMode}
+                    activeSubTab={activeSubTab}
+                    onSubTabChange={handleSubTabChange}
+                  />
+                )}
 
-              {activeTab === 'stock-out' && (
-                <StockOutView
-                  medicines={medicines}
-                  batches={batches}
-                  onRefresh={() => handleRefreshAndBroadcast('STOCK_OUT_COMPLETE')}
-                  onOpenAddMedicine={() => setIsAddMedOpen(true)}
-                  onOpenHelp={() => setIsHelpOpen(true)}
-                  uiMode={uiMode}
-                  currentUser={currentUser}
-                  initialMedicineId={dispenseMedId}
-                  activeSubTab={activeSubTab}
-                  onSubTabChange={handleSubTabChange}
-                  onNavigate={handleNavigate}
-                />
-              )}
+                {activeTab === 'stock-out' && (
+                  <StockOutView
+                    medicines={medicines}
+                    batches={batches}
+                    onRefresh={() => handleRefreshAndBroadcast('STOCK_OUT_COMPLETE')}
+                    onOpenAddMedicine={handleOpenAddMedicine}
+                    externalBarcode={externalBarcode}
+                    onClearExternalBarcode={() => setExternalBarcode(null)}
+                    onOpenHelp={() => setIsHelpOpen(true)}
+                    uiMode={uiMode}
+                    currentUser={currentUser}
+                    initialMedicineId={dispenseMedId}
+                    activeSubTab={activeSubTab}
+                    onSubTabChange={handleSubTabChange}
+                    onNavigate={handleNavigate}
+                  />
+                )}
 
-              {activeTab === 'fefo-plus' && (
-                <FefoPlusView
-                  fefoData={fefoData}
-                  onRefresh={() => handleRefreshAndBroadcast('FEFO_REORDER_MUTATION')}
-                  onNavigate={handleNavigate}
-                  uiMode={uiMode}
-                  activeSubTab={activeSubTab}
-                  onSubTabChange={handleSubTabChange}
-                />
-              )}
+                {activeTab === 'fefo-plus' && (
+                  <FefoPlusView
+                    fefoData={fefoData}
+                    onRefresh={() => handleRefreshAndBroadcast('FEFO_REORDER_MUTATION')}
+                    onNavigate={handleNavigate}
+                    uiMode={uiMode}
+                    activeSubTab={activeSubTab}
+                    onSubTabChange={handleSubTabChange}
+                  />
+                )}
 
-              {activeTab === 'audit' && (
-                <AuditTrailView
-                  uiMode={uiMode}
-                  activeSubTab={activeSubTab}
-                  onSubTabChange={handleSubTabChange}
-                />
-              )}
+                {activeTab === 'audit' && (
+                  <AuditTrailView
+                    uiMode={uiMode}
+                    activeSubTab={activeSubTab}
+                    onSubTabChange={handleSubTabChange}
+                  />
+                )}
 
-              {activeTab === 'simulation' && (
-                <SimulationView
-                  uiMode={uiMode}
-                  activeSubTab={activeSubTab}
-                  onSubTabChange={handleSubTabChange}
-                />
-              )}
+                {activeTab === 'simulation' && (
+                  <SimulationView
+                    uiMode={uiMode}
+                    activeSubTab={activeSubTab}
+                    onSubTabChange={handleSubTabChange}
+                  />
+                )}
 
-              {activeTab === 'settings' && (
-                <SettingsView
-                  onRefresh={() => handleRefreshAndBroadcast('SETTINGS_UPDATED')}
-                  uiMode={uiMode}
-                  onOpenHelp={() => setIsHelpOpen(true)}
-                  currentUser={currentUser}
-                  activeSubTab={activeSubTab}
-                  onSubTabChange={handleSubTabChange}
-                />
-              )}
+                {activeTab === 'settings' && (
+                  <SettingsView
+                    onRefresh={() => handleRefreshAndBroadcast('SETTINGS_UPDATED')}
+                    uiMode={uiMode}
+                    onOpenHelp={() => setIsHelpOpen(true)}
+                    currentUser={currentUser}
+                    activeSubTab={activeSubTab}
+                    onSubTabChange={handleSubTabChange}
+                  />
+                )}
+              </React.Suspense>
             </ErrorBoundary>
           )}
         </main>
@@ -543,7 +594,11 @@ export default function App() {
         {isAddMedOpen && (
           <AddMedicineModal
             isOpen={isAddMedOpen}
-            onClose={() => setIsAddMedOpen(false)}
+            initialBarcode={addMedBarcode}
+            onClose={() => {
+              setIsAddMedOpen(false);
+              setAddMedBarcode('');
+            }}
             onMedicineAdded={() => handleRefreshAndBroadcast('MEDICINE_CREATED')}
           />
         )}

@@ -6,10 +6,13 @@ const { db, logAudit } = require('../db');
 function calculateSUS(responses) {
   // responses: [q1, q2, q3, q4, q5, q6, q7, q8, q9, q10] where each is 1-5
   let sum = 0;
+  const clamped = [];
   // Odd questions (0, 2, 4, 6, 8 in 0-index): score - 1
   // Even questions (1, 3, 5, 7, 9 in 0-index): 5 - score
   for (let i = 0; i < 10; i++) {
-    const val = parseInt(responses[i]) || 3;
+    const raw = parseInt(responses[i], 10);
+    const val = (!isNaN(raw) && raw >= 1 && raw <= 5) ? raw : 3;
+    clamped.push(val);
     if (i % 2 === 0) {
       sum += (val - 1);
     } else {
@@ -34,7 +37,7 @@ function calculateSUS(responses) {
     rating = 'Fair';
   }
 
-  return { susScore, grade, rating };
+  return { susScore, grade, rating, clamped };
 }
 
 // GET all evaluations
@@ -74,7 +77,7 @@ router.post('/', (req, res) => {
     }
 
     const responses = [q1, q2, q3, q4, q5, q6, q7, q8, q9, q10];
-    const { susScore, grade, rating } = calculateSUS(responses);
+    const { susScore, grade, rating, clamped } = calculateSUS(responses);
 
     const stmt = db.prepare(`
       INSERT INTO usability_evaluations (
@@ -87,8 +90,8 @@ router.post('/', (req, res) => {
     const result = stmt.run(
       evaluator_name.trim(),
       evaluator_role.trim(),
-      parseInt(q1), parseInt(q2), parseInt(q3), parseInt(q4), parseInt(q5),
-      parseInt(q6), parseInt(q7), parseInt(q8), parseInt(q9), parseInt(q10),
+      clamped[0], clamped[1], clamped[2], clamped[3], clamped[4],
+      clamped[5], clamped[6], clamped[7], clamped[8], clamped[9],
       susScore,
       comments || ''
     );

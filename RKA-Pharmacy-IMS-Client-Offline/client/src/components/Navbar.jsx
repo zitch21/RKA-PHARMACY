@@ -22,6 +22,7 @@ import {
   Calendar,
   Sparkles,
   ScanBarcode,
+  ShieldAlert,
 } from 'lucide-react';
 import AlertNotificationDropdown from './AlertNotificationDropdown';
 import { useLanguage } from '../context/LanguageContext';
@@ -77,33 +78,52 @@ export default function Navbar({
   const [isUserOpen, setIsUserOpen] = useState(false);
   const [isLangOpen, setIsLangOpen] = useState(false);
   const [isDemo, setIsDemo] = useState(getIsDemoMode());
+  const [lastScannedFeedback, setLastScannedFeedback] = useState(null);
   const userMenuRef = useRef(null);
   const langRef = useRef(null);
   const alertRef = useRef(null);
   const { language, setLanguage, t } = useLanguage();
 
   useEffect(() => {
+    let scanTimer = null;
     const handleDemoChange = (e) => {
       setIsDemo(e.detail?.isDemo ?? getIsDemoMode());
     };
+    const handleScanEvent = (e) => {
+      if (e.detail?.barcode) {
+        setLastScannedFeedback(e.detail.barcode);
+        if (scanTimer) clearTimeout(scanTimer);
+        scanTimer = setTimeout(() => setLastScannedFeedback(null), 2500);
+      }
+    };
     window.addEventListener('rka_demo_mode_changed', handleDemoChange);
-    return () => window.removeEventListener('rka_demo_mode_changed', handleDemoChange);
+    window.addEventListener('rka_barcode_scanned', handleScanEvent);
+    return () => {
+      if (scanTimer) clearTimeout(scanTimer);
+      window.removeEventListener('rka_demo_mode_changed', handleDemoChange);
+      window.removeEventListener('rka_barcode_scanned', handleScanEvent);
+    };
   }, []);
 
   const totalAlerts = alerts?.summary?.total_alerts || 0;
   const operatorName = currentUser?.full_name || 'Lourdes Gincen L. Cesista';
 
-  /* ── 9 Core Clinical Navigation Tabs (R.K.A. Pharmacy Floating Pill Sidebar) ── */
+  /* ── Core Clinical Navigation Tabs (Grouped by Dispensary Domains) ── */
   const navTabs = [
-    { id: 'dashboard',       label: t('nav_dashboard',       'Dashboard'),       icon: LayoutDashboard },
-    { id: 'inventory',       label: t('nav_inventory',       'Inventory'),        icon: Boxes },
-    { id: 'stock-in',        label: t('nav_stock_in',        'Stock-In'),         icon: ArrowDownToLine },
-    { id: 'purchase-orders', label: t('nav_purchase_orders', 'Purchase Orders'),  icon: FileText },
-    { id: 'stock-out',       label: t('nav_dispense',        'POS / Dispense'),   icon: ArrowUpFromLine, isPrimary: true },
-    { id: 'fefo-plus',       label: t('nav_fefo_risk',       'FEFO+ Risk'),       icon: TrendingUp,      badge: 'ACTIVE' },
-    { id: 'audit',           label: t('nav_audit_trail',     'Audit Trail'),      icon: History },
-    { id: 'simulation',      label: t('nav_simulation',      'Simulation'),       icon: FlaskConical },
-    { id: 'settings',        label: t('nav_settings',        'Settings'),         icon: Settings },
+    // 1. Primary Dispensary Counter
+    { id: 'stock-out',       label: t('nav_dispense',        'POS / Dispense'),   icon: ArrowUpFromLine, isPrimary: true, section: 'counter' },
+    { id: 'inventory',       label: t('nav_inventory',       'Inventory'),        icon: Boxes,            section: 'counter' },
+    { id: 'stock-in',        label: t('nav_stock_in',        'Stock-In'),         icon: ArrowDownToLine, section: 'counter' },
+    { id: 'dashboard',       label: t('nav_dashboard',       'Dashboard'),       icon: LayoutDashboard,  section: 'counter' },
+
+    // 2. Clinical Safety & Management
+    { id: 'purchase-orders', label: t('nav_purchase_orders', 'Purchase Orders'),  icon: FileText,        section: 'mgmt' },
+    { id: 'fefo-plus',       label: t('nav_fefo_risk',       'FEFO+ Risk'),       icon: TrendingUp,      badge: 'ACTIVE', section: 'mgmt' },
+    { id: 'audit',           label: t('nav_audit_trail',     'Audit Trail'),      icon: History,         section: 'mgmt' },
+    { id: 'settings',        label: t('nav_settings',        'Settings'),         icon: Settings,        section: 'mgmt' },
+
+    // 3. Academic Research & Simulation
+    { id: 'simulation',      label: t('nav_simulation',      'Simulation'),       icon: FlaskConical,    section: 'lab' },
   ];
 
   const currentNavTab = navTabs.find(item => item.id === activeTab) || navTabs[0];
@@ -240,52 +260,68 @@ export default function Navbar({
             </button>
           </div>
 
-          {/* Floating Pill Navigation List */}
-          <nav className="flex-1 space-y-2 overflow-y-auto no-scrollbar pr-1">
-            {navTabs.map((item) => {
-              const Icon = item.icon;
-              const isActive = activeTab === item.id;
-              const isDispense = item.id === 'stock-out';
+          {/* Floating Pill Navigation List (Organized into Domains) */}
+          <nav className="flex-1 space-y-3 overflow-y-auto no-scrollbar pr-1">
+            {['counter', 'mgmt', 'lab'].map((sec) => {
+              const secItems = navTabs.filter(i => i.section === sec);
+              const secTitle = sec === 'counter'
+                ? t('nav_section_counter', 'Dispensary Counter')
+                : sec === 'mgmt'
+                  ? t('nav_section_mgmt', 'Management & Clinical Safety')
+                  : t('nav_section_lab', 'Academic Research');
 
               return (
-                <button
-                  key={item.id}
-                  onClick={() => {
-                    setActiveTab(item.id);
-                    setIsMobileOpen(false);
-                  }}
-                  className={`
-                    starline-pill-btn w-full flex items-center justify-between px-4 py-2.5 rounded-full text-xs transition-all cursor-pointer group
-                    ${
-                      isActive
-                        ? 'starline-pill-active bg-[#dcf363] text-slate-950 font-bold shadow-[0_2px_8px_rgba(220,243,99,0.45)] border border-[#d2ec50]'
-                        : 'bg-white/80 hover:bg-white text-slate-600 hover:text-slate-900 shadow-[0_1px_3px_rgba(0,0,0,0.03)] border border-slate-200/50 hover:border-slate-300'
-                    }
-                  `}
-                  title={item.label}
-                >
-                  <div className="flex items-center gap-3 min-w-0">
-                    <Icon
-                      className={`w-4 h-4 shrink-0 transition-colors ${
-                        isActive ? 'text-slate-950' : 'text-slate-500 group-hover:text-slate-800'
-                      }`}
-                    />
-                    <span className="truncate">{item.label}</span>
+                <div key={sec} className="space-y-1.5">
+                  <div className="px-3.5 pt-1 text-[9px] font-black uppercase tracking-widest text-slate-400 dark:text-slate-400 select-none">
+                    {secTitle}
                   </div>
+                  {secItems.map((item) => {
+                    const Icon = item.icon;
+                    const isActive = activeTab === item.id;
+                    const isDispense = item.id === 'stock-out';
 
-                  <div className="flex items-center gap-1 shrink-0 ml-1.5">
-                    {isDispense && (
-                      <span className="text-[9px] font-bold bg-slate-900 text-white px-2 py-0.5 rounded-full tabular-nums leading-none shadow-xs">
-                        F2
-                      </span>
-                    )}
-                    {item.badge && (
-                      <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300/60 px-1.5 py-0.5 rounded-full leading-none">
-                        {item.badge}
-                      </span>
-                    )}
-                  </div>
-                </button>
+                    return (
+                      <button
+                        key={item.id}
+                        onClick={() => {
+                          setActiveTab(item.id);
+                          setIsMobileOpen(false);
+                        }}
+                        className={`
+                          starline-pill-btn w-full flex items-center justify-between px-3.5 py-2 rounded-full text-xs transition-all cursor-pointer group
+                          ${
+                            isActive
+                              ? 'starline-pill-active bg-[#dcf363] text-slate-950 font-bold shadow-[0_2px_8px_rgba(220,243,99,0.45)] border border-[#d2ec50]'
+                              : 'bg-white/80 hover:bg-white text-slate-600 hover:text-slate-900 shadow-[0_1px_3px_rgba(0,0,0,0.03)] border border-slate-200/50 hover:border-slate-300'
+                          }
+                        `}
+                        title={item.label}
+                      >
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <Icon
+                            className={`w-4 h-4 shrink-0 transition-colors ${
+                              isActive ? 'text-slate-950' : 'text-slate-500 group-hover:text-slate-800'
+                            }`}
+                          />
+                          <span className="truncate">{item.label}</span>
+                        </div>
+
+                        <div className="flex items-center gap-1 shrink-0 ml-1.5">
+                          {isDispense && (
+                            <span className="text-[9px] font-bold bg-slate-900 text-white px-2 py-0.5 rounded-full tabular-nums leading-none shadow-xs">
+                              F2
+                            </span>
+                          )}
+                          {item.badge && (
+                            <span className="text-[9px] font-bold bg-emerald-100 text-emerald-800 border border-emerald-300/60 px-1.5 py-0.5 rounded-full leading-none">
+                              {item.badge}
+                            </span>
+                          )}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               );
             })}
           </nav>
@@ -367,6 +403,21 @@ export default function Navbar({
             >
               <ScanBarcode className="w-3.5 h-3.5" />
             </button>
+
+            {/* Live Hardware Scanner Indicator */}
+            <div
+              className={`hidden sm:flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold select-none border transition-all ${
+                lastScannedFeedback
+                  ? 'bg-emerald-500 text-white border-emerald-400 shadow-sm animate-pulse'
+                  : 'bg-emerald-50 dark:bg-emerald-950/40 text-emerald-800 dark:text-emerald-300 border-emerald-200/80 dark:border-emerald-800/50'
+              }`}
+              title={t('scanner_indicator_tip', 'ScanAvenger / HID USB Wireless Barcode Scanner Interface Ready')}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${lastScannedFeedback ? 'bg-white' : 'bg-emerald-500 animate-pulse'}`} />
+              <span className="tabular-nums">
+                {lastScannedFeedback ? `⚡ ${lastScannedFeedback}` : t('status_scanner_ready', 'Scanner Ready')}
+              </span>
+            </div>
 
             {/* Dark / Light Mode Toggle */}
             <button
@@ -464,7 +515,9 @@ export default function Navbar({
                   <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-amber-400 to-amber-500 flex items-center justify-center font-bold text-white text-xs shadow-xs">
                     {(operatorName).charAt(0)}
                   </div>
-                  <span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full bg-emerald-500 border border-white dark:border-slate-900" />
+                  <span className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-white dark:border-slate-900 ${
+                    sessionStorage.getItem('rka_default_pwd_warn') === 'true' ? 'bg-amber-500 animate-pulse' : 'bg-emerald-500'
+                  }`} />
                 </div>
               </button>
               {isUserOpen && (
@@ -477,6 +530,19 @@ export default function Navbar({
                       {currentUser?.role?.includes('Owner') ? t('role_pharmacist_owner', 'Pharmacist / Sole Proprietor') : (currentUser?.role || t('role_operator', 'Operator'))}
                     </p>
                   </div>
+                  {sessionStorage.getItem('rka_default_pwd_warn') === 'true' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab?.('settings');
+                        setIsUserOpen(false);
+                      }}
+                      className="w-full text-left px-3.5 py-2 text-[11px] font-bold flex items-center gap-2 bg-amber-50 dark:bg-amber-950/40 text-amber-800 dark:text-amber-200 hover:bg-amber-100 dark:hover:bg-amber-900/60 transition cursor-pointer border-b border-amber-200/60 dark:border-amber-800/40"
+                    >
+                      <ShieldAlert className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                      <span>{t('warn_default_pwd', 'Default password active. Change in Settings')}</span>
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => {

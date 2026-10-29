@@ -8,6 +8,7 @@ RKA-Pharmacy-IMS-Client-Offline/client/node_modules/
 
 # Log files and caches
 *.log
+.session_secret
 .DS_Store
 Thumbs.db
 .vscode/

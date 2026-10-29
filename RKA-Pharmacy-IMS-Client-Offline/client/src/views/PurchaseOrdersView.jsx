@@ -58,7 +58,20 @@ function MetricCard({ label, value, sub, accentCls, borderCls, bgCls }) {
 }
 
 const inputCls = 'w-full px-3 py-2 text-xs border border-zinc-200 rounded-lg focus:ring-2 focus:ring-teal-500 focus:outline-none bg-white';
-const SUPPLIERS = ['United Laboratories (Unilab)', 'Zuellig Pharma', 'Medix Distribution', 'Pharmalink Inc.', 'MedPro Pharma', 'GlobalRx Distributors'];
+const SUPPLIERS = [
+  'United Laboratories (Unilab)',
+  'RiteMed Philippines, Inc.',
+  'GlaxoSmithKline Philippines',
+  'Pfizer Philippines',
+  'Sanofi-Aventis Philippines',
+  'Pascual Laboratories',
+  'Boehringer Ingelheim Philippines',
+  'AstraZeneca Philippines',
+  'Bayer Philippines',
+  'Mundipharma Distribution Philippines',
+  'Taisho Pharmaceuticals (Philippines)',
+  'Zuellig Pharma'
+];
 
 export default function PurchaseOrdersView({
   medicines,
@@ -192,11 +205,49 @@ export default function PurchaseOrdersView({
   };
 
   const handleSubmitCreatePo = async (e) => {
-    e.preventDefault(); setActionLoading(true); setActionError(null);
+    e.preventDefault();
+    if (actionLoading) return;
+    setActionError(null);
+
+    if (!newPoSupplier || !newPoSupplier.trim()) {
+      setActionError('Supplier name is required.');
+      return;
+    }
+    if (!newPoItems || newPoItems.length === 0) {
+      setActionError('At least one order line item is required.');
+      return;
+    }
+    for (const item of newPoItems) {
+      if (!item.medicine_id) {
+        setActionError('Please select a medicine for all order lines.');
+        return;
+      }
+      const qty = parseInt(item.quantity_ordered, 10);
+      if (isNaN(qty) || qty <= 0 || !Number.isInteger(Number(item.quantity_ordered))) {
+        setActionError('Order quantities must be positive whole numbers.');
+        return;
+      }
+      const cost = parseFloat(item.unit_cost);
+      if (isNaN(cost) || !isFinite(cost) || cost <= 0) {
+        setActionError('Unit cost must be a positive number greater than zero.');
+        return;
+      }
+    }
+
+    setActionLoading(true);
     try {
       const res = await fetch('/api/purchase-orders', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ supplier_name: newPoSupplier, notes: newPoNotes, operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista', items: newPoItems.map(i => ({ medicine_id: parseInt(i.medicine_id), quantity_ordered: parseInt(i.quantity_ordered), unit_cost: parseFloat(i.unit_cost) })) })
+        body: JSON.stringify({
+          supplier_name: newPoSupplier.trim(),
+          notes: newPoNotes,
+          operator_name: currentUser?.full_name || 'Lourdes Gincen L. Cesista',
+          items: newPoItems.map(i => ({
+            medicine_id: parseInt(i.medicine_id, 10),
+            quantity_ordered: parseInt(i.quantity_ordered, 10),
+            unit_cost: parseFloat(i.unit_cost)
+          }))
+        })
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to create Purchase Order');
@@ -208,6 +259,7 @@ export default function PurchaseOrdersView({
   };
 
   const handlePlaceOrder = async (po) => {
+    if (actionLoading) return;
     if (!window.confirm(`Mark Purchase Order ${po.po_number} as PLACED with ${po.supplier_name}?`)) return;
     setActionLoading(true); setActionError(null);
     try {
@@ -239,7 +291,9 @@ export default function PurchaseOrdersView({
     setDeliveryItems(prev => ({ ...prev, [itemId]: { ...prev[itemId], [field]: value } }));
 
   const handleSubmitReceiveDelivery = async (e) => {
-    e.preventDefault(); setActionLoading(true); setActionError(null);
+    e.preventDefault();
+    if (actionLoading) return;
+    setActionLoading(true); setActionError(null);
     try {
       const todayStr = getLocalDateISO();
       const receivedItemsPayload = Object.values(deliveryItems).filter(i => parseInt(i.quantity_to_receive) > 0).map(i => ({ item_id: i.item_id, quantity_to_receive: parseInt(i.quantity_to_receive), quantity_received: parseInt(i.quantity_to_receive), batch_number: (i.batch_number || '').trim(), expiration_date: i.expiration_date, manufacturing_date: i.manufacturing_date || todayStr, unit_cost: parseFloat(i.unit_cost) || 0, selling_price: parseFloat(i.selling_price) || 0, quality_inspection_passed: Boolean(i.quality_inspection_passed), supplier_dr_number: supplierDrNumber.trim() || undefined }));
@@ -287,7 +341,7 @@ export default function PurchaseOrdersView({
   const draftCount    = orders.filter(o => o.status === 'draft').length;
   const placedCount   = orders.filter(o => o.status === 'placed' || o.status === 'partially_received').length;
   const receivedCount = orders.filter(o => o.status === 'received').length;
-  const totalAmount   = orders.reduce((s, o) => s + Number(o.total_amount ?? o.total_cost ?? 0), 0);
+  const totalAmount   = Math.round(orders.reduce((s, o) => s + Number(o.total_amount ?? o.total_cost ?? 0), 0) * 100) / 100;
 
   const filterTabs = [
     { key: 'all',      label: t('po_filter_all', 'All Orders'),           count: orders.length },

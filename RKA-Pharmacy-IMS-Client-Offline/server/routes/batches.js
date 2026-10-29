@@ -2,6 +2,16 @@ const express = require('express');
 const router = express.Router();
 const { db, logAudit, calculateDaysToExpiry, getExpiryTier, getLocalDateString, getSettingsMap } = require('../db');
 
+function normalizeDateStr(dateStr) {
+  if (!dateStr) return dateStr;
+  const s = String(dateStr).trim().split('T')[0];
+  const mmddyyyy = s.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+  if (mmddyyyy) {
+    return `${mmddyyyy[3]}-${mmddyyyy[1]}-${mmddyyyy[2]}`;
+  }
+  return s;
+}
+
 // GET all batches with medicine details and expiry tiers
 router.get('/', (req, res) => {
   try {
@@ -45,7 +55,7 @@ router.get('/', (req, res) => {
         days_to_expiry: days,
         expiry_tier: tier,
         expiry_status: tier,
-        is_expired: days <= 0
+        is_expired: days !== null && days <= 0
       };
     });
 
@@ -58,18 +68,13 @@ router.get('/', (req, res) => {
 // Bulk stock-in handler for multi-item intake
 function handleBulkStockIn(req, res) {
   try {
-    const { items, supplier_name, reference_no, notes, operator_name = 'Lourdes Gincen L. Cesista' } = req.body || {};
+    const { items, supplier_name, reference_no, notes, operator_name } = req.body || {};
+    const operator = req.user?.username || (operator_name && operator_name.trim()) || 'admin';
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Please provide at least one item to stock-in.' });
     }
 
     const todayStr = getLocalDateString();
-    const normalizeDateStr = (dateStr) => {
-      if (!dateStr) return dateStr;
-      const match = String(dateStr).trim().match(/^(\d{2})-(\d{2})-(\d{4})$/);
-      if (match) return `${match[3]}-${match[1]}-${match[2]}`;
-      return String(dateStr).trim();
-    };
 
     const bulkTx = db.transaction((itemList) => {
       const createdBatches = [];
@@ -99,9 +104,9 @@ function handleBulkStockIn(req, res) {
           throw new Error(`Medicine with ID ${medicine_id} not found.`);
         }
 
-        const qty = parseInt(quantity);
-        if (isNaN(qty) || qty <= 0) {
-          throw new Error(`Quantity for ${med.brand_name} must be a positive number greater than zero.`);
+        const qty = parseInt(quantity, 10);
+        if (isNaN(qty) || qty <= 0 || !Number.isInteger(Number(quantity))) {
+          throw new Error(`Quantity for ${med.brand_name} must be a positive whole number greater than zero.`);
         }
 
         if (expDate <= todayStr) {
@@ -117,13 +122,13 @@ function handleBulkStockIn(req, res) {
         }
 
         const cost = parseFloat(unit_cost);
-        if (isNaN(cost) || cost <= 0) {
-          throw new Error(`Unit cost for ${med.brand_name} must be greater than zero.`);
+        if (isNaN(cost) || !isFinite(cost) || cost <= 0) {
+          throw new Error(`Unit cost for ${med.brand_name} must be a valid positive number.`);
         }
 
         const price = parseFloat(selling_price);
-        if (isNaN(price) || price <= 0) {
-          throw new Error(`Selling price for ${med.brand_name} must be greater than zero.`);
+        if (isNaN(price) || !isFinite(price) || price <= 0) {
+          throw new Error(`Selling price for ${med.brand_name} must be a valid positive number.`);
         }
 
         const supp = (itemSupplier || supplier_name || med.supplier_name || 'Generic Supplier').trim();
@@ -167,9 +172,9 @@ function handleBulkStockIn(req, res) {
           newBatchId,
           qty,
           cost,
-          qty * cost,
+          Math.round(qty * cost * 100) / 100,
           reference_no || 'MULTI-STOCKIN',
-          operator_name,
+          operator,
           itemNotes || notes || `Bulk stock-in of batch ${batch_number}`
         );
 
@@ -180,7 +185,7 @@ function handleBulkStockIn(req, res) {
           expiration_date: expDate,
           unit_cost: cost,
           is_bulk: true
-        }, operator_name);
+        }, operator);
 
         createdBatches.push({
           id: newBatchId,
@@ -217,15 +222,6 @@ router.post('/', (req, res) => {
     return handleBulkStockIn(req, res);
   }
   try {
-    const normalizeDateStr = (dateStr) => {
-      if (!dateStr) return dateStr;
-      const match = String(dateStr).trim().match(/^(\d{2})-(\d{2})-(\d{4})$/);
-      if (match) {
-        return `${match[3]}-${match[1]}-${match[2]}`;
-      }
-      return String(dateStr).trim();
-    };
-
     const {
       medicine_id,
       batch_number,
@@ -237,8 +233,10 @@ router.post('/', (req, res) => {
       supplier_name,
       supplier_dr_number,
       reference_no,
-      notes
+      notes,
+      operator_name
     } = req.body || {};
+    const operator = req.user?.username || (operator_name && operator_name.trim()) || 'admin';
 
     const expiration_date = normalizeDateStr(rawExpDate);
     const mfgNormalized = normalizeDateStr(manufacturing_date);
@@ -252,9 +250,9 @@ router.post('/', (req, res) => {
       return res.status(404).json({ error: 'Medicine not found' });
     }
 
-    const qty = parseInt(quantity);
-    if (isNaN(qty) || qty <= 0) {
-      return res.status(400).json({ error: 'Quantity must be a positive number greater than zero.' });
+    const qty = parseInt(quantity, 10);
+    if (isNaN(qty) || qty <= 0 || !Number.isInteger(Number(quantity))) {
+      return res.status(400).json({ error: 'Quantity must be a positive whole number greater than zero.' });
     }
 
     const todayStr = getLocalDateString();
@@ -262,7 +260,7 @@ router.post('/', (req, res) => {
       return res.status(400).json({ error: 'Expiration date must be in the future. Cannot receive already-expired batches into inventory.' });
     }
 
-    const mfg = manufacturing_date || todayStr;
+    const mfg = mfgNormalized || todayStr;
     if (mfg > todayStr) {
       return res.status(400).json({ error: 'Manufacturing date cannot be in the future.' });
     }
@@ -271,13 +269,13 @@ router.post('/', (req, res) => {
     }
 
     const cost = parseFloat(unit_cost);
-    if (isNaN(cost) || cost <= 0) {
-      return res.status(400).json({ error: 'Unit cost is required and must be greater than zero.' });
+    if (isNaN(cost) || !isFinite(cost) || cost <= 0) {
+      return res.status(400).json({ error: 'Unit cost is required and must be a valid positive number.' });
     }
 
     const price = parseFloat(selling_price);
-    if (isNaN(price) || price <= 0) {
-      return res.status(400).json({ error: 'Selling price is required and must be greater than zero.' });
+    if (isNaN(price) || !isFinite(price) || price <= 0) {
+      return res.status(400).json({ error: 'Selling price is required and must be a valid positive number.' });
     }
 
     const drNumber = (supplier_dr_number || reference_no || '').trim() || null;
@@ -315,15 +313,16 @@ router.post('/', (req, res) => {
         transaction_code, transaction_type, medicine_id, batch_id,
         quantity, unit_price, total_amount, reference_no,
         is_override, override_reason, operator_name, notes
-      ) VALUES (?, 'stock_in', ?, ?, ?, ?, ?, ?, 0, NULL, 'Lourdes Gincen L. Cesista', ?)
+      ) VALUES (?, 'stock_in', ?, ?, ?, ?, ?, ?, 0, NULL, ?, ?)
     `).run(
       txCode,
       medicine_id,
       batchId,
       qty,
       cost,
-      qty * cost,
+      Math.round(qty * cost * 100) / 100,
       reference_no || 'MANUAL-STOCKIN',
+      operator,
       notes || `Stock-in of batch ${batch_number}`
     );
 
@@ -333,7 +332,7 @@ router.post('/', (req, res) => {
       quantity: qty,
       expiration_date,
       unit_cost: cost
-    });
+    }, operator);
 
     res.status(201).json({
       id: batchId,
@@ -349,7 +348,7 @@ router.post('/:id/dispose', (req, res) => {
   try {
     const batchId = req.params.id;
     const { quantity, reason, notes, operator_name } = req.body || {};
-    const operator = (operator_name && operator_name.trim()) || (req.user && req.user.full_name) || 'Lourdes Gincen L. Cesista';
+    const operator = req.user?.username || (operator_name && operator_name.trim()) || 'admin';
 
     const batch = db.prepare(`
       SELECT b.*, m.brand_name, m.generic_name 
@@ -362,9 +361,11 @@ router.post('/:id/dispose', (req, res) => {
       return res.status(404).json({ error: 'Batch not found' });
     }
 
-    const disposeQty = parseInt(quantity) || batch.current_quantity;
-    if (disposeQty <= 0 || disposeQty > batch.current_quantity) {
-      return res.status(400).json({ error: 'Invalid disposal quantity' });
+    const hasExplicitQty = quantity !== undefined && quantity !== null && quantity !== '';
+    const disposeQty = hasExplicitQty ? parseInt(quantity, 10) : batch.current_quantity;
+
+    if (isNaN(disposeQty) || disposeQty <= 0 || !Number.isInteger(Number(hasExplicitQty ? quantity : disposeQty)) || disposeQty > batch.current_quantity) {
+      return res.status(400).json({ error: 'Disposal quantity must be a positive whole number not exceeding current batch stock.' });
     }
 
     const remaining = batch.current_quantity - disposeQty;
@@ -392,7 +393,7 @@ router.post('/:id/dispose', (req, res) => {
       batchId,
       disposeQty,
       batch.unit_cost,
-      disposeQty * batch.unit_cost,
+      Math.round(disposeQty * (batch.unit_cost || 0) * 100) / 100,
       reason || 'EXPIRED_DISPOSAL',
       operator,
       notes || `Safe disposal of batch ${batch.batch_number}: ${reason}`
@@ -436,10 +437,10 @@ router.patch('/:id', (req, res) => {
     const newCost = parseFloat(unit_cost);
     const newPrice = parseFloat(selling_price);
 
-    if (isNaN(newCost) || newCost <= 0) {
+    if (isNaN(newCost) || !isFinite(newCost) || newCost <= 0) {
       return res.status(400).json({ error: 'Unit cost must be a positive number greater than zero.' });
     }
-    if (isNaN(newPrice) || newPrice <= 0) {
+    if (isNaN(newPrice) || !isFinite(newPrice) || newPrice <= 0) {
       return res.status(400).json({ error: 'Selling price must be a positive number greater than zero.' });
     }
 

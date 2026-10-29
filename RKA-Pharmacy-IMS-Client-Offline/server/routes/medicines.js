@@ -78,7 +78,7 @@ router.get('/:id', (req, res) => {
         ...b,
         days_to_expiry: days,
         expiry_tier: getExpiryTier(days, settings),
-        is_expired: days <= 0
+        is_expired: days !== null && days <= 0
       };
     });
 
@@ -115,7 +115,7 @@ router.get('/barcode/:barcode', (req, res) => {
         ...b,
         days_to_expiry: days,
         expiry_tier: getExpiryTier(days, settings),
-        is_expired: days <= 0
+        is_expired: days !== null && days <= 0
       };
     });
 
@@ -192,9 +192,9 @@ router.post('/', (req, res) => {
       dosage_form.trim(),
       category || 'Medicine',
       unit_of_measure || 'Piece',
-      parseInt(reorder_threshold) || 20,
-      parseInt(supplier_lead_time_days) || 5,
-      parseInt(buffer_days) || 3,
+      (!isNaN(parseInt(reorder_threshold, 10)) && parseInt(reorder_threshold, 10) >= 0) ? parseInt(reorder_threshold, 10) : 20,
+      (!isNaN(parseInt(supplier_lead_time_days, 10)) && parseInt(supplier_lead_time_days, 10) >= 0) ? parseInt(supplier_lead_time_days, 10) : 5,
+      (!isNaN(parseInt(buffer_days, 10)) && parseInt(buffer_days, 10) >= 0) ? parseInt(buffer_days, 10) : 3,
       supplier_name || 'Generic Supplier',
       description || ''
     );
@@ -211,6 +211,98 @@ router.post('/', (req, res) => {
       code: finalCode,
       barcode: finalBarcode,
       message: 'Medicine registered successfully'
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// Bulk import medicines (from CSV or master catalog presets)
+router.post('/bulk-import', (req, res) => {
+  try {
+    const { items, operator_name } = req.body || {};
+    const operator = req.user?.username || (operator_name && operator_name.trim()) || 'admin';
+
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Please provide an array of medicines to import.' });
+    }
+
+    const checkExists = db.prepare('SELECT id, code, barcode, brand_name FROM medicines WHERE (barcode = ? AND barcode != "") OR (LOWER(brand_name) = LOWER(?) AND LOWER(generic_name) = LOWER(?) AND LOWER(dosage_strength) = LOWER(?))');
+    const getLastMed = db.prepare('SELECT id FROM medicines ORDER BY id DESC LIMIT 1');
+    const insertStmt = db.prepare(`
+      INSERT INTO medicines (
+        code, barcode, brand_name, generic_name, dosage_strength, dosage_form,
+        category, unit_of_measure, reorder_threshold, supplier_lead_time_days,
+        buffer_days, supplier_name, description
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+
+    let importedCount = 0;
+    let skippedCount = 0;
+
+    const importTx = db.transaction((medList) => {
+      let currentLastId = getLastMed.get()?.id || 0;
+
+      for (const item of medList) {
+        const brandName = (item.brand_name || '').trim();
+        const genericName = (item.generic_name || '').trim();
+        const dosageStrength = (item.dosage_strength || '').trim();
+        const dosageForm = (item.dosage_form || 'Tablet').trim();
+
+        if (!brandName || !genericName || !dosageStrength) {
+          skippedCount++;
+          continue;
+        }
+
+        const rawBarcode = (item.barcode || '').trim();
+        const existing = checkExists.get(rawBarcode || '__NO_BARCODE__', brandName, genericName, dosageStrength);
+        if (existing) {
+          skippedCount++;
+          continue;
+        }
+
+        currentLastId++;
+        const finalCode = item.code && item.code.trim() !== '' ? item.code.trim() : `MED-${String(currentLastId).padStart(3, '0')}`;
+        const finalBarcode = rawBarcode !== '' ? rawBarcode : `RKA-${finalCode}-INT`;
+
+        insertStmt.run(
+          finalCode,
+          finalBarcode,
+          brandName,
+          genericName,
+          dosageStrength,
+          dosageForm,
+          (item.category || 'Medicine').trim(),
+          (item.unit_of_measure || 'Piece').trim(),
+          (!isNaN(parseInt(item.reorder_threshold, 10)) && parseInt(item.reorder_threshold, 10) >= 0) ? parseInt(item.reorder_threshold, 10) : 20,
+          (!isNaN(parseInt(item.supplier_lead_time_days, 10)) && parseInt(item.supplier_lead_time_days, 10) >= 0) ? parseInt(item.supplier_lead_time_days, 10) : 5,
+          (!isNaN(parseInt(item.buffer_days, 10)) && parseInt(item.buffer_days, 10) >= 0) ? parseInt(item.buffer_days, 10) : 3,
+          (item.supplier_name || 'Generic Supplier').trim(),
+          (item.description || '').trim()
+        );
+
+        importedCount++;
+      }
+    });
+
+    importTx(items);
+
+    if (importedCount > 0) {
+      logAudit(
+        'BULK_IMPORT_MEDICINES',
+        'MEDICINE',
+        null,
+        { imported_count: importedCount, skipped_count: skippedCount, total_submitted: items.length },
+        operator
+      );
+    }
+
+    res.json({
+      success: true,
+      message: `Successfully imported ${importedCount} medicine(s) into catalog (${skippedCount} skipped as duplicate or incomplete).`,
+      imported_count: importedCount,
+      skipped_count: skippedCount,
+      total: items.length
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -274,9 +366,9 @@ router.put('/:id', (req, res) => {
       dosage_form ?? current.dosage_form,
       category ?? current.category,
       unit_of_measure ?? current.unit_of_measure,
-      reorder_threshold !== undefined ? parseInt(reorder_threshold) : current.reorder_threshold,
-      supplier_lead_time_days !== undefined ? parseInt(supplier_lead_time_days) : current.supplier_lead_time_days,
-      buffer_days !== undefined ? parseInt(buffer_days) : current.buffer_days,
+      (reorder_threshold !== undefined && !isNaN(parseInt(reorder_threshold, 10)) && parseInt(reorder_threshold, 10) >= 0) ? parseInt(reorder_threshold, 10) : current.reorder_threshold,
+      (supplier_lead_time_days !== undefined && !isNaN(parseInt(supplier_lead_time_days, 10)) && parseInt(supplier_lead_time_days, 10) >= 0) ? parseInt(supplier_lead_time_days, 10) : current.supplier_lead_time_days,
+      (buffer_days !== undefined && !isNaN(parseInt(buffer_days, 10)) && parseInt(buffer_days, 10) >= 0) ? parseInt(buffer_days, 10) : current.buffer_days,
       supplier_name ?? current.supplier_name,
       description ?? current.description,
       barcode !== undefined ? barcode.trim() : current.barcode,

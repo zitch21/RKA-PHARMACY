@@ -21,18 +21,28 @@ export default function EditBatchModal({ batch, isOpen, onClose, onBatchUpdated 
     }
   }, [batch, isOpen]);
 
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [isOpen, onClose]);
+
   if (!isOpen || !batch) return null;
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (loading) return;
     const cost = parseFloat(unitCost);
     const price = parseFloat(sellingPrice);
 
-    if (isNaN(cost) || cost <= 0) {
+    if (isNaN(cost) || !isFinite(cost) || cost <= 0) {
       setError('Unit Cost must be a positive number greater than 0.');
       return;
     }
-    if (isNaN(price) || price <= 0) {
+    if (isNaN(price) || !isFinite(price) || price <= 0) {
       setError('Selling Price must be a positive number greater than 0.');
       return;
     }
@@ -67,7 +77,10 @@ export default function EditBatchModal({ batch, isOpen, onClose, onBatchUpdated 
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md p-4 animate-in fade-in select-none">
+    <div
+      onClick={(e) => { if (e.target === e.currentTarget) onClose(); }}
+      className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 dark:bg-black/80 backdrop-blur-md p-4 animate-in fade-in select-none"
+    >
       <div className="bg-white dark:bg-[#181d26] rounded-3xl shadow-2xl max-w-md w-full overflow-hidden border border-slate-200/90 dark:border-white/10">
         <div className="px-6 py-4.5 bg-slate-50/90 dark:bg-[#1e2430] border-b border-slate-100 dark:border-white/10 flex items-center justify-between">
           <div className="flex items-center gap-3">

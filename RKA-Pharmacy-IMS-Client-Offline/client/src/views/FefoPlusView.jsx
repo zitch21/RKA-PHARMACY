@@ -54,7 +54,7 @@ function WastePill({ qty, unit }) {
 
 function ShelfLifeChip({ days, expDate }) {
   const { t } = useLanguage();
-  if (!expDate) return null;
+  if (!expDate || days === null || days === undefined) return null;
   if (days <= 0) {
     return (
       <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-xl text-xs font-bold bg-rose-100 text-rose-800 border border-rose-200">
@@ -198,6 +198,7 @@ export default function FefoPlusView({
 
 
   const handleBulkApplyThresholds = async (targetItems = null) => {
+    if (bulkLoading) return;
     setActionSuccess(null); setActionError(null); setBulkLoading(true);
     try {
       const itemsToUpdate = targetItems || (

@@ -1,8 +1,34 @@
 const crypto = require('crypto');
+const path = require('path');
+const fs = require('fs');
 const { db } = require('../db');
 
+function getOrGenerateSessionSecret() {
+  if (process.env.SESSION_SECRET) {
+    return process.env.SESSION_SECRET;
+  }
+  const secretPath = path.join(__dirname, '../data/.session_secret');
+  try {
+    if (fs.existsSync(secretPath)) {
+      const existing = fs.readFileSync(secretPath, 'utf8').trim();
+      if (existing && existing.length >= 32) {
+        return existing;
+      }
+    }
+    const generated = crypto.randomBytes(32).toString('hex');
+    const dataDir = path.dirname(secretPath);
+    if (!fs.existsSync(dataDir)) {
+      fs.mkdirSync(dataDir, { recursive: true });
+    }
+    fs.writeFileSync(secretPath, generated, { encoding: 'utf8' });
+    return generated;
+  } catch {
+    return 'rka-pharmacy-session-hmac-secret-agoo-la-union-2026';
+  }
+}
+
 // Secret for cryptographic HMAC session signatures
-const SESSION_SECRET = process.env.SESSION_SECRET || 'rka-pharmacy-session-hmac-secret-agoo-la-union-2026';
+const SESSION_SECRET = getOrGenerateSessionSecret();
 
 // In-memory active session cache
 const activeSessions = new Map();
@@ -62,9 +88,11 @@ function verifySessionToken(token) {
 
   // 2. Validate cryptographic signature
   if (token.startsWith('rka_session_')) {
-    const parts = token.slice('rka_session_'.length).split('_');
-    if (parts.length === 2) {
-      const [payloadB64, signature] = parts;
+    const rest = token.slice('rka_session_'.length);
+    const lastUnderscore = rest.lastIndexOf('_');
+    if (lastUnderscore !== -1) {
+      const payloadB64 = rest.slice(0, lastUnderscore);
+      const signature = rest.slice(lastUnderscore + 1);
       if (signature && signature.length === 64 && /^[0-9a-fA-F]{64}$/.test(signature)) {
         try {
           const expectedSig = crypto.createHmac('sha256', SESSION_SECRET).update(payloadB64).digest('hex');
@@ -77,26 +105,6 @@ function verifySessionToken(token) {
             if (user) {
               // Re-cache in active sessions
               activeSessions.set(token, { user, createdAt: Date.now() });
-              return user;
-            }
-          }
-        } catch {
-          return null;
-        }
-      }
-    }
-
-    // 3. Fallback for legacy timestamp format: rka_session_<userId>_<timestamp>
-    const legacyParts = token.split('_');
-    if (legacyParts.length === 4 && legacyParts[0] === 'rka' && legacyParts[1] === 'session') {
-      if (/^\d+$/.test(legacyParts[2]) && /^\d+$/.test(legacyParts[3])) {
-        try {
-          const userId = parseInt(legacyParts[2], 10);
-          const timestamp = parseInt(legacyParts[3], 10);
-          if (!isNaN(userId) && !isNaN(timestamp) && (Date.now() - timestamp < 7 * 24 * 60 * 60 * 1000)) {
-            const user = db.prepare('SELECT id, username, full_name, role FROM users WHERE id = ?').get(userId);
-            if (user) {
-              activeSessions.set(token, { user, createdAt: timestamp });
               return user;
             }
           }
@@ -183,8 +191,34 @@ function authMiddleware(req, res, next) {
   next();
 }
 
+/**
+ * Role-Based Access Control (RBAC) Middleware:
+ * Enforces administrator privileges for sensitive operations.
+ */
+function requireAdminRole(req, res, next) {
+  if (!req.user) {
+    return res.status(401).json({
+      error: 'Unauthorized: Authentication required.',
+      code: 'AUTH_REQUIRED'
+    });
+  }
+
+  const role = (req.user.role || '').toLowerCase();
+  const isAdmin = role.includes('admin') || role.includes('owner');
+
+  if (!isAdmin) {
+    return res.status(403).json({
+      error: 'Forbidden: Administrator privileges required for this operation.',
+      code: 'ADMIN_ROLE_REQUIRED'
+    });
+  }
+
+  next();
+}
+
 module.exports = {
   authMiddleware,
+  requireAdminRole,
   createSessionToken,
   verifySessionToken,
   invalidateSessionToken,

@@ -29,17 +29,22 @@ import BarcodeModal from '../components/BarcodeModal';
 import HelperText from '../components/HelperText';
 import { useLanguage } from '../context/LanguageContext';
 import { playScanSuccess, playScanError } from '../utils/audioTelemetry';
-import { formatDatePH, getLocalDateISO } from '../utils/dateFormatter';
+import { formatDatePH, getLocalDateISO, calculateDaysToExpiry } from '../utils/dateFormatter';
 
 /* ── Helpers ─────────────────────────────────────── */
 const SUPPLIERS = [
   'United Laboratories (Unilab)',
+  'RiteMed Philippines, Inc.',
+  'GlaxoSmithKline Philippines',
+  'Pfizer Philippines',
+  'Sanofi-Aventis Philippines',
+  'Pascual Laboratories',
+  'Boehringer Ingelheim Philippines',
+  'AstraZeneca Philippines',
+  'Bayer Philippines',
+  'Mundipharma Distribution Philippines',
+  'Taisho Pharmaceuticals (Philippines)',
   'Zuellig Pharma',
-  'Medix Distribution',
-  'Pharmalink Inc.',
-  'MedPro Pharma',
-  'GlobalRx Distributors',
-  'DirectRx Supply',
 ];
 
 function dateOffsetISO(months) {
@@ -52,7 +57,8 @@ function dateOffsetISO(months) {
 
 function expiryPreview(expDate) {
   if (!expDate) return null;
-  const days = Math.ceil((new Date(expDate) - new Date()) / 86400000);
+  const days = calculateDaysToExpiry(expDate);
+  if (days === null) return { days: null, tier: 'Invalid Date', cls: 'bg-zinc-50 border-zinc-300 text-zinc-700' };
   let tier = 'Safe (>180 days)';
   let cls  = 'bg-teal-50 border-teal-300 text-teal-900';
   if (days <= 0)   { tier = 'Expired — Invalid for stock-in'; cls = 'bg-rose-50 border-rose-300 text-rose-900'; }
@@ -155,8 +161,10 @@ export default function StockInView({
 
   const [loading,        setLoading]       = useState(false);
   const [error,          setError]         = useState(null);
+  const [unregisteredBarcode, setUnregisteredBarcode] = useState(null);
   const [successData,    setSuccessData]   = useState(null);
   const [barcodeMedicine,setBarcodeMedicine]= useState(null);
+  const [scanAnnouncement, setScanAnnouncement] = useState('');
 
   const barcodeRef = useRef(null);
   useEffect(() => { barcodeRef.current?.focus(); }, []);
@@ -236,6 +244,7 @@ export default function StockInView({
       playScanError();
       return;
     }
+    window.dispatchEvent(new CustomEvent('rka_barcode_scanned', { detail: { barcode: query } }));
     const match = medList.find(m =>
       m.barcode?.toLowerCase() === query.toLowerCase() ||
       m.code?.toLowerCase() === query.toLowerCase()
@@ -252,28 +261,54 @@ export default function StockInView({
           setCleanStep(2);
         }
       }
-      setBarcodeInput(''); setError(null);
+      setScanAnnouncement(`Stock-in: Selected ${match.brand_name} ${match.dosage_strength || ''}.`);
+      setBarcodeInput(''); setError(null); setUnregisteredBarcode(null);
     } else {
       playScanError();
+      setUnregisteredBarcode(query);
       setError(`No registered medicine matches barcode "${query}". Register it first.`);
+      setScanAnnouncement(`No registered medicine matches barcode ${query}. Register it first.`);
     }
   };
 
-  /* Global scanner buffer */
+  /* Global scanner buffer (Ref-stabilized against stale closures) */
+  const processBarcodeRef = useRef(processBarcode);
+  useEffect(() => {
+    processBarcodeRef.current = processBarcode;
+  });
+
   useEffect(() => {
     let buf = ''; let last = Date.now();
     const handler = (e) => {
       const tag = e.target?.tagName?.toLowerCase();
       if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+
+      // Modal isolation: pause background barcode scanning if modal dialog or overlay is open
+      if (
+        Boolean(barcodeMedicine) ||
+        document.querySelector('[role="dialog"]') ||
+        document.querySelector('.modal-open')
+      ) {
+        buf = '';
+        return;
+      }
+
       const now = Date.now();
       if (now - last > 120) buf = '';
       last = now;
-      if (e.key === 'Enter') { if (buf.length >= 2) { e.preventDefault(); processBarcode(buf.trim()); buf = ''; } }
-      else if (e.key?.length === 1) buf += e.key;
+      if (e.key === 'Enter') {
+        if (buf.length >= 2) {
+          e.preventDefault();
+          processBarcodeRef.current(buf.trim());
+          buf = '';
+        }
+      } else if (e.key?.length === 1) {
+        buf += e.key;
+      }
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, [medList]);
+  }, [barcodeMedicine]);
 
   /* Expiry preview */
   const preview = expiryPreview(expDate);
@@ -316,14 +351,16 @@ export default function StockInView({
   /* ── Submit single ── */
   const handleSubmit = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
+    if (loading) return;
     if (!selectedMedId || !batchNumber || !expDate || !quantity) { setError('Please fill in all mandatory fields (Medicine, Batch Number, Expiration Date, Quantity).'); return; }
-    if (parseInt(quantity) <= 0) { setError('Quantity must be greater than zero.'); return; }
+    const qtyNum = parseInt(quantity, 10);
+    if (isNaN(qtyNum) || qtyNum <= 0 || !Number.isInteger(Number(quantity))) { setError('Quantity must be a positive whole number.'); return; }
     const costNum = parseFloat(unitCost);
     if (isNaN(costNum) || costNum <= 0) { setError('Unit Cost (₱) is required and must be greater than zero.'); return; }
     const priceNum = parseFloat(sellingPrice);
     if (isNaN(priceNum) || priceNum <= 0) { setError('Selling Price (₱) is required and must be greater than zero.'); return; }
     if (mfgDate && new Date(expDate) <= new Date(mfgDate)) { setError('Expiration date must be after the manufacturing date.'); return; }
-    if (preview && preview.days <= 0) { setError('Cannot stock-in a batch that is already expired.'); return; }
+    if (preview && preview.days !== null && preview.days <= 0) { setError('Cannot stock-in a batch that is already expired.'); return; }
     setLoading(true); setError(null);
     try {
       const res = await fetch('/api/batches', {
@@ -334,20 +371,21 @@ export default function StockInView({
           batch_number: batchNumber.trim().toUpperCase(),
           manufacturing_date: mfgDate,
           expiration_date: expDate,
-          quantity: parseInt(quantity),
+          quantity: qtyNum,
           unit_cost: costNum,
           selling_price: priceNum,
           supplier_name: supplierName || selectedMed?.supplier_name,
           reference_no: referenceNo || `INV-${Date.now().toString().slice(-5)}`,
-          supplier_dr_number: referenceNo.trim() || undefined,
+          supplier_dr_number: (referenceNo || '').trim() || undefined,
           storage_location: storageLocation,
           notes,
         }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to save batch intake');
-      setSuccessData({ medicine: selectedMed, batch_number: batchNumber, quantity: parseInt(quantity), expDate });
-      setBatchNumber(''); setExpDate(''); setQuantity(''); setPricingSource('custom'); setUnitCost(''); setSellingPrice(''); setReferenceNo(''); setNotes('');
+      setSuccessData({ medicine: selectedMed, batch_number: batchNumber, quantity: qtyNum, expDate });
+      // Clear batch-specific fields while retaining active Delivery Receipt / Invoice number for consecutive items
+      setBatchNumber(''); setExpDate(''); setQuantity(''); setPricingSource('custom'); setUnitCost(''); setSellingPrice(''); setNotes('');
       onRefresh();
     } catch (err) { setError(err.message); }
     finally { setLoading(false); }
@@ -356,6 +394,7 @@ export default function StockInView({
   /* ── Submit bulk ── */
   const handleSubmitMulti = async (e) => {
     e.preventDefault();
+    if (loading) return;
     setError(null); setSuccessData(null); setMultiSuccessBatches(null);
     const filled = multiRows.filter(r => r.medicine_id);
     if (filled.length === 0) { setError('Please add at least one medicine item with valid batch and expiration details.'); return; }
@@ -369,19 +408,19 @@ export default function StockInView({
       if (!r.expiration_date) { setError(`Please enter an Expiration Date for ${name}.`); return; }
       if (r.expiration_date <= todayStr) { setError(`Expiration date for ${name} (${r.batch_number}) must be in the future.`); return; }
       const qty = parseInt(r.quantity, 10);
-      if (isNaN(qty) || qty <= 0) { setError(`Please enter a valid quantity for ${name}.`); return; }
+      if (isNaN(qty) || qty <= 0 || !Number.isInteger(Number(r.quantity))) { setError(`Please enter a valid whole number quantity for ${name}.`); return; }
       const cost = parseFloat(r.unit_cost);
       if (isNaN(cost) || cost <= 0) { setError(`Please enter a valid Unit Cost for ${name}.`); return; }
       const price = parseFloat(r.selling_price);
       if (isNaN(price) || price <= 0) { setError(`Please enter a valid Selling Price for ${name}.`); return; }
-      items.push({ medicine_id: parseInt(r.medicine_id, 10), batch_number: r.batch_number.trim().toUpperCase(), manufacturing_date: r.manufacturing_date || todayStr, expiration_date: r.expiration_date, quantity: qty, unit_cost: cost, selling_price: price, supplier_name: multiSupplier, supplier_dr_number: multiReferenceNo.trim() || undefined, storage_location: r.storage_location || 'Dispensary Cabinet A' });
+      items.push({ medicine_id: parseInt(r.medicine_id, 10), batch_number: r.batch_number.trim().toUpperCase(), manufacturing_date: r.manufacturing_date || todayStr, expiration_date: r.expiration_date, quantity: qty, unit_cost: cost, selling_price: price, supplier_name: multiSupplier, supplier_dr_number: (multiReferenceNo || '').trim() || undefined, storage_location: r.storage_location || 'Dispensary Cabinet A' });
     }
     setLoading(true);
     try {
       const res = await fetch('/api/batches/bulk', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ supplier_name: multiSupplier, reference_no: multiReferenceNo || `INV-${Date.now().toString().slice(-6)}`, supplier_dr_number: multiReferenceNo.trim() || undefined, notes: multiNotes || `Multi-item intake (${items.length} lines)`, items }),
+        body: JSON.stringify({ supplier_name: multiSupplier, reference_no: multiReferenceNo || `INV-${Date.now().toString().slice(-6)}`, supplier_dr_number: (multiReferenceNo || '').trim() || undefined, notes: multiNotes || `Multi-item intake (${items.length} lines)`, items }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Failed to process bulk stock-in');
@@ -412,6 +451,8 @@ export default function StockInView({
 
     return (
       <div className="space-y-4 pb-12">
+        {/* A11y Live Announcement Region */}
+        <div className="sr-only" aria-live="polite" aria-atomic="true">{scanAnnouncement}</div>
         {/* Header */}
         <div className="bg-white rounded-xl border border-zinc-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5">
           <div>
@@ -615,6 +656,8 @@ export default function StockInView({
 
     return (
       <div className="space-y-4 pb-12">
+        {/* A11y Live Announcement Region */}
+        <div className="sr-only" aria-live="polite" aria-atomic="true">{scanAnnouncement}</div>
         {/* Header */}
         <div className="bg-white rounded-xl border border-zinc-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5">
           <div>
@@ -815,14 +858,30 @@ export default function StockInView({
 
         {/* ══ Alerts ══ */}
         {error && (
-          <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-sm flex items-center justify-between gap-3 shadow-sm">
+          <div className="p-4 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-sm flex items-center justify-between flex-wrap gap-3 shadow-sm">
             <div className="flex items-center gap-2.5 font-medium">
               <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
               <span>{error}</span>
             </div>
-            <button type="button" onClick={() => setError(null)} className="text-rose-500 hover:text-rose-800 p-1 cursor-pointer">
-              <X className="w-5 h-5" />
-            </button>
+            <div className="flex items-center gap-2 ml-auto">
+              {unregisteredBarcode && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    onOpenAddMedicine?.(unregisteredBarcode);
+                    setError(null);
+                    setUnregisteredBarcode(null);
+                  }}
+                  className="px-3 py-1.5 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-xs inline-flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <Plus className="w-4 h-4" />
+                  <span>{t('btn_register_barcode_now', 'Register')} "{unregisteredBarcode}" {t('btn_now', 'Now')}</span>
+                </button>
+              )}
+              <button type="button" onClick={() => { setError(null); setUnregisteredBarcode(null); }} className="text-rose-500 hover:text-rose-800 p-1 cursor-pointer">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
           </div>
         )}
 
@@ -1051,6 +1110,7 @@ export default function StockInView({
                       <input
                         type="text"
                         required
+                        autoFocus
                         placeholder={t('ph_lot_format', 'LOT-XXX')}
                         value={batchNumber}
                         onChange={e => setBatchNumber(e.target.value.toUpperCase())}
@@ -1159,6 +1219,7 @@ export default function StockInView({
                           type="number"
                           min="1"
                           required
+                          autoFocus
                           placeholder={t('ph_qty_example', 'e.g. 50')}
                           value={quantity}
                           onChange={e => setQuantity(e.target.value)}
@@ -1355,6 +1416,8 @@ export default function StockInView({
 
   return (
     <div className={uiMode === 'clean' ? 'max-w-4xl mx-auto space-y-4 pb-8' : 'max-w-4xl mx-auto space-y-5 pb-12'}>
+      {/* A11y Live Announcement Region */}
+      <div className="sr-only" aria-live="polite" aria-atomic="true">{scanAnnouncement}</div>
 
       {/* ══ Page Header ══ */}
       <div className="bg-white rounded-xl border border-zinc-200 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3 px-5 py-3.5">
@@ -1419,10 +1482,30 @@ export default function StockInView({
         </div>
       )}
       {error && (
-        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center gap-2">
-          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-          <span>{error}</span>
-          <button type="button" onClick={() => setError(null)} className="ml-auto text-rose-400 hover:text-rose-700 cursor-pointer"><X className="w-3.5 h-3.5" /></button>
+        <div className="p-3.5 bg-rose-50 border border-rose-200 rounded-xl text-rose-800 text-xs flex items-center justify-between flex-wrap gap-2 shadow-xs">
+          <div className="flex items-center gap-2">
+            <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+            <span>{error}</span>
+          </div>
+          <div className="flex items-center gap-2 ml-auto">
+            {unregisteredBarcode && (
+              <button
+                type="button"
+                onClick={() => {
+                  onOpenAddMedicine?.(unregisteredBarcode);
+                  setError(null);
+                  setUnregisteredBarcode(null);
+                }}
+                className="px-2.5 py-1 text-xs font-bold text-white bg-teal-600 hover:bg-teal-700 rounded-lg shadow-xs inline-flex items-center gap-1 transition cursor-pointer"
+              >
+                <Plus className="w-3.5 h-3.5" />
+                <span>{t('btn_register_barcode_now', 'Register')} "{unregisteredBarcode}" {t('btn_now', 'Now')}</span>
+              </button>
+            )}
+            <button type="button" onClick={() => { setError(null); setUnregisteredBarcode(null); }} className="text-rose-400 hover:text-rose-700 cursor-pointer">
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
         </div>
       )}
 
